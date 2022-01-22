@@ -4,7 +4,7 @@ Initially made as an alternative to [the original CROWN implementation](https://
 
 To install:
 ```
-pip install bound_propagation
+pip install bound-propagation
 ```
 
 Supported bound propagation methods:
