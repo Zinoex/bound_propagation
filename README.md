@@ -98,4 +98,4 @@ crown_ibp_bounds = net.crown_ibp_linear(lower, upper)
 ```
 
 ## Authors
-- [Frederik Baymler Mathiesen](baymler.com) - PhD student @ TU Delft
+- [Frederik Baymler Mathiesen](https://www.baymler.com) - PhD student @ TU Delft
