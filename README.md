@@ -76,7 +76,7 @@ The method also works with ```nn.Sigmoid``` and ```nn.ReLU```.
 To get interval bounds for either IBP, CROWN, or CROWN-IBP:
 
 ```python
-x = rand(100, 30)
+x = torch.rand(100, 30)
 epsilon = 0.1
 lower, upper = x - epsilon, x + epsilon
 
@@ -89,7 +89,7 @@ crown_ibp_bounds = net.crown_ibp_interval(lower, upper)
 To get linear bounds for either CROWN or CROWN-IBP:
 
 ```python
-x = rand(100, 30)
+x = torch.rand(100, 30)
 epsilon = 0.1
 lower, upper = x - epsilon, x + epsilon
 
