@@ -19,7 +19,10 @@ LinearBound = Tuple[torch.Tensor, torch.Tensor]
 LinearBounds = Tuple[LinearBound, LinearBound]
 IntervalBounds = Tuple[torch.Tensor, torch.Tensor]
 
-LayerBounds = List[Tuple[torch.Tensor, torch.Tensor]]
+LayerBound = Tuple[torch.Tensor, torch.Tensor]
+LayerBounds = List[LayerBound]
 
 AlphaBeta = Tuple[Tuple[OptionalTensor, OptionalTensor], Tuple[OptionalTensor, OptionalTensor]]
 AlphaBetas = List[AlphaBeta]
+
+WeightBias = Tuple[torch.Tensor, torch.Tensor]

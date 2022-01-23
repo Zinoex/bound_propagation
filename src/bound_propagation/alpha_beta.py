@@ -1,9 +1,10 @@
+from functools import wraps
 from typing import Tuple, List, Optional, Callable
 
 import torch
 from torch import nn
 
-from .util import LayerBounds, add_method, AlphaBetas, AlphaBeta, TensorFunction
+from .util import LayerBounds, add_method, AlphaBetas, AlphaBeta, TensorFunction, LayerBound
 
 
 def alpha_beta(class_or_obj):
@@ -23,19 +24,21 @@ def alpha_beta(class_or_obj):
     raise NotImplementedError('Selected type of layer not supported')
 
 
+def add_alpha_beta_submodules(model: nn.Sequential):
+    for module in model:
+        if not hasattr(module, 'alpha_beta'):
+            # Decorator also adds the method inplace.
+            alpha_beta(module)
+
+
 def alpha_beta_sequential(class_or_obj):
-    def _alpha_beta(model: nn.Sequential, layer_bounds: LayerBounds, **kwargs) -> AlphaBetas:
+    def _alpha_beta(self: nn.Sequential, layer_bounds: LayerBounds, **kwargs) -> AlphaBetas:
+        add_alpha_beta_submodules(self)
+
         alpha_betas = []
 
-        for module, (LB, UB) in zip(model, layer_bounds):
-            if not hasattr(module, 'alpha_beta'):
-                # Decorator also adds the method inplace.
-                alpha_beta(module)
-
-            assert torch.all(LB <= UB + 1e-6)
-
-            ab = module.alpha_beta(LB, UB, **kwargs)
-
+        for module, layer_bound in zip(self, layer_bounds):
+            ab = module.alpha_beta(layer_bound, **kwargs)
             alpha_betas.append(ab)
 
         return alpha_betas
@@ -52,8 +55,20 @@ def regimes(LB: torch.Tensor, UB: torch.Tensor) -> Tuple[torch.Tensor, torch.Ten
     return n, p, np
 
 
+def assert_bound_order(func):
+    @wraps(func)
+    def wrapper(self, layer_bound: LayerBound, **kwargs):
+        LB, UB = layer_bound
+        assert torch.all(LB <= UB + 1e-6)
+
+        return func(self, layer_bound, **kwargs)
+
+    return wrapper
+
+
 def alpha_beta_relu(class_or_obj):
-    def alpha_beta(module: nn.ReLU, LB: torch.Tensor, UB: torch.Tensor, adaptive_relu: bool = True, **kwargs) -> AlphaBeta:
+    @assert_bound_order
+    def alpha_beta(self: nn.ReLU, layer_bound: LayerBound, adaptive_relu: bool = True, **kwargs) -> AlphaBeta:
         """
         See the source below for information on what adaptive ReLU means and how regimes of the input
         are exploited to compute bounds.
@@ -67,14 +82,13 @@ def alpha_beta_relu(class_or_obj):
               primaryClass={cs.LG}
         }
 
-        :param module:
-        :param LB:
-        :param UB:
+        :param self:
+        :param layer_bound:
         :param adaptive_relu:
         :param kwargs:
         :return:
         """
-
+        LB, UB = layer_bound
         n, p, np = regimes(LB, UB)
 
         alpha_lower_k = torch.zeros_like(LB)
@@ -116,8 +130,9 @@ def alpha_beta_sigmoid(class_or_obj):
     def derivative(d):
         return torch.sigmoid(d) * (1 - torch.sigmoid(d))
 
-    def alpha_beta(module: nn.Sigmoid, LB: torch.Tensor, UB: torch.Tensor, **kwargs) -> AlphaBeta:
-        return alpha_beta_general(LB, UB, torch.sigmoid, derivative)
+    @assert_bound_order
+    def alpha_beta(self: nn.Sigmoid, layer_bound: LayerBound, **kwargs) -> AlphaBeta:
+        return alpha_beta_general(layer_bound, torch.sigmoid, derivative)
 
     add_method(class_or_obj, 'alpha_beta', alpha_beta)
     return class_or_obj
@@ -127,14 +142,15 @@ def alpha_beta_tanh(class_or_obj):
     def derivative(d):
         return 1 - torch.tanh(d) ** 2
 
-    def alpha_beta(module: nn.Tanh, LB: torch.Tensor, UB: torch.Tensor, **kwargs) -> AlphaBeta:
-        return alpha_beta_general(LB, UB, torch.tanh, derivative)
+    @assert_bound_order
+    def alpha_beta(self: nn.Tanh, layer_bound: LayerBound, **kwargs) -> AlphaBeta:
+        return alpha_beta_general(layer_bound, torch.tanh, derivative)
 
     add_method(class_or_obj, 'alpha_beta', alpha_beta)
     return class_or_obj
 
 
-def alpha_beta_general(LB: torch.Tensor, UB: torch.Tensor, func: TensorFunction, derivative: TensorFunction) -> AlphaBeta:
+def alpha_beta_general(layer_bound: LayerBound, func: TensorFunction, derivative: TensorFunction) -> AlphaBeta:
     """
     Function to compute upper and lower bounds for S-shaped activation functions.
     Assumptions:
@@ -153,13 +169,12 @@ def alpha_beta_general(LB: torch.Tensor, UB: torch.Tensor, func: TensorFunction,
           primaryClass={cs.LG}
     }
 
-    :param LB:
-    :param UB:
+    :param layer_bound:
     :param func:
     :param derivative:
     :return:
     """
-
+    LB, UB = layer_bound
     n, p, np = regimes(LB, UB)
 
     alpha_lower_k = torch.zeros_like(LB)
@@ -270,7 +285,7 @@ def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int
 
 
 def alpha_beta_linear(class_or_obj):
-    def alpha_beta(module: nn.Linear, LB: torch.Tensor, UB: torch.Tensor, **kwargs) -> AlphaBeta:
+    def alpha_beta(self: nn.Linear, layer_bound: LayerBound, **kwargs) -> AlphaBeta:
         return (None, None), (None, None)
 
     add_method(class_or_obj, 'alpha_beta', alpha_beta)

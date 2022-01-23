@@ -20,11 +20,11 @@ class FashionMNISTNetwork(nn.Sequential):
             classes = 10
 
             super().__init__(
-                nn.Linear(img_size, 16),
+                nn.Linear(img_size, 32),
                 nn.Tanh(),
-                nn.Linear(16, 16),
+                nn.Linear(32, 32),
                 nn.Tanh(),
-                nn.Linear(16, classes)
+                nn.Linear(32, classes)
             )
 
 
@@ -35,9 +35,9 @@ def main(args):
     net = FashionMNISTNetwork().to(args.device)
 
     methods = [
-        ('ibp', lambda: net.ibp(x - epsilon, x + epsilon)),
-        ('crown_ibp', lambda: net.crown_ibp_interval(x - epsilon, x + epsilon)),
-        ('crown', lambda: net.crown_interval(x - epsilon, x + epsilon))
+        ('ibp', net.ibp),
+        ('crown_ibp', net.crown_ibp_interval),
+        ('crown', net.crown_interval)
     ]
 
     for method_name, method in methods:
@@ -46,9 +46,10 @@ def main(args):
         for batch_size, iterations in [(100, 1000), (1000, 100), (10000, 10)]:
             x = torch.rand(batch_size, 28 * 28, device=args.device)
             epsilon = 0.1
-            exec_time = timeit.timeit(method, number=iterations)
+            exec_time = timeit.timeit(lambda: method(x - epsilon, x + epsilon), number=iterations)
+            out_size = method(x - epsilon, x + epsilon)[0].size()
 
-            print(f'Batch size: {batch_size}, iterations: {iterations}, execution time: {exec_time}')
+            print(f'Out size: {out_size}, iterations: {iterations}, execution time: {exec_time}')
 
 
 def parse_arguments():
