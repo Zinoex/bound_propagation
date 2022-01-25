@@ -1,7 +1,6 @@
-from typing import Union
+from typing import Union, Optional
 
 import torch
-import torch.nn.functional as F
 
 from torch import nn
 
@@ -65,19 +64,17 @@ def ibp_linear(class_or_obj):
         mid = (lower + upper) / 2
         diff = (upper - lower) / 2
 
-        weight = self.weight
-        abs_weight = torch.abs(weight)
-        bias = self.bias
+        # Unsqueeze and expand do NOT increase memory usage (expect for a few bytes)
+        weight = self.weight.unsqueeze(0).expand(mid.size(0), *self.weight.size())
 
-        w_mid = F.linear(mid, weight)
-        w_diff = F.linear(diff, abs_weight)
+        if self.bias is not None:
+            w_mid = torch.baddbmm(self.bias.unsqueeze(-1), weight, mid.unsqueeze(-1))[..., 0]
+        else:
+            w_mid = torch.bmm(weight, mid.unsqueeze(-1))[..., 0]
+        w_diff = torch.bmm(weight.abs(), diff.unsqueeze(-1))[..., 0]
 
         lower = w_mid - w_diff
         upper = w_mid + w_diff
-
-        if bias is not None:
-            lower += bias
-            upper += bias
 
         return lower, upper
 

@@ -99,10 +99,10 @@ def interval_bounds(bounds: LinearBounds, input_bounds: IntervalBounds) -> Inter
     mid = (lower + upper) / 2
     diff = (upper - lower) / 2
 
-    min_Omega_x = (torch.matmul(Omega_0, mid) - torch.matmul(torch.abs(Omega_0), diff))[..., 0]
-    max_Gamma_x = (torch.matmul(Gamma_0, mid) + torch.matmul(torch.abs(Gamma_0), diff))[..., 0]
+    min_Omega = (torch.baddbmm(Omega_accumulator.unsqueeze(-1), Omega_0, mid) - torch.bmm(Omega_0.abs(), diff))[..., 0]
+    max_Gamma = (torch.baddbmm(Gamma_accumulator.unsqueeze(-1), Gamma_0, mid) + torch.bmm(Gamma_0.abs(), diff))[..., 0]
 
-    return min_Omega_x + Omega_accumulator, max_Gamma_x + Gamma_accumulator
+    return min_Omega, max_Gamma
 
 
 def linear_bounds(model: nn.Sequential, alpha_betas: AlphaBetas, batch_size: int, out_size: int, device: torch.device) -> LinearBounds:
