@@ -177,10 +177,10 @@ def alpha_beta_general(layer_bound: LayerBound, func: TensorFunction, derivative
     LB, UB = layer_bound
     n, p, np = regimes(LB, UB)
 
-    alpha_lower_k = torch.zeros_like(LB)
-    alpha_upper_k = torch.zeros_like(LB)
-    beta_lower_k = torch.zeros_like(LB)
-    beta_upper_k = torch.zeros_like(LB)
+    alpha_lower = torch.zeros_like(LB)
+    alpha_upper = torch.zeros_like(LB)
+    beta_lower = torch.zeros_like(LB)
+    beta_upper = torch.zeros_like(LB)
 
     LB_act, UB_act = func(LB), func(UB)
     LB_prime, UB_prime = derivative(LB), derivative(UB)
@@ -191,46 +191,47 @@ def alpha_beta_general(layer_bound: LayerBound, func: TensorFunction, derivative
 
     slope = (UB_act - LB_act) / (UB - LB)
 
+    def add_linear(alpha, beta, mask, a, x, y, a_mask=True):
+        if a_mask:
+            a = a[mask]
+
+        alpha[mask] = a
+        beta[mask] = y[mask] - a * x[mask]
+
     ###################
     # Negative regime #
     ###################
     # Upper bound
     # - Exact slope between LB and UB
-    alpha_upper_k[n] = slope[n]
-    beta_upper_k[n] = UB_act[n] - alpha_upper_k[n] * UB[n]
+    add_linear(alpha_upper, beta_upper, mask=n, a=slope, x=UB, y=UB_act)
 
     # Lower bound
     # - d = (LB + UB) / 2 for midpoint
     # - Slope is sigma'(d) and it has to cross through sigma(d)
-    alpha_lower_k[n] = d_prime[n]
-    beta_lower_k[n] = d_act[n] - alpha_lower_k[n] * d[n]
+    add_linear(alpha_lower, beta_lower, mask=n, a=d_prime, x=d, y=d_act)
 
     ###################
     # Positive regime #
     ###################
     # Lower bound
     # - Exact slope between LB and UB
-    alpha_lower_k[p] = slope[p]
-    beta_lower_k[p] = LB_act[p] - alpha_lower_k[p] * LB[p]
+    add_linear(alpha_lower, beta_lower, mask=p, a=slope, x=LB, y=LB_act)
 
     # Upper bound
     # - d = (LB + UB) / 2 for midpoint
     # - Slope is sigma'(d) and it has to cross through sigma(d)
-    alpha_upper_k[p] = d_prime[p]
-    beta_upper_k[p] = d_act[p] - alpha_upper_k[p] * d[p]
+    add_linear(alpha_upper, beta_upper, mask=p, a=d_prime, x=d, y=d_act)
 
     #################
     # Crossing zero #
     #################
     # Upper bound #
-    UB_prime_at_LB = UB_prime * (LB - UB) + UB_act
-
     # If tangent to UB is below LB, then take direct slope between LB and UB
-    direct_upper = np & (UB_prime_at_LB <= 0)
-    alpha_upper_k[direct_upper] = slope[direct_upper]
+    direct_upper = np & (slope <= UB_prime)
+    add_linear(alpha_upper, beta_upper, mask=direct_upper, a=slope, x=LB, y=LB_act)
 
     # Else use bisection to find upper bound on slope.
-    implicit_upper = np & (UB_prime_at_LB > 0)
+    implicit_upper = np & (slope > UB_prime)
 
     def f_upper(d: torch.Tensor) -> torch.Tensor:
         a_slope = (func(d) - func(LB[implicit_upper])) / (d - LB[implicit_upper])
@@ -240,20 +241,16 @@ def alpha_beta_general(layer_bound: LayerBound, func: TensorFunction, derivative
     # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
     # Derivative of left bound will overapproximate the slope - hence a true bound
     d_upper, _ = bisection(torch.zeros_like(UB[implicit_upper]), UB[implicit_upper], f_upper)
-
     # Slope has to attach to (LB, sigma(LB))
-    alpha_upper_k[implicit_upper] = derivative(d_upper)
-    beta_upper_k[np] = LB_act[np] - alpha_upper_k[np] * LB[np]
+    add_linear(alpha_upper, beta_upper, mask=implicit_upper, a=derivative(d_upper), x=LB, y=LB_act, a_mask=False)
 
     # Lower bound #
-    LB_prime_at_UB = LB_prime * (UB - LB) + LB_act
-
     # If tangent to LB is above UB, then take direct slope between LB and UB
-    direct_lower = np & (LB_prime_at_UB >= 0)
-    alpha_lower_k[direct_lower] = slope[direct_lower]
+    direct_lower = np & (slope <= LB_prime)
+    add_linear(alpha_lower, beta_lower, mask=direct_lower, a=slope, x=UB, y=UB_act)
 
     # Else use bisection to find upper bound on slope.
-    implicit_lower = np & (LB_prime_at_UB < 0)
+    implicit_lower = np & (slope > LB_prime)
 
     def f_lower(d: torch.Tensor) -> torch.Tensor:
         a_slope = (func(UB[implicit_lower]) - func(d)) / (UB[implicit_lower] - d)
@@ -263,11 +260,10 @@ def alpha_beta_general(layer_bound: LayerBound, func: TensorFunction, derivative
     # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
     # Derivative of right bound will overapproximate the slope - hence a true bound
     _, d_lower = bisection(LB[implicit_lower], torch.zeros_like(LB[implicit_lower]), f_lower)
+    # Slope has to attach to (UB, sigma(UB))
+    add_linear(alpha_lower, beta_lower, mask=implicit_lower, a=derivative(d_lower), x=UB, y=UB_act, a_mask=False)
 
-    alpha_lower_k[implicit_lower] = derivative(d_lower)
-    beta_lower_k[np] = UB_act[np] - alpha_lower_k[np] * UB[np]
-
-    return (alpha_lower_k, alpha_upper_k), (beta_lower_k, beta_upper_k)
+    return (alpha_lower, alpha_upper), (beta_lower, beta_upper)
 
 
 def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int = 20) -> Tuple[torch.Tensor, torch.Tensor]:

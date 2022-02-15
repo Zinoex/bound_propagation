@@ -50,11 +50,12 @@ def train(net, args):
     transform, target_transform = construct_transform()
     train_data = datasets.FashionMNIST('../fashion_data', train=True, download=True,
                                        transform=transform, target_transform=target_transform)
-    train_loader = DataLoader(train_data, batch_size=100, shuffle=True, num_workers=8)
+    train_loader = DataLoader(train_data, batch_size=256, shuffle=True, num_workers=8)
 
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(net.parameters())
+    optimizer = torch.optim.AdamW(net.parameters(), lr=5e-4)
 
+    k = 1.0
     for epoch in trange(10):
 
         running_loss = 0.0
@@ -67,11 +68,11 @@ def train(net, args):
 
             cross_entropy = criterion(y_hat, y)
 
-            epsilon = 0.01
-            bounds = net.crown_ibp_interval(X - epsilon, X + epsilon)
-            margin = adversarial_prob_margin(bounds, y).mean()
+            epsilon = 0.05
+            bounds = net.crown_interval(X - epsilon, X + epsilon)
+            logit = adversarial_logit(bounds, y)
 
-            loss = cross_entropy - margin
+            loss = k * cross_entropy + (1 - k) * criterion(logit, y)
             loss.backward()
             optimizer.step()
 
@@ -82,6 +83,27 @@ def train(net, args):
                 print(f'[{epoch + 1}, {i + 1:3d}] loss: {running_loss / 100:.3f}, cross entropy: {running_cross_entropy / 100:.3f}')
                 running_loss = 0.0
                 running_cross_entropy = 0.0
+
+        k = max(k - 0.1, 0.5)
+
+
+@torch.no_grad()
+def test(net, args):
+    transform, target_transform = construct_transform()
+    test_data = datasets.FashionMNIST('../fashion_data', train=False, download=True,
+                                      transform=transform, target_transform=target_transform)
+    test_loader = DataLoader(test_data, batch_size=100, shuffle=False, num_workers=8)
+
+    correct = 0
+    for i, (X, y) in enumerate(test_loader):
+        X, y = X.to(args.device), y.to(args.device)
+
+        y_hat = net(X)
+
+        predicted = torch.argmax(y_hat, 1)
+        correct += (predicted == y).sum().item()
+
+    print(f'Accuracy: {correct / len(test_data):.3f}')
 
 
 # torch.no_grad() has a huge impact on the memory consumption (due to the need to store intermediate tensors)
@@ -106,15 +128,7 @@ def timing(net, args):
             print(f'Out size: {out_size}, iterations: {iterations}, execution time: {exec_time}')
 
 
-def create_specification(y, num_classes=10):
-    C = torch.zeros((y.size(0), num_classes, num_classes), device=y.device)
-    C[:, torch.eye(num_classes)] = -1
-    C[y] = 0
-
-    return C
-
-
-def adversarial_prob_margin(y_hat, y):
+def adversarial_logit(y_hat, y):
     y_hat_lower, y_hat_upper = y_hat
 
     batch_size = y.size(0)
@@ -124,7 +138,16 @@ def adversarial_prob_margin(y_hat, y):
     adversarial_logit = y_hat_upper
     adversarial_logit[y_index] = y_hat_lower[y_index]
 
-    probs = F.softmax(adversarial_logit, dim=1)
+    return adversarial_logit
+
+
+def adversarial_prob_margin(y_hat, y):
+    batch_size = y.size(0)
+    y_index = (torch.arange(batch_size, device=y.device), y)
+
+    logit = adversarial_logit(y_hat, y)
+
+    probs = F.softmax(logit, dim=1)
     label_probs = probs.gather(1, y.unsqueeze(1))
 
     others_mask = torch.ones_like(probs, dtype=torch.bool)
@@ -153,7 +176,7 @@ def verify(net, args):
         margin_sum = 0.0
         for i, (X, y) in enumerate(test_loader):
             X, y = X.to(args.device), y.to(args.device)
-            epsilon = 0.01
+            epsilon = 0.05
             y_hat = method(X - epsilon, X + epsilon)
             worst_margin = adversarial_prob_margin(y_hat, y)
 
@@ -166,6 +189,7 @@ def main(args):
     net = FashionMNISTNetwork().to(args.device)
 
     train(net, args)
+    test(net, args)
     # timing(net, args)
     verify(net, args)
 
