@@ -8,7 +8,7 @@ from .util import add_method, LinearBounds, IntervalBounds, LayerBounds, AlphaBe
 
 
 def crown(model: nn.Sequential):
-    def crown_linear(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor) -> LinearBounds:
+    def crown_linear(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, **kwargs) -> LinearBounds:
         add_alpha_beta_submodules(self)
         subnetwork_crown(self)
 
@@ -22,14 +22,14 @@ def crown(model: nn.Sequential):
 
         batch_size = lower.size(0)
         out_size = output_size(lower.size(-1), self)
-        bounds = linear_bounds(self, alpha_betas, batch_size, out_size, lower.device)
+        bounds = linear_bounds(self, alpha_betas, batch_size, out_size, lower.device, **kwargs)
 
         return bounds
 
     add_method(model, 'crown_linear', crown_linear)
 
-    def crown_interval(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
-        bounds = crown_linear(self, lower, upper)
+    def crown_interval(self: nn.Sequential, lower: torch.Tensor, upper: torch.Tensor, **kwargs) -> IntervalBounds:
+        bounds = crown_linear(self, lower, upper, **kwargs)
         return interval_bounds(bounds, (lower, upper))
 
     add_method(model, 'crown_interval', crown_interval)
@@ -85,8 +85,6 @@ def output_size(input_size: int, model: nn.Sequential) -> int:
 
 
 def interval_bounds(bounds: LinearBounds, input_bounds: IntervalBounds) -> IntervalBounds:
-    (Omega_0, Omega_accumulator), (Gamma_0, Gamma_accumulator) = bounds
-
     lower, upper = input_bounds
     lower, upper = lower.unsqueeze(-1), upper.unsqueeze(-1)
 
@@ -99,16 +97,28 @@ def interval_bounds(bounds: LinearBounds, input_bounds: IntervalBounds) -> Inter
     mid = (lower + upper) / 2
     diff = (upper - lower) / 2
 
-    min_Omega = (torch.baddbmm(Omega_accumulator.unsqueeze(-1), Omega_0, mid) - torch.bmm(Omega_0.abs(), diff))[..., 0]
-    max_Gamma = (torch.baddbmm(Gamma_accumulator.unsqueeze(-1), Gamma_0, mid) + torch.bmm(Gamma_0.abs(), diff))[..., 0]
+    Omega, Gamma = bounds
 
-    return min_Omega, max_Gamma
+    if Omega is not None:
+        Omega_0, Omega_accumulator = Omega
+        min_Omega_x = (Omega_0.matmul(mid) - Omega_0.abs().matmul(diff))[..., 0]
+        Omega = min_Omega_x + Omega_accumulator
+
+    if Gamma is not None:
+        Gamma_0, Gamma_accumulator = Gamma
+        max_Gamma_x = (Gamma_0.matmul(mid) + Gamma_0.abs().matmul(diff))[..., 0]
+        Gamma = max_Gamma_x + Gamma_accumulator
+
+    return Omega, Gamma
 
 
-def linear_bounds(model: nn.Sequential, alpha_betas: AlphaBetas, batch_size: int, out_size: int, device: torch.device) -> LinearBounds:
+def linear_bounds(model: nn.Sequential, alpha_betas: AlphaBetas, batch_size: int, out_size: int, device: torch.device,
+                  bound_lower=True, bound_upper=True) -> LinearBounds:
     # Compute bounds as two iterations to reduce memory consumption by half
-    return oneside_linear_bound(model, alpha_betas, batch_size, out_size, device, lower=True), \
-           oneside_linear_bound(model, alpha_betas, batch_size, out_size, device, lower=False)
+    lower = oneside_linear_bound(model, alpha_betas, batch_size, out_size, device, lower=True) if bound_lower else None
+    upper = oneside_linear_bound(model, alpha_betas, batch_size, out_size, device, lower=False) if bound_upper else None
+
+    return lower, upper
 
 
 def oneside_linear_bound(model: nn.Sequential, alpha_betas: AlphaBetas, batch_size: int, out_size: int, device: torch.device, **kwargs) -> LinearBound:
@@ -145,12 +155,25 @@ def crown_backward(class_or_obj):
 
 def crown_backward_linear(class_or_obj):
     def crown_backward(self: nn.Linear, W_tilde: torch.Tensor, alpha_beta: AlphaBeta, **kwargs) -> WeightBias:
-        if self.bias is None:
-            bias_acc = 0
-        else:
-            bias_acc = torch.matmul(W_tilde, self.bias)
+        bias = self.bias
+        weight = self.weight
 
-        W_tilde = torch.matmul(W_tilde, self.weight)
+        if bias is None:
+            bias_acc = 0
+        elif bias.dim() == 1:
+            bias_acc = W_tilde.matmul(bias)
+        else:
+            # This allows stochastic dynamics to be treated as an nn.Linear
+            bias = bias.view(bias.size(0), 1, bias.size(-1), 1)
+            bias_acc = W_tilde.matmul(bias)[..., 0]
+
+        if weight.dim() == 2:
+            W_tilde = W_tilde.matmul(weight)
+        else:
+            if W_tilde.dim() == 3:
+                W_tilde = W_tilde.unsqueeze(0)
+
+            W_tilde = W_tilde.matmul(weight.unsqueeze(1))
 
         return W_tilde, bias_acc
 
