@@ -61,20 +61,15 @@ def ibp_sequential(class_or_obj):
 
 def ibp_linear(class_or_obj):
     def ibp(self: nn.Linear, lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
-        mid = (lower + upper) / 2
-        diff = (upper - lower) / 2
+        center, diff = (lower + upper) / 2, (upper - lower) / 2
+        center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
 
-        # Unsqueeze and expand do NOT increase memory usage (expect for a few bytes)
-        weight = self.weight.unsqueeze(0).expand(mid.size(0), *self.weight.size())
+        weight = self.weight.transpose(-1, -2)
+        lower = center.matmul(weight) - diff.matmul(weight.abs()) + self.bias.unsqueeze(-2)
+        lower = lower.squeeze(-2)
 
-        if self.bias is not None:
-            w_mid = torch.baddbmm(self.bias.unsqueeze(-1), weight, mid.unsqueeze(-1))[..., 0]
-        else:
-            w_mid = torch.bmm(weight, mid.unsqueeze(-1))[..., 0]
-        w_diff = torch.bmm(weight.abs(), diff.unsqueeze(-1))[..., 0]
-
-        lower = w_mid - w_diff
-        upper = w_mid + w_diff
+        upper = center.matmul(weight) + diff.matmul(weight.abs()) + self.bias.unsqueeze(-2)
+        upper = upper.squeeze(-2)
 
         return lower, upper
 

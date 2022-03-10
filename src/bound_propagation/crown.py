@@ -86,7 +86,7 @@ def output_size(input_size: int, model: nn.Sequential) -> int:
 
 def interval_bounds(bounds: LinearBounds, input_bounds: IntervalBounds) -> IntervalBounds:
     lower, upper = input_bounds
-    lower, upper = lower.unsqueeze(-1), upper.unsqueeze(-1)
+    lower, upper = lower.unsqueeze(-2), upper.unsqueeze(-2)
 
     # We can do this instead of finding the Q-norm, as we only deal with perturbation over a hyperrectangular input,
     # and not an arbitrary B_p(epsilon) ball
@@ -101,13 +101,15 @@ def interval_bounds(bounds: LinearBounds, input_bounds: IntervalBounds) -> Inter
 
     if Omega is not None:
         Omega_0, Omega_accumulator = Omega
-        min_Omega_x = (Omega_0.matmul(mid) - Omega_0.abs().matmul(diff))[..., 0]
-        Omega = min_Omega_x + Omega_accumulator
+        Omega_0 = Omega_0.transpose(-1, -2)
+        Omega = mid.matmul(Omega_0) - diff.matmul(Omega_0.abs()) + Omega_accumulator.unsqueeze(-2)
+        Omega = Omega.squeeze(-2)
 
     if Gamma is not None:
         Gamma_0, Gamma_accumulator = Gamma
-        max_Gamma_x = (Gamma_0.matmul(mid) + Gamma_0.abs().matmul(diff))[..., 0]
-        Gamma = max_Gamma_x + Gamma_accumulator
+        Gamma_0 = Gamma_0.transpose(-1, -2)
+        Gamma = mid.matmul(Gamma_0) + diff.matmul(Gamma_0.abs()) + Gamma_accumulator.unsqueeze(-2)
+        Gamma = Gamma.squeeze(-2)
 
     return Omega, Gamma
 
@@ -159,13 +161,10 @@ def crown_backward_linear(class_or_obj):
         weight = self.weight
 
         if bias is None:
-            bias_acc = 0
-        elif bias.dim() == 1:
-            bias_acc = W_tilde.matmul(bias)
+            bias_acc = torch.tensor(0.0, device=W_tilde.device)
         else:
-            # This allows stochastic dynamics to be treated as an nn.Linear
-            bias = bias.view(bias.size(0), 1, bias.size(-1), 1)
-            bias_acc = W_tilde.matmul(bias)[..., 0]
+            bias = bias.unsqueeze(-2)
+            bias_acc = bias.matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
 
         if weight.dim() == 2:
             W_tilde = W_tilde.matmul(weight)
