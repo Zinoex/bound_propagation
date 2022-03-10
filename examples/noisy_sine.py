@@ -383,6 +383,7 @@ class Model(nn.Sequential):
 def train(model, args, eps=0.005):
     dataset = NoisySineDataset(dim=args.dim, train_size=2**12)
     X, y = dataset[:]
+    X, y = X.to(args.device), y.to(args.device)
 
     bounded_model = BoundSequential(model)
 
