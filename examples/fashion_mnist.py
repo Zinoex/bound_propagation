@@ -50,7 +50,7 @@ def train(net, args):
     transform, target_transform = construct_transform()
     train_data = datasets.FashionMNIST('../fashion_data', train=True, download=True,
                                        transform=transform, target_transform=target_transform)
-    train_loader = DataLoader(train_data, batch_size=256, shuffle=True, num_workers=8)
+    train_loader = DataLoader(train_data, batch_size=500, shuffle=True, num_workers=8)
 
     criterion = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(net.parameters(), lr=5e-4)
