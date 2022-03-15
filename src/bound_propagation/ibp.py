@@ -1,4 +1,4 @@
-from typing import Union, Optional
+from typing import Union, Optional, Tuple
 
 import torch
 
@@ -59,27 +59,32 @@ def ibp_sequential(class_or_obj):
     return class_or_obj
 
 
+@torch.jit.script
+def ibp_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    center, diff = (lower + upper) / 2, (upper - lower) / 2
+    center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
+
+    weight = weight.transpose(-1, -2)
+
+    w_mid = center.matmul(weight)
+    w_diff = diff.matmul(weight.abs())
+
+    lower = w_mid - w_diff
+    lower = lower.squeeze(-2)
+
+    upper = w_mid + w_diff
+    upper = upper.squeeze(-2)
+
+    if bias is not None:
+        lower = lower + bias
+        upper = upper + bias
+
+    return lower, upper
+
+
 def ibp_linear(class_or_obj):
     def ibp(self: nn.Linear, lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
-        center, diff = (lower + upper) / 2, (upper - lower) / 2
-        center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
-
-        weight = self.weight.transpose(-1, -2)
-
-        w_mid = center.matmul(weight)
-        w_diff = diff.matmul(weight.abs())
-
-        lower = w_mid - w_diff
-        lower = lower.squeeze(-2)
-
-        upper = w_mid + w_diff
-        upper = upper.squeeze(-2)
-
-        if self.bias is not None:
-            lower = lower + self.bias
-            upper = upper + self.bias
-
-        return lower, upper
+        return ibp_linear_jit(self.weight, self.bias, lower, upper)
 
     add_method(class_or_obj, 'ibp', ibp)
     return class_or_obj

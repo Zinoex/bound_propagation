@@ -155,26 +155,28 @@ def crown_backward(class_or_obj):
     raise NotImplementedError('Selected type of layer not supported')
 
 
+@torch.jit.script
+def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], W_tilde: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    if bias is None:
+        bias_acc = torch.tensor(0.0, device=W_tilde.device)
+    else:
+        bias = bias.unsqueeze(-2)
+        bias_acc = bias.matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
+
+    if weight.dim() == 2:
+        W_tilde = W_tilde.matmul(weight)
+    else:
+        if W_tilde.dim() == 3:
+            W_tilde = W_tilde.unsqueeze(0)
+
+        W_tilde = W_tilde.matmul(weight.unsqueeze(1))
+
+    return W_tilde, bias_acc
+
+
 def crown_backward_linear(class_or_obj):
     def crown_backward(self: nn.Linear, W_tilde: torch.Tensor, alpha_beta: AlphaBeta, **kwargs) -> WeightBias:
-        bias = self.bias
-        weight = self.weight
-
-        if bias is None:
-            bias_acc = torch.tensor(0.0, device=W_tilde.device)
-        else:
-            bias = bias.unsqueeze(-2)
-            bias_acc = bias.matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
-
-        if weight.dim() == 2:
-            W_tilde = W_tilde.matmul(weight)
-        else:
-            if W_tilde.dim() == 3:
-                W_tilde = W_tilde.unsqueeze(0)
-
-            W_tilde = W_tilde.matmul(weight.unsqueeze(1))
-
-        return W_tilde, bias_acc
+        return crown_backward_linear_jit(self.weight, self.bias, W_tilde)
 
     add_method(class_or_obj, 'crown_backward', crown_backward)
     return class_or_obj
@@ -191,7 +193,18 @@ def crown_backward_activation(class_or_obj):
     return class_or_obj
 
 
-def act_lower(Omega_tilde: torch.Tensor, alpha_beta: AlphaBeta) -> WeightBias:
+@torch.jit.script
+def _theta(Omega_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Omega_tilde < 0, beta_upper.unsqueeze(-2), beta_lower.unsqueeze(-2))
+
+
+@torch.jit.script
+def _omega(Omega_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Omega_tilde < 0, alpha_upper.unsqueeze(-2), alpha_lower.unsqueeze(-2))
+
+
+@torch.jit.script
+def act_lower(Omega_tilde: torch.Tensor, alpha_beta: Tuple[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
     (al_k, au_k), (bl_k, bu_k) = alpha_beta
 
     bias = torch.sum(Omega_tilde * _theta(Omega_tilde, bl_k, bu_k), dim=-1)
@@ -200,26 +213,21 @@ def act_lower(Omega_tilde: torch.Tensor, alpha_beta: AlphaBeta) -> WeightBias:
     return Omega_tilde, bias
 
 
-def _theta(Omega_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
-    return torch.where(Omega_tilde < 0, beta_upper.unsqueeze(-2), beta_lower.unsqueeze(-2))
+@torch.jit.script
+def _delta(Gamma_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Gamma_tilde < 0, beta_lower.unsqueeze(-2), beta_upper.unsqueeze(-2))
 
 
-def _omega(Omega_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
-    return torch.where(Omega_tilde < 0, alpha_upper.unsqueeze(-2), alpha_lower.unsqueeze(-2))
+@torch.jit.script
+def _lambda(Gamma_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(Gamma_tilde < 0, alpha_lower.unsqueeze(-2), alpha_upper.unsqueeze(-2))
 
 
-def act_upper(Gamma_tilde: torch.Tensor, alpha_beta: AlphaBeta) -> WeightBias:
+@torch.jit.script
+def act_upper(Gamma_tilde: torch.Tensor, alpha_beta: Tuple[Tuple[torch.Tensor, torch.Tensor], Tuple[torch.Tensor, torch.Tensor]]) -> Tuple[torch.Tensor, torch.Tensor]:
     (al_k, au_k), (bl_k, bu_k) = alpha_beta
 
     bias = torch.sum(Gamma_tilde * _delta(Gamma_tilde, bl_k, bu_k), dim=-1)
     Gamma_tilde = Gamma_tilde * _lambda(Gamma_tilde, al_k, au_k)
 
     return Gamma_tilde, bias
-
-
-def _delta(Gamma_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
-    return torch.where(Gamma_tilde < 0, beta_lower.unsqueeze(-2), beta_upper.unsqueeze(-2))
-
-
-def _lambda(Gamma_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
-    return torch.where(Gamma_tilde < 0, alpha_lower.unsqueeze(-2), alpha_upper.unsqueeze(-2))
