@@ -66,7 +66,7 @@ def ibp_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], lower: to
 
     weight = weight.transpose(-1, -2)
 
-    w_mid = center.matmul(weight)
+    w_mid = center.matmul(weight) + (bias.unsqueeze(-2) if bias is not None else torch.tensor(0.0, device=weight.device))
     w_diff = diff.matmul(weight.abs())
 
     lower = w_mid - w_diff
@@ -74,10 +74,6 @@ def ibp_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], lower: to
 
     upper = w_mid + w_diff
     upper = upper.squeeze(-2)
-
-    if bias is not None:
-        lower = lower + bias
-        upper = upper + bias
 
     return lower, upper
 
