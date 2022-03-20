@@ -3,7 +3,7 @@ import abc
 import torch
 from torch import nn
 
-from bound_propagation.bounds import LinearBounds, IntervalBounds
+from .bounds import LinearBounds, IntervalBounds
 
 
 class BoundModule(nn.Module, abc.ABC):

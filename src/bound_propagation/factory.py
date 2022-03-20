@@ -1,8 +1,9 @@
 from torch import nn
 
-from bound_propagation.activation import BoundReLU, BoundTanh, BoundSigmoid
-from bound_propagation.linear import BoundLinear
-from bound_propagation.sequential import BoundSequential
+from .activation import BoundReLU, BoundTanh, BoundSigmoid
+from .linear import BoundLinear
+from .residual import BoundResidual, Residual
+from .sequential import BoundSequential
 
 
 class BoundModelFactory:
@@ -18,7 +19,8 @@ class BoundModelFactory:
             nn.Linear: BoundLinear,
             nn.ReLU: BoundReLU,
             nn.Tanh: BoundTanh,
-            nn.Sigmoid: BoundSigmoid
+            nn.Sigmoid: BoundSigmoid,
+            Residual: BoundResidual
         }
 
         self.kwargs = kwargs

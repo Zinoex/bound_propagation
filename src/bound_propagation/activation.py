@@ -4,9 +4,9 @@ from typing import Tuple
 
 import torch
 
-from bound_propagation.general import BoundModule
-from bound_propagation.bounds import LinearBounds, IntervalBounds
-from bound_propagation.util import TensorFunction
+from .general import BoundModule
+from .bounds import LinearBounds, IntervalBounds
+from .util import TensorFunction
 
 
 def assert_bound_order(func, position=0, keyword='preactivation'):

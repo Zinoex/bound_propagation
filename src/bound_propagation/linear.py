@@ -2,9 +2,9 @@ from typing import Optional, Tuple
 
 import torch
 
-from bound_propagation.activation import assert_bound_order
-from bound_propagation.general import BoundModule
-from bound_propagation.bounds import LinearBounds, IntervalBounds
+from .activation import assert_bound_order
+from .general import BoundModule
+from .bounds import LinearBounds, IntervalBounds
 
 
 @torch.jit.script

@@ -15,6 +15,7 @@ from matplotlib import pyplot as plt, cm
 
 from bound_propagation.factory import BoundModelFactory
 from bound_propagation.bounds import HyperRectangle
+from bound_propagation.residual import Residual
 
 
 def bound_propagation(model, lower_x, upper_x):
@@ -228,8 +229,10 @@ class Model(nn.Sequential):
         super().__init__(
             nn.Linear(dim, 64),
             nn.Tanh(),
-            nn.Linear(64, 64),
-            nn.Tanh(),
+            Residual(nn.Sequential(
+                nn.Linear(64, 64),
+                nn.Tanh()
+            )),
             nn.Linear(64, 1)
         )
 
