@@ -84,7 +84,7 @@ def plot_partition(model, args, input_bounds, ibp_bounds, crown_bounds):
     y1, y2 = ibp_bounds.lower.item(), ibp_bounds.upper.item()
     y1, y2 = torch.full_like(x1, y1), torch.full_like(x1, y2)
 
-    surf = ax.plot_surface(x1, x2, y1, color='blue', label='CROWN interval', alpha=0.4)
+    surf = ax.plot_surface(x1, x2, y1, color='blue', label='IBP', alpha=0.4)
     surf._facecolors2d = surf._facecolor3d  # These are hax due to a bug in Matplotlib
     surf._edgecolors2d = surf._edgecolor3d
 
@@ -254,8 +254,7 @@ def train(model, args, eps=0.005):
         y_pred = model(X)
         loss = criterion(y_pred, y)
 
-        bounds = bounded_model.crown_ibp(HyperRectangle.from_eps(X, eps))
-        interval_bounds = bounds.concretize()
+        interval_bounds = bounded_model.ibp(HyperRectangle.from_eps(X, eps))
         loss = loss + torch.max(criterion(interval_bounds.lower, y), criterion(interval_bounds.upper, y))
 
         loss.backward()

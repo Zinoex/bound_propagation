@@ -37,8 +37,8 @@ class BoundResidual(BoundModule):
 
         return LinearBounds(
             linear_bounds.region,
-            (linear_bounds.lower[0] + residual_linear_bounds.lower[0], linear_bounds.lower[1] + residual_linear_bounds.lower[1]),
-            (linear_bounds.upper[0] + residual_linear_bounds.upper[0], linear_bounds.upper[1] + residual_linear_bounds.upper[1])
+            (linear_bounds.lower[0] + residual_linear_bounds.lower[0], residual_linear_bounds.lower[1]),
+            (linear_bounds.upper[0] + residual_linear_bounds.upper[0], residual_linear_bounds.upper[1])
         )
 
     def ibp_forward(self, bounds, save_relaxation=False):
