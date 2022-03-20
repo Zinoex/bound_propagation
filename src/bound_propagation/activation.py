@@ -1,59 +1,108 @@
-from abc import ABC, abstractmethod
+import abc
 from functools import wraps
 from typing import Tuple
 
 import torch
 
-from bound_propagation.general import BoundModule, IntervalBounds
+from bound_propagation.general import BoundModule
+from bound_propagation.bounds import LinearBounds, IntervalBounds
 from bound_propagation.util import TensorFunction
 
 
-class BoundActivation(BoundModule, ABC):
-    def __init__(self, module, **kwargs):
-        super().__init__(module, **kwargs)
+def assert_bound_order(func, position=0, keyword='preactivation'):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        if len(args) > position:
+            bounds = args[position]
+        else:
+            bounds = kwargs[keyword]
+
+        assert torch.isnan(bounds.lower).any() or torch.isnan(bounds.upper).any() or \
+               torch.all(bounds.lower <= bounds.upper + 1e-6)
+
+        return func(self, *args, **kwargs)
+
+    return wrapper
+
+
+@torch.jit.script
+def _delta(W_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(W_tilde < 0, beta_lower.unsqueeze(-2), beta_upper.unsqueeze(-2))
+
+
+@torch.jit.script
+def _lambda(W_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
+    return torch.where(W_tilde < 0, alpha_lower.unsqueeze(-2), alpha_upper.unsqueeze(-2))
+
+
+@torch.jit.script
+def crown_backward_act_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    bias = torch.sum(W_tilde * _delta(W_tilde, *beta), dim=-1)
+    W_tilde = W_tilde * _lambda(W_tilde, *alpha)
+
+    return W_tilde, bias
+
+
+class BoundActivation(BoundModule, abc.ABC):
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory, **kwargs)
 
         self.alpha_lower, self.beta_lower = None, None
         self.alpha_upper, self.beta_upper = None, None
         self.bounded = False
+        self.size = None
 
-    @abstractmethod
+    @abc.abstractmethod
     def alpha_beta(self, preactivation):
         pass
 
-    def clear_alpha_beta(self):
+    @property
+    def need_relaxation(self):
+        return not self.bounded
+
+    def set_relaxation(self, linear_bounds):
+        interval_bounds = linear_bounds.concretize()
+        self.alpha_beta(preactivation=interval_bounds)
+        self.bounded = True
+
+    def backward_relaxation(self, region):
+        assert self.size is not None
+
+        linear_bounds = self.initial_linear_bounds(region, self.size)
+        return linear_bounds, self
+
+    def clear_relaxation(self):
         self.alpha_lower, self.beta_lower = None, None
         self.alpha_upper, self.beta_upper = None, None
         self.bounded = False
 
-    def ibp(self, region, **kwargs):
-        return IntervalBounds(region, self.module(region.lower), self.module(region.upper))
-
-
-def assert_bounded(func):
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
+    def crown_backward(self, linear_bounds):
         assert self.bounded
-        return func(self, *args, **kwargs)
-    return wrapper
 
+        # NOTE: The order of alpha and beta are deliberately reverse - this is not a mistake!
+        alpha = self.alpha_upper, self.alpha_lower
+        beta = self.beta_upper, self.beta_lower
+        lower = crown_backward_act_jit(linear_bounds.lower[0], alpha, beta)
+        lower = (lower[0], lower[1] + linear_bounds.lower[1])
 
-def set_bounded(func):
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        self.bounded = True
-        return func(self, *args, **kwargs)
-    return wrapper
+        alpha = self.alpha_lower, self.alpha_upper
+        beta = self.beta_lower, self.beta_upper
+        upper = crown_backward_act_jit(linear_bounds.upper[0], alpha, beta)
+        upper = (upper[0], upper[1] + linear_bounds.upper[1])
 
+        return LinearBounds(linear_bounds.region, lower, upper)
 
-def assert_bound_order(func):
-    @wraps(func)
-    def wrapper(self, layer_bound, **kwargs):
-        LB, UB = layer_bound
-        assert torch.all(LB <= UB + 1e-6)
+    @assert_bound_order
+    def ibp_forward(self, bounds, save_relaxation=False):
+        if save_relaxation:
+            self.alpha_beta(preactivation=bounds)
+            self.bounded = True
 
-        return func(self, layer_bound, **kwargs)
+        return IntervalBounds(bounds, self.module(bounds.lower), self.module(bounds.upper))
 
-    return wrapper
+    def propagate_size(self, in_size):
+        self.size = in_size
+        return in_size
 
 
 def regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -65,11 +114,11 @@ def regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, tor
 
 
 class BoundReLU(BoundActivation):
-    def __init__(self, module, adaptive_relu=True, **kwargs):
-        super().__init__(module)
+    def __init__(self, module, factory, adaptive_relu=True, **kwargs):
+        super().__init__(module, factory)
         self.adaptive_relu = adaptive_relu
 
-    @set_bounded
+    @assert_bound_order
     def alpha_beta(self, preactivation):
         """
         See the source below for information on what adaptive ReLU means and how regimes of the input
@@ -91,13 +140,13 @@ class BoundReLU(BoundActivation):
         n, p, np = regimes(lower, upper)
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
-        self.alpha_upper, self.alpha_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+        self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
 
         self.alpha_lower[n], self.beta_lower[n] = 0, 0
-        self.alpha_upper[n], self.alpha_upper[n] = 0, 0
+        self.alpha_upper[n], self.beta_upper[n] = 0, 0
 
-        self.alpha_lower[p], self.beta_lower[p] = 1, 1
-        self.alpha_upper[p], self.alpha_upper[p] = 0, 0
+        self.alpha_lower[p], self.beta_lower[p] = 1, 0
+        self.alpha_upper[p], self.beta_upper[p] = 1, 0
 
         lower, upper = lower[np], upper[np]
 
@@ -108,15 +157,10 @@ class BoundReLU(BoundActivation):
         else:
             a = z
 
-        self.alpha_lower[p], self.beta_lower[p] = a, 0
-        self.alpha_upper[p], self.alpha_upper[p] = z, -lower * z
+        self.alpha_lower[np], self.beta_lower[np] = a, 0
+        self.alpha_upper[np], self.beta_upper[np] = z, -lower * z
 
-    @assert_bounded
-    def crown(self, region, **kwargs):
-        pass
-
-    @assert_bounded
-    def crown_ibp(self, region, **kwargs):
+    def crown_ibp(self, region):
         pass
 
 
@@ -127,6 +171,7 @@ class BoundSigmoid(BoundActivation):
     def derivative(self, x):
         return torch.sigmoid(x) * (1 - torch.sigmoid(x))
 
+    @assert_bound_order
     def alpha_beta(self, preactivation):
         """
             Function to compute upper and lower bounds for S-shaped activation functions.
@@ -153,7 +198,7 @@ class BoundSigmoid(BoundActivation):
         n, p, np = regimes(lower, upper)
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
-        self.alpha_upper, self.alpha_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+        self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
 
         lower_act, upper_act = self.func(lower), self.func(upper)
         lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
@@ -226,7 +271,7 @@ class BoundSigmoid(BoundActivation):
         implicit_lower = np & (slope > lower_prime)
 
         def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self.func(upper[implicit_lower]) - upper(d)) / (upper[implicit_lower] - d)
+            a_slope = (self.func(upper[implicit_lower]) - self.func(d)) / (upper[implicit_lower] - d)
             a_derivative = self.derivative(d)
             return a_derivative - a_slope
 
@@ -234,15 +279,7 @@ class BoundSigmoid(BoundActivation):
         # Derivative of right bound will over-approximate the slope - hence a true bound
         _, d_lower = bisection(lower[implicit_lower], torch.zeros_like(lower[implicit_lower]), f_lower)
         # Slope has to attach to (upper, sigma(upper))
-        add_linear(self.alpha_lower, self.beta_lower, mask=implicit_lower, a=self.derivative(d_lower), x=lower, y=upper_act, a_mask=False)
-
-    @assert_bounded
-    def crown(self, region, **kwargs):
-        pass
-
-    @assert_bounded
-    def crown_ibp(self, region, **kwargs):
-        pass
+        add_linear(self.alpha_lower, self.beta_lower, mask=implicit_lower, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
 
 
 def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int = 20) -> Tuple[torch.Tensor, torch.Tensor]:

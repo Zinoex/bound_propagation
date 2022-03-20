@@ -1,79 +1,76 @@
 import abc
 
+import torch
 from torch import nn
 
-
-class HyperRectangle:
-    def __init__(self, lower, upper):
-        self.lower, self.upper = lower, upper
-
-    @property
-    def width(self):
-        return self.upper - self.lower
-
-    @property
-    def center(self):
-        return (self.upper + self.lower) / 2
-
-    def __len__(self):
-        return self.lower.size(0)
-
-    @staticmethod
-    def from_eps(x, eps):
-        lower, upper = x - eps, x + eps
-        return HyperRectangle(lower, upper)
-
-
-class IntervalBounds(HyperRectangle):
-    def __init__(self, region, lower, upper):
-        super().__init__(lower, upper)
-        self.region = region
-
-
-class LinearBounds:
-    def __init__(self, region, lower, upper):
-        self.region = region
-        self.lower, self.upper = lower, upper
-
-    def concretize(self):
-        center, diff = self.region.center, self.region.width / 2
-        center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
-
-        if self.lower is not None:
-            slope, intercept = self.lower
-            slope = slope.transpose(-1, -2)
-            lower = center.matmul(slope) - diff.matmul(slope.abs()) + intercept.unsqueeze(-2)
-            lower = lower.squeeze(-2)
-        else:
-            lower = None
-
-        if self.upper is not None:
-            slope, intercept = self.upper
-            slope = slope.transpose(-1, -2)
-            upper = center.matmul(slope) + diff.matmul(slope.abs()) + intercept.unsqueeze(-2)
-            upper = upper.squeeze(-2)
-        else:
-            upper = None
-
-        return IntervalBounds(self.region, lower, upper)
+from bound_propagation.bounds import LinearBounds, IntervalBounds
 
 
 class BoundModule(nn.Module, abc.ABC):
-    def __init__(self, module, **kwargs):
+    def __init__(self, module, factory, **kwargs):
         super().__init__()
         self.module = module
 
+    def crown(self, region):
+        out_size = self.propagate_size(region.lower.size(-1))
+
+        while self.need_relaxation:
+            linear_bounds, module = self.backward_relaxation(region)
+            module.set_relaxation(linear_bounds)
+
+        linear_bounds = self.initial_linear_bounds(region, out_size)
+        linear_bounds = self.crown_backward(linear_bounds)
+        self.clear_relaxation()
+        return linear_bounds
+
+    def initial_linear_bounds(self, region, out_size):
+        W_tilde = torch.eye(out_size, device=region.lower.device)\
+            .unsqueeze(0).expand(region.lower.size(0), out_size, out_size)
+        bias = torch.zeros((1,), device=region.lower.device)
+
+        linear_bounds = LinearBounds(region, (W_tilde, bias), (W_tilde, bias))
+        return linear_bounds
+
+    @property
     @abc.abstractmethod
-    def crown(self, region, **kwargs):
+    def need_relaxation(self):
+        raise NotImplementedError()
+
+    def clear_relaxation(self):
+        pass
+
+    def set_relaxation(self, linear_bounds):
+        pass
+
+    def backward_relaxation(self, region):
         pass
 
     @abc.abstractmethod
-    def crown_ibp(self, region, **kwargs):
-        pass
+    def crown_backward(self, linear_bounds):
+        raise NotImplementedError()
+
+    def crown_ibp(self, region):
+        out_size = self.propagate_size(region.lower.size(-1))
+
+        bounds = IntervalBounds(region, region.lower, region.upper)
+        self.ibp_forward(bounds, save_relaxation=True)
+
+        linear_bounds = self.initial_linear_bounds(region, out_size)
+        linear_bounds = self.crown_backward(linear_bounds)
+        self.clear_relaxation()
+        return linear_bounds
+
+    def ibp(self, region):
+        bounds = IntervalBounds(region, region.lower, region.upper)
+        return self.ibp_forward(bounds)
 
     @abc.abstractmethod
-    def ibp(self, region, **kwargs):
-        pass
+    def ibp_forward(self, bounds, save_relaxation=False):
+        raise NotImplementedError()
+
+    @abc.abstractmethod
+    def propagate_size(self, in_size):
+        raise NotImplementedError()
 
     def forward(self, *args, **kwargs):
         return self.module(*args, **kwargs)

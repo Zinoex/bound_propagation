@@ -1,67 +1,48 @@
-from functools import wraps
-
 from torch import nn
 
-from bound_propagation.activation import BoundReLU, BoundTanh, BoundActivation
 from bound_propagation.general import BoundModule
-from bound_propagation.linear import BoundLinear
-
-
-def clear_bounded(func):
-    @wraps(func)
-    def wrapper(self, *args, **kwargs):
-        for module in self.bounded_sequential:
-            if isinstance(module, BoundActivation):
-                module.clear_alpha_beta()
-
-        return func(self, *args, **kwargs)
-    return wrapper
 
 
 class BoundSequential(BoundModule):
-    class_mapping = {
-        nn.Linear: BoundLinear,
-        nn.ReLU: BoundReLU,
-        nn.Tanh: BoundTanh,
-    }
-
-    def __init__(self, sequential, **kwargs):
-        super().__init__(sequential)
+    def __init__(self, sequential, factory, **kwargs):
+        super().__init__(sequential, factory)
         self.kwargs = kwargs
-        self.bound_sequential = nn.Sequential(*list(map(self.parse_module, sequential)))
+        self.bound_sequential = nn.Sequential(*list(map(factory.build, sequential)))
 
-    def parse_module(self, module):
-        for orig_class, bound_class in self.class_mapping.items():
-            if isinstance(module, orig_class):
-                return bound_class(module, **self.kwargs)
+    @property
+    def need_relaxation(self):
+        return any((module.need_relaxation for module in self.bound_sequential))
 
-        raise NotImplementedError('Module type not supported - add BoundModule for layer to class_mapping')
-
-    @clear_bounded
-    def crown(self, region, **kwargs):
-        pass
-
-    def _crown_backward(self, region, **kwargs):
-        pass
-
-
-    @clear_bounded
-    def crown_ibp(self, region, **kwargs):
-        self._crown_ibp_forward(region, **kwargs)
-        return self._crown_backward(region, **kwargs)
-
-    def _crown_ibp_forward(self, region, **kwargs):
-        bounds = region
+    def clear_relaxation(self):
         for module in self.bound_sequential:
-            if isinstance(module, BoundActivation):
-                module.alpha_beta(preactivation=bounds)
+            module.clear_relaxation()
 
-            bounds = module.ibp(bounds, **kwargs)
+    def backward_relaxation(self, region):
+        for i, module in enumerate(self.bound_sequential):
+            if module.need_relaxation:
+                linear_bounds, relaxation_module = module.backward_relaxation(region)
+                return self.subnetwork_crown_backward(self.bound_sequential[:i], linear_bounds), relaxation_module
 
-    def ibp(self, region, **kwargs):
-        bounds = region
+        assert False, 'At least one module needs relaxation'
+
+    def subnetwork_crown_backward(self, subnetwork, linear_bounds):
+        for module in list(reversed(subnetwork)):
+            linear_bounds = module.crown_backward(linear_bounds)
+
+        return linear_bounds
+
+    def crown_backward(self, linear_bounds):
+        return self.subnetwork_crown_backward(self.bound_sequential, linear_bounds)
+
+    def ibp_forward(self, bounds, save_relaxation=False):
         for module in self.bound_sequential:
-            bounds = module.ibp(bounds, **kwargs)
+            bounds = module.ibp_forward(bounds, save_relaxation=save_relaxation)
 
-        bounds.region = region
         return bounds
+
+    def propagate_size(self, in_size):
+        size = in_size
+        for module in self.bound_sequential:
+            size = module.propagate_size(size)
+
+        return size
