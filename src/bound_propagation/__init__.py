@@ -4,3 +4,4 @@ from .factory import BoundModelFactory
 from .general import BoundModule
 from .linear import BoundLinear
 from .sequential import BoundSequential
+from .residual import Residual, BoundResidual

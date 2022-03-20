@@ -5,7 +5,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setuptools.setup(
     name="bound_propagation",
-    version="0.1.5",
+    version="0.2.0",
     author="Frederik Baymler Mathiesen",
     author_email="frederik@baymler.com",
     description="Bound propagation in Pytorch",
