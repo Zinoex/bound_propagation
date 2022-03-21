@@ -22,12 +22,15 @@ class HyperRectangle:
         return HyperRectangle(lower, upper)
 
     def __getitem__(self, item):
-        return HyperRectangle(self.lower[item], self.upper[item])
+        return HyperRectangle(
+            self.lower[item] if self.lower is not None else None,
+            self.upper[item] if self.upper is not None else None
+        )
 
     def to(self, *args, **kwargs):
         return HyperRectangle(
-            self.lower.to(*args, **kwargs),
-            self.upper.to(*args, **kwargs)
+            self.lower.to(*args, **kwargs) if self.lower is not None else None,
+            self.upper.to(*args, **kwargs) if self.upper is not None else None
         )
 
     def cpu(self):
@@ -40,13 +43,17 @@ class IntervalBounds(HyperRectangle):
         self.region = region
 
     def __getitem__(self, item):
-        return IntervalBounds(self.region[item], self.lower[item], self.upper[item])
+        return IntervalBounds(
+            self.region[item],
+            self.lower[item] if self.lower is not None else None,
+            self.upper[item] if self.upper is not None else None
+        )
 
     def to(self, *args, **kwargs):
         return IntervalBounds(
             self.region.to(*args, **kwargs),
-            self.lower.to(*args, **kwargs),
-            self.upper.to(*args, **kwargs)
+            self.lower.to(*args, **kwargs) if self.lower is not None else None,
+            self.upper.to(*args, **kwargs) if self.upper is not None else None
         )
 
 
@@ -80,18 +87,23 @@ class LinearBounds:
     def __len__(self):
         return self.lower.size(0)
 
-    def __getitem__(self, item):
+    def __getitem__(self, idx):
+        if isinstance(idx, tuple) and len(idx) == 2 and idx[0] == Ellipsis:
+            bias_idx = idx[:-1]
+        else:
+            bias_idx = idx
+
         return LinearBounds(
-            self.region[item],
-            (self.lower[0][item], self.lower[1][item]),
-            (self.upper[0][item], self.upper[1][item])
+            self.region[idx],
+            (self.lower[0][idx], self.lower[1][bias_idx]) if self.lower is not None else None,
+            (self.upper[0][idx], self.upper[1][bias_idx]) if self.upper is not None else None
         )
 
     def to(self, *args, **kwargs):
         return LinearBounds(
             self.region.to(*args, **kwargs),
-            (self.lower[0].to(*args, **kwargs), self.lower[1].to(*args, **kwargs)),
-            (self.upper[0].to(*args, **kwargs), self.upper[1].to(*args, **kwargs))
+            (self.lower[0].to(*args, **kwargs), self.lower[1].to(*args, **kwargs)) if self.lower is not None else None,
+            (self.upper[0].to(*args, **kwargs), self.upper[1].to(*args, **kwargs)) if self.upper is not None else None
         )
 
     def cpu(self):
