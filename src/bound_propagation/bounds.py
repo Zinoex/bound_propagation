@@ -88,7 +88,7 @@ class LinearBounds:
         return self.lower.size(0)
 
     def __getitem__(self, idx):
-        if isinstance(idx, tuple) and len(idx) == 2 and idx[0] == Ellipsis:
+        if isinstance(idx, tuple) and len(idx) >= 2 and idx[0] == Ellipsis:
             bias_idx = idx[:-1]
         else:
             bias_idx = idx
