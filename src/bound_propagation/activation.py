@@ -104,7 +104,7 @@ class BoundActivation(BoundModule, abc.ABC):
             self.alpha_beta(preactivation=bounds)
             self.bounded = True
 
-        return IntervalBounds(bounds, self.module(bounds.lower), self.module(bounds.upper))
+        return IntervalBounds(bounds.region, self.module(bounds.lower), self.module(bounds.upper))
 
     def propagate_size(self, in_size):
         self.size = in_size
@@ -165,9 +165,6 @@ class BoundReLU(BoundActivation):
 
         self.alpha_lower[np], self.beta_lower[np] = a, 0
         self.alpha_upper[np], self.beta_upper[np] = z, -lower * z
-
-    def crown_ibp(self, region):
-        pass
 
 
 class BoundSigmoid(BoundActivation):
