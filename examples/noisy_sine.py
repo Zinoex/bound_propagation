@@ -38,8 +38,8 @@ def plot_bounds_1d(model, args):
 
     input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, lower_x, upper_x)
 
-    plt.figure(figsize=(6.4 * 2, 4.8 * 2))
-    plt.ylim(-4, 4)
+    plt.figure(figsize=(6.4 * 2, 3.6 * 2))
+    plt.ylim(-2.5, 4)
 
     for i in range(num_slices):
         x1, x2 = input_bounds.lower[i].item(), input_bounds.upper[i].item()
@@ -66,8 +66,8 @@ def plot_bounds_1d(model, args):
     plt.title(f'Bound propagation')
     plt.legend()
 
-    plt.show()
-    # plt.savefig(f'visualization/lbp.png', dpi=300)
+    # plt.show()
+    plt.savefig(f'visualization/lbp.pdf', bbox_inches='tight', dpi=300)
 
 
 def plot_partition(model, args, input_bounds, ibp_bounds, crown_bounds):
