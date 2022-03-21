@@ -1,6 +1,4 @@
 import os
-from functools import cached_property
-from typing import Tuple, Optional
 from argparse import ArgumentParser
 from math import sqrt
 
@@ -11,7 +9,7 @@ import torch
 from torch import distributions, nn, optim
 from torch.utils.data import TensorDataset
 
-from matplotlib import pyplot as plt, cm
+from matplotlib import pyplot as plt
 
 from bound_propagation.factory import BoundModelFactory
 from bound_propagation.bounds import HyperRectangle
@@ -47,8 +45,8 @@ def plot_bounds_1d(model, args):
         x1, x2 = input_bounds.lower[i].item(), input_bounds.upper[i].item()
         y1, y2 = ibp_bounds.lower[i].item(), ibp_bounds.upper[i].item()
 
-        plt.plot([x1, x2], [y1, y1], color='blue', label='IBP' if i == 0 else None)
-        plt.plot([x1, x2], [y2, y2], color='orange')
+        plt.plot([x1, x2], [y1, y1], color='blue', label='IBP lower' if i == 0 else None)
+        plt.plot([x1, x2], [y2, y2], color='orange', label='IBP upper' if i == 0 else None)
 
         y1, y2 = crown_bounds.lower[0][i, 0, 0] * x1 + crown_bounds.lower[1][i], crown_bounds.lower[0][i, 0, 0] * x2 + crown_bounds.lower[1][i]
         y3, y4 = crown_bounds.upper[0][i, 0, 0] * x1 + crown_bounds.upper[1][i], crown_bounds.upper[0][i, 0, 0] * x2 + crown_bounds.upper[1][i]
@@ -56,8 +54,8 @@ def plot_bounds_1d(model, args):
         y1, y2 = y1.item(), y2.item()
         y3, y4 = y3.item(), y4.item()
 
-        plt.plot([x1, x2], [y1, y2], color='green', label='CROWN' if i == 0 else None)
-        plt.plot([x1, x2], [y3, y4], color='red')
+        plt.plot([x1, x2], [y1, y2], color='green', label='CROWN lower' if i == 0 else None)
+        plt.plot([x1, x2], [y3, y4], color='red', label='CROWN upper' if i == 0 else None)
 
     X = torch.linspace(-2, 2, 1000, device=args.device).view(-1, 1)
     y = model(X)
