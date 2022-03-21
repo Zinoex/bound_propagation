@@ -288,14 +288,15 @@ class BoundSigmoid(BoundActivation):
         add_linear(self.alpha_lower, self.beta_lower, mask=implicit_lower, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
 
 
-def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int = 20) -> Tuple[torch.Tensor, torch.Tensor]:
+def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int = 10) -> Tuple[torch.Tensor, torch.Tensor]:
     midpoint = (l + h) / 2
 
     for _ in range(num_iter):
         y = f(midpoint)
 
-        l[y <= 0] = midpoint[y <= 0]
-        h[y > 0] = midpoint[y > 0]
+        msk = y <= 0
+        l[msk] = midpoint[msk]
+        h[~msk] = midpoint[~msk]
 
         midpoint = (l + h) / 2
 
