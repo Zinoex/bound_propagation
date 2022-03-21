@@ -35,11 +35,17 @@ class BoundResidual(BoundModule):
     def crown_backward(self, linear_bounds):
         residual_linear_bounds = self.subnetwork.crown_backward(linear_bounds)
 
-        return LinearBounds(
-            linear_bounds.region,
-            (linear_bounds.lower[0] + residual_linear_bounds.lower[0], residual_linear_bounds.lower[1]),
-            (linear_bounds.upper[0] + residual_linear_bounds.upper[0], residual_linear_bounds.upper[1])
-        )
+        if linear_bounds.lower is None:
+            lower = None
+        else:
+            lower = (linear_bounds.lower[0] + residual_linear_bounds.lower[0], residual_linear_bounds.lower[1])
+
+        if linear_bounds.upper is None:
+            upper = None
+        else:
+            upper = (linear_bounds.upper[0] + residual_linear_bounds.upper[0], residual_linear_bounds.upper[1])
+
+        return LinearBounds(linear_bounds.region, lower, upper)
 
     def ibp_forward(self, bounds, save_relaxation=False):
         residual_bounds = self.subnetwork.ibp_forward(bounds, save_relaxation=save_relaxation)

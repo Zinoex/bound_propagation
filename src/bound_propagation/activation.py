@@ -80,15 +80,21 @@ class BoundActivation(BoundModule, abc.ABC):
         assert self.bounded
 
         # NOTE: The order of alpha and beta are deliberately reverse - this is not a mistake!
-        alpha = self.alpha_upper, self.alpha_lower
-        beta = self.beta_upper, self.beta_lower
-        lower = crown_backward_act_jit(linear_bounds.lower[0], alpha, beta)
-        lower = (lower[0], lower[1] + linear_bounds.lower[1])
+        if linear_bounds.lower is None:
+            lower = None
+        else:
+            alpha = self.alpha_upper, self.alpha_lower
+            beta = self.beta_upper, self.beta_lower
+            lower = crown_backward_act_jit(linear_bounds.lower[0], alpha, beta)
+            lower = (lower[0], lower[1] + linear_bounds.lower[1])
 
-        alpha = self.alpha_lower, self.alpha_upper
-        beta = self.beta_lower, self.beta_upper
-        upper = crown_backward_act_jit(linear_bounds.upper[0], alpha, beta)
-        upper = (upper[0], upper[1] + linear_bounds.upper[1])
+        if linear_bounds.upper is None:
+            upper = None
+        else:
+            alpha = self.alpha_lower, self.alpha_upper
+            beta = self.beta_lower, self.beta_upper
+            upper = crown_backward_act_jit(linear_bounds.upper[0], alpha, beta)
+            upper = (upper[0], upper[1] + linear_bounds.upper[1])
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
