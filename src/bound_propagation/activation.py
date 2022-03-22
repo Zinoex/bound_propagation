@@ -159,7 +159,7 @@ class BoundReLU(BoundActivation):
         z = upper / (upper - lower)
         if self.adaptive_relu:
             # Utilize that bool->float conversion is true=1 and false=0
-            a = (upper >= torch.abs(lower)).to(torch.float)
+            a = (upper >= torch.abs(lower)).to(lower.dtype)
         else:
             a = z
 
