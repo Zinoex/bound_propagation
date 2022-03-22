@@ -13,6 +13,7 @@ from matplotlib import pyplot as plt
 
 from bound_propagation.factory import BoundModelFactory
 from bound_propagation.bounds import HyperRectangle
+from bound_propagation.parallel import Parallel
 from bound_propagation.residual import Residual
 
 
@@ -226,12 +227,10 @@ class Model(nn.Sequential):
     def __init__(self, dim=1):
         super().__init__(
             nn.Linear(dim, 64),
-            nn.Tanh(),
-            Residual(nn.Sequential(
-                nn.Linear(64, 64),
-                nn.Tanh()
-            )),
-            nn.Linear(64, 1)
+            nn.ReLU(),
+            nn.Linear(64, 64),
+            Parallel(nn.ReLU(), nn.Tanh()),
+            nn.Linear(128, 1)
         )
 
 
