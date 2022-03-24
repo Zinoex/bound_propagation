@@ -13,6 +13,7 @@ from matplotlib import pyplot as plt
 
 from bound_propagation.factory import BoundModelFactory
 from bound_propagation.bounds import HyperRectangle
+from bound_propagation.parallel import Parallel
 from bound_propagation.residual import Residual
 
 
@@ -66,8 +67,8 @@ def plot_bounds_1d(model, args):
     plt.title(f'Bound propagation')
     plt.legend()
 
-    # plt.show()
-    plt.savefig(f'visualization/lbp.pdf', bbox_inches='tight', dpi=300)
+    plt.show()
+    # plt.savefig(f'visualization/lbp.pdf', bbox_inches='tight', dpi=300)
 
 
 def plot_partition(model, args, input_bounds, ibp_bounds, crown_bounds):
@@ -226,11 +227,9 @@ class Model(nn.Sequential):
     def __init__(self, dim=1):
         super().__init__(
             nn.Linear(dim, 64),
-            nn.Tanh(),
-            Residual(nn.Sequential(
-                nn.Linear(64, 64),
-                nn.Tanh()
-            )),
+            nn.ReLU(),
+            nn.Linear(64, 64),
+            Parallel(nn.ReLU(), nn.Tanh(), split_size=32),
             nn.Linear(64, 1)
         )
 
