@@ -67,8 +67,8 @@ def plot_bounds_1d(model, args):
     plt.title(f'Bound propagation')
     plt.legend()
 
-    # plt.show()
-    plt.savefig(f'visualization/lbp.pdf', bbox_inches='tight', dpi=300)
+    plt.show()
+    # plt.savefig(f'visualization/lbp.pdf', bbox_inches='tight', dpi=300)
 
 
 def plot_partition(model, args, input_bounds, ibp_bounds, crown_bounds):
@@ -229,8 +229,8 @@ class Model(nn.Sequential):
             nn.Linear(dim, 64),
             nn.ReLU(),
             nn.Linear(64, 64),
-            Parallel(nn.ReLU(), nn.Tanh()),
-            nn.Linear(128, 1)
+            Parallel(nn.ReLU(), nn.Tanh(), split_size=32),
+            nn.Linear(64, 1)
         )
 
 
