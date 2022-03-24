@@ -78,7 +78,7 @@ class BoundParallel(BoundModule):
             else:
                 lowerA = residual_linear_bounds1.lower[0] + residual_linear_bounds2.lower[0]
 
-            lower = (lowerA, residual_linear_bounds1.lower[1] + residual_linear_bounds2.lower[1])
+            lower = (lowerA, residual_linear_bounds1.lower[1] + residual_linear_bounds2.lower[1] - linear_bounds.lower[1])
 
         if linear_bounds.upper is None:
             upper = None
@@ -88,7 +88,7 @@ class BoundParallel(BoundModule):
             else:
                 upperA = residual_linear_bounds1.upper[0] + residual_linear_bounds2.upper[0]
 
-            upper = (upperA, residual_linear_bounds1.upper[1] + residual_linear_bounds2.upper[1])
+            upper = (upperA, residual_linear_bounds1.upper[1] + residual_linear_bounds2.upper[1] - linear_bounds.lower[1])
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
