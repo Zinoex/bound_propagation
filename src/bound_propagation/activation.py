@@ -306,3 +306,22 @@ class BoundTanh(BoundSigmoid):
 
     def derivative(self, x):
         return 1 - torch.tanh(x) ** 2
+
+
+class BoundIdentity(BoundModule):
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory, **kwargs)
+
+    @property
+    def need_relaxation(self):
+        return False
+
+    def crown_backward(self, linear_bounds):
+        return linear_bounds
+
+    @assert_bound_order
+    def ibp_forward(self, bounds, save_relaxation=False):
+        return bounds
+
+    def propagate_size(self, in_size):
+        return in_size
