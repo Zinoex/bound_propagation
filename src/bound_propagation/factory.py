@@ -1,10 +1,11 @@
 from torch import nn
 
-from .activation import BoundReLU, BoundTanh, BoundSigmoid
+from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity
 from .cat import BoundCat, Cat
 from .linear import BoundLinear
 from .parallel import BoundParallel, Parallel
 from .residual import BoundResidual, Residual
+from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
 
 
@@ -22,9 +23,11 @@ class BoundModelFactory:
             nn.ReLU: BoundReLU,
             nn.Tanh: BoundTanh,
             nn.Sigmoid: BoundSigmoid,
+            nn.Identity: BoundIdentity,
             Residual: BoundResidual,
             Cat: BoundCat,
-            Parallel: BoundParallel
+            Parallel: BoundParallel,
+            Clamp: BoundClamp
         }
 
         self.kwargs = kwargs
