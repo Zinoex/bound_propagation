@@ -26,19 +26,12 @@ def assert_bound_order(func, position=0, keyword='preactivation'):
 
 
 @torch.jit.script
-def _delta(W_tilde: torch.Tensor, beta_lower: torch.Tensor, beta_upper: torch.Tensor) -> torch.Tensor:
-    return torch.where(W_tilde < 0, beta_lower.unsqueeze(-2), beta_upper.unsqueeze(-2))
-
-
-@torch.jit.script
-def _lambda(W_tilde: torch.Tensor, alpha_lower: torch.Tensor, alpha_upper: torch.Tensor) -> torch.Tensor:
-    return torch.where(W_tilde < 0, alpha_lower.unsqueeze(-2), alpha_upper.unsqueeze(-2))
-
-
-@torch.jit.script
 def crown_backward_act_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
-    bias = torch.sum(W_tilde * _delta(W_tilde, *beta), dim=-1)
-    W_tilde = W_tilde * _lambda(W_tilde, *alpha)
+    _lambda = torch.where(W_tilde < 0, alpha[0].unsqueeze(-2), alpha[1].unsqueeze(-2))
+    _delta = torch.where(W_tilde < 0, beta[0].unsqueeze(-2), beta[1].unsqueeze(-2))
+
+    bias = torch.sum(W_tilde * _delta, dim=-1)
+    W_tilde = W_tilde * _lambda
 
     return W_tilde, bias
 
