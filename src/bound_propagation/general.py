@@ -14,9 +14,12 @@ class BoundModule(nn.Module, abc.ABC):
     def crown(self, region, bound_lower=True, bound_upper=True):
         out_size = self.propagate_size(region.lower.size(-1))
 
-        while self.need_relaxation:
-            linear_bounds, module = self.backward_relaxation(region)
-            module.set_relaxation(linear_bounds)
+        # No grad for relaxations improves accuracy and stabilizes training
+        # for CROWN
+        with torch.no_grad():
+            while self.need_relaxation:
+                linear_bounds, module = self.backward_relaxation(region)
+                module.set_relaxation(linear_bounds)
 
         linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
         linear_bounds = self.crown_backward(linear_bounds)
@@ -56,8 +59,11 @@ class BoundModule(nn.Module, abc.ABC):
     def crown_ibp(self, region, bound_lower=True, bound_upper=True):
         out_size = self.propagate_size(region.lower.size(-1))
 
-        bounds = IntervalBounds(region, region.lower, region.upper)
-        self.ibp_forward(bounds, save_relaxation=True)
+        # No grad for relaxations improves accuracy
+        # CROWN-IBP is already stable in training
+        with torch.no_grad():
+            bounds = IntervalBounds(region, region.lower, region.upper)
+            self.ibp_forward(bounds, save_relaxation=True)
 
         linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
         linear_bounds = self.crown_backward(linear_bounds)
