@@ -78,3 +78,12 @@ class BoundModule(nn.Module, abc.ABC):
 
     def forward(self, *args, **kwargs):
         return self.module(*args, **kwargs)
+
+    def state_dict(self, destination=None, prefix='', keep_vars=False):
+        return self.module.state_dict(destination=destination, prefix=prefix, keep_vars=keep_vars)
+
+    def load_state_dict(self, state_dict: 'OrderedDict[str, Tensor]', strict: bool = True):
+        # Assume that submodules are constructed with the factory, since that produces
+        # references down the bound module graph corresponding to the model graph.
+        # Then loading the state dict at the top level automatically populates the weights in all sub-bound modules.
+        self.module.load_state_dict(state_dict=state_dict, strict=strict)
