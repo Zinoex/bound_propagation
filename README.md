@@ -126,6 +126,7 @@ The return signature of `backward_relaxation` is `linear_bounds, relaxation_modu
 Finally, we get to the IBP forward and CROWN backward propagations themselves.
 IBP forward is straightforward using interval arithmetic with the exception that you <span style="color:red">must call `bounds.region`</span> as the first parameter on `IntervalBounds` (and `LinearBounds` too).
 If not the memory usage will be excessive.
+IBP forward must also propagate `save_relaxation` and if a relaxation is needed for a module the relaxation must be constructed when IBP forward is called - this is to support CROWN-IBP.
 `crown_backward` has two components: updating linear bounds backwards and potentially adding to the bias accumulator.
 The structure depends largely on how the nn.Module is, but addition can be done as shown below for `Residual`.
 I recommend that you look at [activation.py](https://github.com/Zinoex/bound_propagation/blob/main/src/bound_propagation/activation.py), [linear.py](https://github.com/Zinoex/bound_propagation/blob/main/src/bound_propagation/linear.py), and [cat.py](https://github.com/Zinoex/bound_propagation/blob/main/src/bound_propagation/cat.py) to see how design `crown_backward`.
