@@ -104,12 +104,13 @@ class BoundActivation(BoundModule, abc.ABC):
         return in_size
 
 
-def regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    n = upper <= 0
-    p = 0 <= lower
-    np = (lower < 0) & (0 < upper)
+def regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    zero_width = torch.isclose(lower, upper, rtol=0.0, atol=1e-8)
+    n = (~zero_width) & (upper <= 0)
+    p = (~zero_width) & (0 <= lower)
+    np = (~zero_width) & (lower < 0) & (0 < upper)
 
-    return n, p, np
+    return zero_width, n, p, np
 
 
 class BoundReLU(BoundActivation):
@@ -136,10 +137,15 @@ class BoundReLU(BoundActivation):
         :param preactivation:
         """
         lower, upper = preactivation.lower, preactivation.upper
-        n, p, np = regimes(lower, upper)
+        zero_width, n, p, np = regimes(lower, upper)
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
         self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+
+        # Use upper and lower in the bias to account for a small numerical difference between lower and upper
+        # which ought to be negligible, but may still be present due to torch.isclose.
+        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
+        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
         self.alpha_lower[n], self.beta_lower[n] = 0, 0
         self.alpha_upper[n], self.beta_upper[n] = 0, 0
@@ -191,10 +197,15 @@ class BoundSigmoid(BoundActivation):
         :param preactivation:
         """
         lower, upper = preactivation.lower, preactivation.upper
-        n, p, np = regimes(lower, upper)
+        zero_width, n, p, np = regimes(lower, upper)
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
         self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+
+        # Use upper and lower in the bias to account for a small numerical difference between lower and upper
+        # which ought to be negligible, but may still be present due to torch.isclose.
+        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
+        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
         lower_act, upper_act = self.func(lower), self.func(upper)
         lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)

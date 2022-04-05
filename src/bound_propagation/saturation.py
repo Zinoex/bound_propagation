@@ -20,33 +20,34 @@ class Clamp(nn.Module):
         return x.clamp(min=self.min, max=self.max)
 
 
-def regimes(lower: torch.Tensor, upper: torch.Tensor, min: Optional[Union[Tensor, float]], max: Optional[Union[Tensor, float]]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def regimes(lower: torch.Tensor, upper: torch.Tensor, min: Optional[Union[Tensor, float]], max: Optional[Union[Tensor, float]]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     flat_lower = torch.full_like(lower, False, dtype=torch.bool)
     flat_upper = torch.full_like(lower, False, dtype=torch.bool)
     slope = torch.full_like(lower, False, dtype=torch.bool)
     lower_bend = torch.full_like(lower, False, dtype=torch.bool)
     upper_bend = torch.full_like(lower, False, dtype=torch.bool)
     full_range = torch.full_like(lower, False, dtype=torch.bool)
+    zero_width = torch.isclose(lower, upper, rtol=0.0, atol=1e-8)
 
     tautology = torch.full_like(lower, True, dtype=torch.bool)
 
     if min is not None:
-        flat_lower |= upper <= min
-        lower_bend |= (lower < min) & (upper > min) & (tautology if max is None else (upper < max))
+        flat_lower |= (~zero_width) & (upper <= min)
+        lower_bend |= (~zero_width) & (lower < min) & (upper > min) & (tautology if max is None else (upper < max))
     else:
-        slope |= (upper <= max)
+        slope |= (~zero_width) & (upper <= max)
 
     if max is not None:
-        flat_upper |= lower >= max
-        upper_bend |= (lower < max) & (upper > max) & (tautology if min is None else (lower > min))
+        flat_upper |= (~zero_width) & (lower >= max)
+        upper_bend |= (~zero_width) & (lower < max) & (upper > max) & (tautology if min is None else (lower > min))
     else:
-        slope |= (lower >= min)
+        slope |= (~zero_width) & (lower >= min)
 
     if min is not None and max is not None:
-        full_range |= (lower < min) & (upper > max)
-        slope |= (lower >= min) & (upper <= max)
+        full_range |= (~zero_width) & (lower < min) & (upper > max)
+        slope |= (~zero_width) & (lower >= min) & (upper <= max)
 
-    return flat_lower, flat_upper, slope, lower_bend, upper_bend, full_range
+    return zero_width, flat_lower, flat_upper, slope, lower_bend, upper_bend, full_range
 
 
 class BoundClamp(BoundActivation):
@@ -63,10 +64,15 @@ class BoundClamp(BoundActivation):
         :param preactivation:
         """
         lower, upper = preactivation.lower, preactivation.upper
-        flat_lower, flat_upper, slope, lower_bend, upper_bend, full_range = regimes(lower, upper, self.module.min, self.module.max)
+        zero_width, flat_lower, flat_upper, slope, lower_bend, upper_bend, full_range = regimes(lower, upper, self.module.min, self.module.max)
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
         self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+
+        # Use upper and lower in the bias to account for a small numerical difference between lower and upper
+        # which ought to be negligible, but may still be present due to torch.isclose.
+        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
+        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
         # Flat lower
         self.alpha_lower[flat_lower], self.beta_lower[flat_lower] = 0, self.module.min or 0

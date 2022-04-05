@@ -7,7 +7,6 @@ numpy
 matplotlib
 seaborn
 torch
-torchvision
 PyHamcrest
 sphinxcontrib-katex
 
