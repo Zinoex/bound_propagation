@@ -9,12 +9,9 @@ from torchvision import datasets
 from torchvision.transforms import transforms
 from tqdm import trange
 
-from bound_propagation import crown, crown_ibp, ibp
+from bound_propagation import BoundModelFactory, HyperRectangle
 
 
-@crown
-@crown_ibp
-@ibp
 class FashionMNISTNetwork(nn.Sequential):
     def __init__(self, *args):
         if args:
@@ -47,6 +44,9 @@ def construct_transform():
 
 
 def train(net, args):
+    print('')
+    print('[TRAINING]')
+
     transform, target_transform = construct_transform()
     train_data = datasets.FashionMNIST('../fashion_data', train=True, download=True,
                                        transform=transform, target_transform=target_transform)
@@ -68,8 +68,7 @@ def train(net, args):
 
             cross_entropy = criterion(y_hat, y)
 
-            epsilon = 0.05
-            bounds = net.crown_interval(X - epsilon, X + epsilon)
+            bounds = net.crown_ibp(HyperRectangle.from_eps(X, 0.01)).concretize()
             logit = adversarial_logit(bounds, y)
 
             loss = k * cross_entropy + (1 - k) * criterion(logit, y)
@@ -89,6 +88,9 @@ def train(net, args):
 
 @torch.no_grad()
 def test(net, args):
+    print('')
+    print('[TEST]')
+
     transform, target_transform = construct_transform()
     test_data = datasets.FashionMNIST('../fashion_data', train=False, download=True,
                                       transform=transform, target_transform=target_transform)
@@ -110,10 +112,13 @@ def test(net, args):
 # so if you don't need gradients (e.g. for verifying but not training) then do use it to allow larger batch sizes
 @torch.no_grad()
 def timing(net, args):
+    print('')
+    print('[TIMING]')
+
     methods = [
         ('ibp', net.ibp),
-        ('crown_ibp', net.crown_ibp_interval),
-        ('crown', net.crown_interval)
+        ('crown_ibp', lambda x: net.crown_ibp(x).concretize()),
+        ('crown', lambda x: net.crown(x).concretize())
     ]
 
     for method_name, method in methods:
@@ -121,22 +126,20 @@ def timing(net, args):
 
         for batch_size, iterations in [(10, 1000), (100, 100), (1000, 10)]:
             x = torch.rand(batch_size, 28 * 28, device=args.device)
-            epsilon = 0.1
-            exec_time = timeit.timeit(lambda: method(x - epsilon, x + epsilon), number=iterations)
-            out_size = method(x - epsilon, x + epsilon)[0].size()
+            x = HyperRectangle.from_eps(x, 0.01)
+            exec_time = timeit.timeit(lambda: method(x), number=iterations)
+            out_size = method(x).lower.size()
 
             print(f'Out size: {out_size}, iterations: {iterations}, execution time: {exec_time}')
 
 
 def adversarial_logit(y_hat, y):
-    y_hat_lower, y_hat_upper = y_hat
-
     batch_size = y.size(0)
-    y_index = (torch.arange(batch_size, device=y.device), y)
+    classes = torch.arange(10, device=y.device).unsqueeze(0).expand(batch_size, -1)
+    mask = (classes == y.unsqueeze(-1)).to(dtype=y_hat.lower.dtype)
 
     # Take upper bound for logit of all but the correct class where you take the lower bound
-    adversarial_logit = y_hat_upper
-    adversarial_logit[y_index] = y_hat_lower[y_index]
+    adversarial_logit = (1 - mask) * y_hat.upper + mask * y_hat.lower
 
     return adversarial_logit
 
@@ -159,10 +162,13 @@ def adversarial_prob_margin(y_hat, y):
 
 @torch.no_grad()
 def verify(net, args):
+    print('')
+    print('[VERIFY]')
+
     methods = [
         ('ibp', net.ibp),
-        ('crown_ibp', net.crown_ibp_interval),
-        ('crown', net.crown_interval)
+        ('crown_ibp', lambda x: net.crown_ibp(x).concretize()),
+        ('crown', lambda x: net.crown(x).concretize())
     ]
 
     transform, target_transform = construct_transform()
@@ -176,8 +182,8 @@ def verify(net, args):
         margin_sum = 0.0
         for i, (X, y) in enumerate(test_loader):
             X, y = X.to(args.device), y.to(args.device)
-            epsilon = 0.05
-            y_hat = method(X - epsilon, X + epsilon)
+            X = HyperRectangle.from_eps(X, 0.01)
+            y_hat = method(X)
             worst_margin = adversarial_prob_margin(y_hat, y)
 
             margin_sum += worst_margin.sum().item()
@@ -188,9 +194,12 @@ def verify(net, args):
 def main(args):
     net = FashionMNISTNetwork().to(args.device)
 
+    factory = BoundModelFactory()
+    net = factory.build(net)
+
     train(net, args)
     test(net, args)
-    # timing(net, args)
+    timing(net, args)
     verify(net, args)
 
 
