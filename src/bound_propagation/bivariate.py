@@ -1,3 +1,4 @@
+import torch
 from torch import nn
 
 from .general import BoundModule
@@ -104,18 +105,19 @@ class BoundSub(BoundModule):
             return self.bound_network2.backward_relaxation(region)
 
     def crown_backward(self, linear_bounds):
-        linear_bounds1 = self.bound_network1.crown_backward(linear_bounds)
-        linear_bounds2 = self.bound_network2.crown_backward(linear_bounds)
+        assert linear_bounds.lower is not None and linear_bounds.upper is not None, 'bound_lower=False and bound_upper=False cannot be used with Sub'
 
-        if linear_bounds.lower is None:
-            lower = None
-        else:
-            lower = (linear_bounds1.lower[0] - linear_bounds2.lower[0], linear_bounds1.lower[1] - linear_bounds2.lower[1] + linear_bounds.lower[1])
+        input_bounds = LinearBounds(
+            linear_bounds.region,
+            (linear_bounds.lower[0], torch.zeros_like(linear_bounds.lower[1])) if linear_bounds.lower is not None else None,
+            (linear_bounds.upper[0], torch.zeros_like(linear_bounds.upper[1])) if linear_bounds.upper is not None else None,
+        )
 
-        if linear_bounds.upper is None:
-            upper = None
-        else:
-            upper = (linear_bounds1.upper[0] - linear_bounds2.upper[0], linear_bounds1.upper[1] - linear_bounds2.upper[1] + linear_bounds.upper[1])
+        linear_bounds1 = self.bound_network1.crown_backward(input_bounds)
+        linear_bounds2 = self.bound_network2.crown_backward(input_bounds)
+
+        lower = (linear_bounds1.lower[0] - linear_bounds2.upper[0], linear_bounds1.lower[1] - linear_bounds2.upper[1] + linear_bounds.lower[1])
+        upper = (linear_bounds1.upper[0] - linear_bounds2.lower[0], linear_bounds1.upper[1] - linear_bounds2.lower[1] + linear_bounds.upper[1])
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
