@@ -11,15 +11,23 @@ class BoundModule(nn.Module, abc.ABC):
         super().__init__()
         self.module = module
 
-    def crown(self, region, bound_lower=True, bound_upper=True):
+    @torch.no_grad()
+    def crown_relax(self, region):
+        # No grad for relaxations improves accuracy and stabilizes training for CROWN.
+        while self.need_relaxation:
+            linear_bounds, module = self.backward_relaxation(region)
+            module.set_relaxation(linear_bounds)
+
+    @torch.no_grad()
+    def ibp_relax(self, region):
+        # No grad for relaxations improves accuracy. CROWN-IBP is already stable in training.
+        bounds = IntervalBounds(region, region.lower, region.upper)
+        self.ibp_forward(bounds, save_relaxation=True)
+
+    def crown_with_relaxation(self, relax, region, bound_lower, bound_upper):
         out_size = self.propagate_size(region.lower.size(-1))
 
-        # No grad for relaxations improves accuracy and stabilizes training
-        # for CROWN
-        with torch.no_grad():
-            while self.need_relaxation:
-                linear_bounds, module = self.backward_relaxation(region)
-                module.set_relaxation(linear_bounds)
+        relax(region)
 
         linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
         linear_bounds = self.crown_backward(linear_bounds)
@@ -38,6 +46,12 @@ class BoundModule(nn.Module, abc.ABC):
         linear_bounds = LinearBounds(region, lower, upper)
         return linear_bounds
 
+    def crown(self, region, bound_lower=True, bound_upper=True):
+        return self.crown_with_relaxation(self.crown_relax, region, bound_lower, bound_upper)
+
+    def crown_ibp(self, region, bound_lower=True, bound_upper=True):
+        return self.crown_with_relaxation(self.ibp_relax, region, bound_lower, bound_upper)
+
     @property
     @abc.abstractmethod
     def need_relaxation(self):
@@ -55,20 +69,6 @@ class BoundModule(nn.Module, abc.ABC):
     @abc.abstractmethod
     def crown_backward(self, linear_bounds):
         raise NotImplementedError()
-
-    def crown_ibp(self, region, bound_lower=True, bound_upper=True):
-        out_size = self.propagate_size(region.lower.size(-1))
-
-        # No grad for relaxations improves accuracy
-        # CROWN-IBP is already stable in training
-        with torch.no_grad():
-            bounds = IntervalBounds(region, region.lower, region.upper)
-            self.ibp_forward(bounds, save_relaxation=True)
-
-        linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
-        linear_bounds = self.crown_backward(linear_bounds)
-        self.clear_relaxation()
-        return linear_bounds
 
     def ibp(self, region):
         bounds = IntervalBounds(region, region.lower, region.upper)
