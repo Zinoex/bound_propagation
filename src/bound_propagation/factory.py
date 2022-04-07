@@ -1,6 +1,7 @@
 from torch import nn
 
 from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity
+from .bivariate import BoundAdd, Add, BoundSub, Sub
 from .cat import BoundCat, Cat
 from .linear import BoundLinear
 from .parallel import BoundParallel, Parallel
@@ -24,6 +25,8 @@ class BoundModelFactory:
             nn.Tanh: BoundTanh,
             nn.Sigmoid: BoundSigmoid,
             nn.Identity: BoundIdentity,
+            Add: BoundAdd,
+            Sub: BoundSub,
             Residual: BoundResidual,
             Cat: BoundCat,
             Parallel: BoundParallel,
