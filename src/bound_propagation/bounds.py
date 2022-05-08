@@ -94,7 +94,7 @@ class LinearBounds:
             bias_idx = idx
 
         return LinearBounds(
-            self.region[idx],
+            self.region[bias_idx],
             (self.lower[0][idx], self.lower[1][bias_idx]) if self.lower is not None else None,
             (self.upper[0][idx], self.upper[1][bias_idx]) if self.upper is not None else None
         )
