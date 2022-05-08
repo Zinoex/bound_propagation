@@ -87,19 +87,26 @@ class BoundClamp(BoundActivation):
         self.alpha_upper[slope], self.beta_upper[slope] = 1, 0
 
         z = (self(upper) - self(lower)) / (upper - lower)
-        if self.adaptive_clamp:
-            # Utilize that bool->float conversion is true=1 and false=0
-            a = (upper >= torch.abs(lower)).to(lower.dtype)
-        else:
-            a = z
 
         # Lower bend
         if self.module.min is not None:
+            if self.adaptive_clamp:
+                # Utilize that bool->float conversion is true=1 and false=0
+                a = (upper - self.module.min >= self.module.min - lower).to(lower.dtype)
+            else:
+                a = z
+
             self.alpha_lower[lower_bend], self.beta_lower[lower_bend] = a[lower_bend], self.module.min * (1 - a[lower_bend])
             self.alpha_upper[lower_bend], self.beta_upper[lower_bend] = z[lower_bend], self(lower[lower_bend]) - lower[lower_bend] * z[lower_bend]
 
         # Upper bend
         if self.module.max is not None:
+            if self.adaptive_clamp:
+                # Utilize that bool->float conversion is true=1 and false=0
+                a = (upper - self.module.max <= self.module.max - lower).to(lower.dtype)
+            else:
+                a = z
+
             self.alpha_lower[upper_bend], self.beta_lower[upper_bend] = z[upper_bend], self(lower[upper_bend]) - lower[upper_bend] * z[upper_bend]
             self.alpha_upper[upper_bend], self.beta_upper[upper_bend] = a[upper_bend], self.module.max * (1 - a[upper_bend])
 
