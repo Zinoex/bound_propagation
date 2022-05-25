@@ -72,6 +72,47 @@ class BoundAdd(BoundModule):
         return out_size1
 
 
+class VectorAdd(nn.Module):
+    def forward(self, x):
+        assert x.size(-1) % 2 == 0
+        half_size = x.size(-1) // 2
+
+        return x[..., :half_size] + x[..., half_size:]
+
+
+class BoundVectorAdd(BoundModule):
+    @property
+    def need_relaxation(self):
+        return False
+
+    def crown_backward(self, linear_bounds):
+        if linear_bounds.lower is None:
+            lower = None
+        else:
+            lower = (torch.cat(2 * [linear_bounds.lower[0]], dim=-1), linear_bounds.lower[1])
+
+        if linear_bounds.upper is None:
+            upper = None
+        else:
+            upper = (torch.cat(2 * [linear_bounds.upper[0]], dim=-1), linear_bounds.upper[1])
+
+        return LinearBounds(linear_bounds.region, lower, upper)
+
+    def ibp_forward(self, bounds, save_relaxation=False):
+        half_size = bounds.lower.size(-1) // 2
+
+        return IntervalBounds(
+            bounds.region,
+            bounds.lower[..., :half_size] + bounds.lower[..., half_size:],
+            bounds.upper[..., :half_size] + bounds.upper[..., half_size:]
+        )
+
+    def propagate_size(self, in_size):
+        assert in_size % 2 == 0
+
+        return in_size // 2
+
+
 class Sub(nn.Module):
     def __init__(self, network1, network2):
         super().__init__()
@@ -138,3 +179,44 @@ class BoundSub(BoundModule):
         assert out_size1 == out_size2
 
         return out_size1
+
+
+class VectorSub(nn.Module):
+    def forward(self, x):
+        assert x.size(-1) % 2 == 0
+        half_size = x.size(-1) // 2
+
+        return x[..., :half_size] - x[..., half_size:]
+
+
+class BoundVectorSub(BoundModule):
+    @property
+    def need_relaxation(self):
+        return False
+
+    def crown_backward(self, linear_bounds):
+        if linear_bounds.lower is None:
+            lower = None
+        else:
+            lower = (torch.cat([linear_bounds.lower[0], -linear_bounds.lower[0]], dim=-1), linear_bounds.lower[1])
+
+        if linear_bounds.upper is None:
+            upper = None
+        else:
+            upper = (torch.cat([linear_bounds.upper[0], -linear_bounds.upper[0]], dim=-1), linear_bounds.upper[1])
+
+        return LinearBounds(linear_bounds.region, lower, upper)
+
+    def ibp_forward(self, bounds, save_relaxation=False):
+        half_size = bounds.lower.size(-1) // 2
+
+        return IntervalBounds(
+            bounds.region,
+            bounds.lower[..., :half_size] - bounds.upper[..., half_size:],
+            bounds.upper[..., :half_size] - bounds.lower[..., half_size:]
+        )
+
+    def propagate_size(self, in_size):
+        assert in_size % 2 == 0
+
+        return in_size // 2
