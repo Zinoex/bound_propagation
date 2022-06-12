@@ -161,3 +161,14 @@ factory.register(Residual, BoundResidual)
 
 ## Authors
 - [Frederik Baymler Mathiesen](https://www.baymler.com) - PhD student @ TU Delft
+
+## Funding and support
+- TU Delft
+
+## Copyright notice:
+Technische Universiteit Delft hereby disclaims all copyright
+interest in the program “bound_propagation” 
+(bound propagation methods for Pytorch)
+written by the Frederik Baymler Mathiesen. Theun Baller, Dean of Mechanical, Maritime and Materials Engineering
+
+© 2022, Frederik Baymler Mathiesen, HERALD Lab, TU Delft
