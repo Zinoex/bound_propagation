@@ -36,9 +36,9 @@ class BoundModule(nn.Module, abc.ABC):
 
     def initial_linear_bounds(self, region, out_size, lower=True, upper=True):
         W_tilde = torch.eye(out_size, device=region.lower.device)\
-            .unsqueeze(0).expand(region.lower.size(0), out_size, out_size)
+            .unsqueeze(-3).expand(*region.lower.size()[:-1], out_size, out_size)
         bias = torch.zeros((out_size,), device=region.lower.device)\
-            .unsqueeze(0).expand(region.lower.size(0), out_size)
+            .unsqueeze(-2).expand(*region.lower.size()[:-1], out_size)
 
         lower = (W_tilde, bias) if lower else None
         upper = (W_tilde, bias) if upper else None
