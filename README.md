@@ -56,7 +56,11 @@ input_bounds = HyperRectangle.from_eps(x, epsilon)
 ibp_bounds = net.ibp(input_bounds)
 crown_bounds = net.crown(input_bounds).concretize()
 crown_ibp_bounds = net.crown_ibp(input_bounds).concretize()
+crown_bounds = net.crown(input_bounds, alpha=True).concretize()
+crown_ibp_bounds = net.crown_ibp(input_bounds, alpha=True).concretize()
 ```
+
+The parameter `alpha=True` enables alpha-CROWN, which means bounds are optimized using projected gradient descent at the cost of more computation.
 
 ## Linear bounds
 To get linear bounds for either CROWN or CROWN-IBP:
@@ -68,10 +72,13 @@ input_bounds = HyperRectangle.from_eps(x, epsilon)
 
 crown_bounds = net.crown(input_bounds)
 crown_ibp_bounds = net.crown_ibp(input_bounds)
+crown_bounds = net.crown(input_bounds, alpha=True)
+crown_ibp_bounds = net.crown_ibp(input_bounds, alpha=True)
 ```
 If lower or upper bounds are not needed, then you can add `bound_lower=False` or `bound_lower=True` to avoid the unnecessary computation.
 This also works for interval bounds with CROWN and CROWN-IBP.
 IBP accepts the two parameters for compatibility but ignores them since both bounds are necessary for the forward propagation. 
+Parameter `alpha=True` is explained under [Interval bounds](#interval-bounds).
 
 ## New Modules
 To show how to design a new module, we use a residual module as a running example (see [residual.py](https://github.com/Zinoex/bound_propagation/blob/main/src/bound_propagation/residual.py) for the full code).
@@ -137,8 +144,8 @@ Note that lower and upper will never interact, and that both can be `None` becau
 
         return IntervalBounds(bounds.region, bounds.lower + residual_bounds.lower, bounds.upper + residual_bounds.upper)
     
-    def crown_backward(self, linear_bounds):
-        residual_linear_bounds = self.subnetwork.crown_backward(linear_bounds)
+    def crown_backward(self, linear_bounds, optimize):
+        residual_linear_bounds = self.subnetwork.crown_backward(linear_bounds, optimize)
 
         if linear_bounds.lower is None:
             lower = None
