@@ -14,8 +14,8 @@ class BoundModule(nn.Module, abc.ABC):
         self.module = module
 
         self.optimizer = kwargs.get('bounds_optimizer', Adam)
-        self.bounds_iterations = kwargs.get('bounds_iterations', 20)
-        self.lr = kwargs.get('bounds_lr', 1e-3)
+        self.bounds_iterations = kwargs.get('bounds_iterations', 40)
+        self.lr = kwargs.get('bounds_lr', 1e-2)
         self.lr_decay = kwargs.get('bounds_lr_decay', 0.97)
 
     @torch.no_grad()
@@ -46,7 +46,7 @@ class BoundModule(nn.Module, abc.ABC):
             linear_bounds = self.alpha_crown(region, out_size, bound_lower, bound_upper)
         else:
             linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
-            linear_bounds = self.crown_backward(linear_bounds)
+            linear_bounds = self.crown_backward(linear_bounds, False)
 
         self.clear_relaxation()
         return linear_bounds
@@ -63,8 +63,9 @@ class BoundModule(nn.Module, abc.ABC):
         linear_bounds = LinearBounds(region, lower, upper)
         return linear_bounds
 
+    @torch.enable_grad()
     def alpha_crown(self, region, out_size, bound_lower, bound_upper):
-        params = self.bound_parameters()
+        params = list(self.bound_parameters())
 
         if bound_lower:
             lower = self.optimize_bounds(region, out_size, True, params).lower
@@ -86,18 +87,21 @@ class BoundModule(nn.Module, abc.ABC):
 
         for iteration in range(self.bounds_iterations):
             linear_bounds = self.initial_linear_bounds(region, out_size, lower=lower, upper=not lower)
-            linear_bounds = self.crown_backward(linear_bounds)
+            linear_bounds = self.crown_backward(linear_bounds, True)
             interval_bounds = linear_bounds.concretize()
 
-            loss = (-1 if lower else 1) * interval_bounds.lower.sum()
+            loss = (-interval_bounds.lower if lower else interval_bounds.upper).sum()
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
             optimizer.step()
             scheduler.step()
 
-        linear_bounds = self.initial_linear_bounds(region, out_size, lower=lower, upper=not lower)
-        return self.crown_backward(linear_bounds)
+            self.clip_params()  # Projected Gradient Descent
+
+        with torch.no_grad():
+            linear_bounds = self.initial_linear_bounds(region, out_size, lower=lower, upper=not lower)
+            return self.crown_backward(linear_bounds, True)
 
     @property
     @abc.abstractmethod
@@ -114,7 +118,7 @@ class BoundModule(nn.Module, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         raise NotImplementedError()
 
     def ibp(self, region):
@@ -142,7 +146,10 @@ class BoundModule(nn.Module, abc.ABC):
         self.module.load_state_dict(state_dict=state_dict, strict=strict)
 
     def bound_parameters(self):
-        raise NotImplementedError()
+        return []
 
     def reset_params(self):
-        raise NotImplementedError()
+        pass
+
+    def clip_params(self):
+        pass

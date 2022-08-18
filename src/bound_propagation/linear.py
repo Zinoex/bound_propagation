@@ -50,7 +50,7 @@ class BoundLinear(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         if linear_bounds.lower is None:
             lower = None
         else:

@@ -35,10 +35,10 @@ class BoundCat(BoundModule):
 
         return self.subnetwork.backward_relaxation(region)
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         assert self.in_size is not None
 
-        residual_linear_bounds = self.subnetwork.crown_backward(linear_bounds[..., self.in_size:])
+        residual_linear_bounds = self.subnetwork.crown_backward(linear_bounds[..., self.in_size:], optimize)
         linear_bounds = linear_bounds[..., :self.in_size]
 
         if linear_bounds.lower is None:
@@ -66,3 +66,12 @@ class BoundCat(BoundModule):
         out_size = self.subnetwork.propagate_size(in_size)
 
         return in_size + out_size
+
+    def bound_parameters(self):
+        yield from self.subnetwork.bound_parameters()
+
+    def reset_params(self):
+        self.subnetwork.reset_params()
+
+    def clip_params(self):
+        self.subnetwork.clip_params()

@@ -32,8 +32,8 @@ class BoundResidual(BoundModule):
 
         return self.subnetwork.backward_relaxation(region)
 
-    def crown_backward(self, linear_bounds):
-        residual_linear_bounds = self.subnetwork.crown_backward(linear_bounds)
+    def crown_backward(self, linear_bounds, optimize):
+        residual_linear_bounds = self.subnetwork.crown_backward(linear_bounds, optimize)
 
         if linear_bounds.lower is None:
             lower = None
@@ -57,3 +57,12 @@ class BoundResidual(BoundModule):
         assert in_size == out_size
 
         return out_size
+
+    def bound_parameters(self):
+        yield from self.subnetwork.bound_parameters()
+
+    def reset_params(self):
+        self.subnetwork.reset_params()
+
+    def clip_params(self):
+        self.subnetwork.clip_params()

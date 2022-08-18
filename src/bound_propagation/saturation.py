@@ -1,3 +1,4 @@
+import logging
 from typing import Tuple, Optional, Union
 
 import torch
@@ -5,6 +6,8 @@ from torch import nn, Tensor
 
 from bound_propagation import BoundActivation
 from bound_propagation.activation import assert_bound_order
+
+logger = logging.getLogger(__name__)
 
 
 class Clamp(nn.Module):
@@ -55,6 +58,33 @@ class BoundClamp(BoundActivation):
         super().__init__(module, factory)
         self.adaptive_clamp = adaptive_clamp
 
+        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
+        self.unstable_upper, self._unstable_slope_upper, self.initial_unstable_slope_upper = None, None, None
+
+    @property
+    def unstable_slope_lower(self):
+        return self._unstable_slope_lower
+
+    @unstable_slope_lower.setter
+    def unstable_slope_lower(self, value):
+        self._unstable_slope_lower = value
+        self.initial_unstable_slope_lower = value
+
+    @property
+    def unstable_slope_upper(self):
+        return self._unstable_slope_upper
+
+    @unstable_slope_upper.setter
+    def unstable_slope_upper(self, value):
+        self._unstable_slope_upper = value
+        self.initial_unstable_slope_upper = value
+
+    def clear_relaxation(self):
+        super().clear_relaxation()
+        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
+        self.unstable_upper, self._unstable_slope_upper, self.initial_unstable_slope_upper = None, None, None
+
+
     @assert_bound_order
     def alpha_beta(self, preactivation):
         """
@@ -99,6 +129,9 @@ class BoundClamp(BoundActivation):
             self.alpha_lower[lower_bend], self.beta_lower[lower_bend] = a[lower_bend], self.module.min * (1 - a[lower_bend])
             self.alpha_upper[lower_bend], self.beta_upper[lower_bend] = z[lower_bend], self(lower[lower_bend]) - lower[lower_bend] * z[lower_bend]
 
+            self.unstable_lower = lower_bend
+            self.unstable_slope_lower = z[lower_bend].detach().clone().requires_grad_()
+
         # Upper bend
         if self.module.max is not None:
             if self.adaptive_clamp:
@@ -110,9 +143,36 @@ class BoundClamp(BoundActivation):
             self.alpha_lower[upper_bend], self.beta_lower[upper_bend] = z[upper_bend], self(lower[upper_bend]) - lower[upper_bend] * z[upper_bend]
             self.alpha_upper[upper_bend], self.beta_upper[upper_bend] = a[upper_bend], self.module.max * (1 - a[upper_bend])
 
+            self.unstable_upper = upper_bend
+            self.unstable_slope_upper = z[upper_bend].detach().clone().requires_grad_()
+
         # Full range
         if self.module.min is not None and self.module.max is not None:
             z_lower = (self(upper[full_range]) - self.module.min) / (upper[full_range] - self.module.min)
             self.alpha_lower[full_range], self.beta_lower[full_range] = z_lower, self(upper[full_range]) - upper[full_range] * z_lower
             z_upper = (self.module.max - self(lower[full_range])) / (self.module.max - lower[full_range])
             self.alpha_upper[full_range], self.beta_upper[full_range] = z_upper, self(lower[full_range]) - lower[full_range] * z_upper
+
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        if self.unstable_lower is None or self.unstable_upper is None:
+            logger.warning('Clamp bound not parameterized but expected to')
+
+        alpha_lower[self.unstable_lower], self.beta_lower[self.unstable_lower] = self.unstable_slope_lower, self.module.min * (1 - self.unstable_slope_lower)
+        alpha_upper[self.unstable_upper], self.beta_upper[self.unstable_upper] = self.unstable_slope_upper, self.module.max * (1 - self.unstable_slope_upper)
+
+        return alpha_lower, alpha_upper, beta_lower, beta_upper
+
+    def bound_parameters(self):
+        if self.unstable_slope_lower is None or self.unstable_slope_upper is None:
+            logger.warning('Clamp bound not parameterized but expected to')
+
+        yield self.unstable_slope_lower
+        yield self.unstable_slope_upper
+
+    def reset_params(self):
+        self._unstable_slope_lower = self.initial_unstable_slope_lower
+        self._unstable_slope_upper = self.initial_unstable_slope_upper
+
+    def clip_params(self):
+        self._unstable_slope_lower.data.clamp_(min=0, max=1)
+        self._unstable_slope_upper.data.clamp_(min=0, max=1)

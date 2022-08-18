@@ -20,18 +20,18 @@ class BoundSequential(BoundModule):
         for i, module in enumerate(self.bound_sequential):
             if module.need_relaxation:
                 linear_bounds, relaxation_module = module.backward_relaxation(region)
-                return self.subnetwork_crown_backward(self.bound_sequential[:i], linear_bounds), relaxation_module
+                return self.subnetwork_crown_backward(self.bound_sequential[:i], linear_bounds, False), relaxation_module
 
         assert False, 'At least one module needs relaxation'
 
-    def subnetwork_crown_backward(self, subnetwork, linear_bounds):
+    def subnetwork_crown_backward(self, subnetwork, linear_bounds, optimize):
         for module in list(reversed(subnetwork)):
-            linear_bounds = module.crown_backward(linear_bounds)
+            linear_bounds = module.crown_backward(linear_bounds, optimize)
 
         return linear_bounds
 
-    def crown_backward(self, linear_bounds):
-        return self.subnetwork_crown_backward(self.bound_sequential, linear_bounds)
+    def crown_backward(self, linear_bounds, optimize):
+        return self.subnetwork_crown_backward(self.bound_sequential, linear_bounds, optimize)
 
     def ibp_forward(self, bounds, save_relaxation=False):
         for module in self.bound_sequential:
@@ -45,3 +45,15 @@ class BoundSequential(BoundModule):
             size = module.propagate_size(size)
 
         return size
+
+    def bound_parameters(self):
+        for module in self.bound_sequential:
+            yield from module.bound_parameters()
+
+    def reset_params(self):
+        for module in self.bound_sequential:
+            module.reset_params()
+
+    def clip_params(self):
+        for module in self.bound_sequential:
+            module.clip_params()

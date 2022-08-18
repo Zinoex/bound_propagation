@@ -37,9 +37,9 @@ class BoundAdd(BoundModule):
             assert self.bound_network2.need_relaxation
             return self.bound_network2.backward_relaxation(region)
 
-    def crown_backward(self, linear_bounds):
-        linear_bounds1 = self.bound_network1.crown_backward(linear_bounds)
-        linear_bounds2 = self.bound_network2.crown_backward(linear_bounds)
+    def crown_backward(self, linear_bounds, optimize):
+        linear_bounds1 = self.bound_network1.crown_backward(linear_bounds, optimize)
+        linear_bounds2 = self.bound_network2.crown_backward(linear_bounds, optimize)
 
         if linear_bounds.lower is None:
             lower = None
@@ -71,6 +71,18 @@ class BoundAdd(BoundModule):
 
         return out_size1
 
+    def bound_parameters(self):
+        yield from self.bound_network1.bound_parameters()
+        yield from self.bound_network2.bound_parameters()
+
+    def reset_params(self):
+        self.bound_network1.reset_params()
+        self.bound_network2.reset_params()
+
+    def clip_params(self):
+        self.bound_network1.clip_params()
+        self.bound_network2.clip_params()
+
 
 class VectorAdd(nn.Module):
     def forward(self, x):
@@ -85,7 +97,7 @@ class BoundVectorAdd(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         if linear_bounds.lower is None:
             lower = None
         else:
@@ -145,20 +157,20 @@ class BoundSub(BoundModule):
             assert self.bound_network2.need_relaxation
             return self.bound_network2.backward_relaxation(region)
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         input_bounds = LinearBounds(
             linear_bounds.region,
             (linear_bounds.lower[0], torch.zeros_like(linear_bounds.lower[1])) if linear_bounds.lower is not None else None,
             (linear_bounds.upper[0], torch.zeros_like(linear_bounds.upper[1])) if linear_bounds.upper is not None else None,
         )
-        linear_bounds1 = self.bound_network1.crown_backward(input_bounds)
+        linear_bounds1 = self.bound_network1.crown_backward(input_bounds, optimize)
 
         input_bounds = LinearBounds(
             linear_bounds.region,
             (-linear_bounds.lower[0], torch.zeros_like(linear_bounds.lower[1])) if linear_bounds.lower is not None else None,
             (-linear_bounds.upper[0], torch.zeros_like(linear_bounds.upper[1])) if linear_bounds.upper is not None else None,
         )
-        linear_bounds2 = self.bound_network2.crown_backward(input_bounds)
+        linear_bounds2 = self.bound_network2.crown_backward(input_bounds, optimize)
 
         if linear_bounds.lower is None:
             lower = None
@@ -190,6 +202,18 @@ class BoundSub(BoundModule):
 
         return out_size1
 
+    def bound_parameters(self):
+        yield from self.bound_network1.bound_parameters()
+        yield from self.bound_network2.bound_parameters()
+
+    def reset_params(self):
+        self.bound_network1.reset_params()
+        self.bound_network2.reset_params()
+
+    def clip_params(self):
+        self.bound_network1.clip_params()
+        self.bound_network2.clip_params()
+
 
 class VectorSub(nn.Module):
     def forward(self, x):
@@ -204,7 +228,7 @@ class BoundVectorSub(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         if linear_bounds.lower is None:
             lower = None
         else:

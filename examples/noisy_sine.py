@@ -17,14 +17,14 @@ from bound_propagation.parallel import Parallel
 from bound_propagation.residual import Residual
 
 
-def bound_propagation(model, lower_x, upper_x):
+def bound_propagation(model, lower_x, upper_x, alpha=False):
     factory = BoundModelFactory()
     bounded_model = factory.build(model)
 
     input_bounds = HyperRectangle(lower_x, upper_x)
 
     ibp_bounds = bounded_model.ibp(input_bounds).cpu()
-    crown_bounds = bounded_model.crown(input_bounds).cpu()
+    crown_bounds = bounded_model.crown(input_bounds, alpha=alpha).cpu()
 
     input_bounds = input_bounds.cpu()
 
@@ -37,7 +37,7 @@ def plot_bounds_1d(model, args):
     boundaries = torch.linspace(-2, 2, num_slices + 1, device=args.device).view(-1, 1)
     lower_x, upper_x = boundaries[:-1], boundaries[1:]
 
-    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, lower_x, upper_x)
+    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, lower_x, upper_x, alpha=True)
 
     plt.figure(figsize=(6.4 * 2, 3.6 * 2))
     plt.ylim(-2.5, 4)
@@ -134,7 +134,7 @@ def plot_bounds_2d(model, args):
     cell_centers = torch.cartesian_prod(slice_centers, slice_centers)
     lower_x, upper_x = cell_centers - cell_width, + cell_centers + cell_width
 
-    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, lower_x, upper_x)
+    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, lower_x, upper_x, alpha=True)
 
     # Plot function over entire space
     plt.clf()

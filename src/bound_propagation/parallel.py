@@ -64,11 +64,11 @@ class BoundParallel(BoundModule):
             (upperA, linear_bounds.upper[1])
         )
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         assert self.out_size1 is not None
 
-        residual_linear_bounds1 = self.subnetwork1.crown_backward(linear_bounds[..., :self.out_size1])
-        residual_linear_bounds2 = self.subnetwork2.crown_backward(linear_bounds[..., self.out_size1:])
+        residual_linear_bounds1 = self.subnetwork1.crown_backward(linear_bounds[..., :self.out_size1], optimize)
+        residual_linear_bounds2 = self.subnetwork2.crown_backward(linear_bounds[..., self.out_size1:], optimize)
 
         if linear_bounds.lower is None:
             lower = None
@@ -117,3 +117,15 @@ class BoundParallel(BoundModule):
         self.out_size1 = out_size1
 
         return out_size1 + out_size2
+
+    def bound_parameters(self):
+        yield from self.subnetwork1.bound_parameters()
+        yield from self.subnetwork2.bound_parameters()
+
+    def reset_params(self):
+        self.subnetwork1.reset_params()
+        self.subnetwork2.reset_params()
+
+    def clip_params(self):
+        self.subnetwork1.clip_params()
+        self.subnetwork2.clip_params()

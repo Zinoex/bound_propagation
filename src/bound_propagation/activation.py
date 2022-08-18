@@ -1,4 +1,5 @@
 import abc
+import logging
 from functools import wraps
 from typing import Tuple
 
@@ -7,6 +8,8 @@ import torch
 from .general import BoundModule
 from .bounds import LinearBounds, IntervalBounds
 from .util import TensorFunction
+
+logger = logging.getLogger(__name__)
 
 
 def assert_bound_order(func, position=0, keyword='preactivation'):
@@ -42,12 +45,13 @@ class BoundActivation(BoundModule, abc.ABC):
 
         self.alpha_lower, self.beta_lower = None, None
         self.alpha_upper, self.beta_upper = None, None
+
         self.bounded = False
         self.size = None
 
     @abc.abstractmethod
     def alpha_beta(self, preactivation):
-        pass
+        raise NotImplementedError()
 
     @property
     def need_relaxation(self):
@@ -67,25 +71,34 @@ class BoundActivation(BoundModule, abc.ABC):
     def clear_relaxation(self):
         self.alpha_lower, self.beta_lower = None, None
         self.alpha_upper, self.beta_upper = None, None
+
         self.bounded = False
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         assert self.bounded
+
+        alpha_lower, alpha_upper = self.alpha_lower.detach().clone(), self.alpha_upper.detach().clone()
+        beta_lower, beta_upper = self.beta_lower.detach().clone(), self.beta_upper.detach().clone()
+
+        if optimize:
+            alpha_lower, alpha_upper, beta_lower, beta_upper = \
+                self.parameterize_alpha_beta(alpha_lower, alpha_upper, beta_lower, beta_upper)
 
         # NOTE: The order of alpha and beta are deliberately reverse - this is not a mistake!
         if linear_bounds.lower is None:
             lower = None
         else:
-            alpha = self.alpha_upper, self.alpha_lower
-            beta = self.beta_upper, self.beta_lower
+            alpha = alpha_upper, alpha_lower
+            beta = beta_upper, beta_lower
+
             lower = crown_backward_act_jit(linear_bounds.lower[0], alpha, beta)
             lower = (lower[0], lower[1] + linear_bounds.lower[1])
 
         if linear_bounds.upper is None:
             upper = None
         else:
-            alpha = self.alpha_lower, self.alpha_upper
-            beta = self.beta_lower, self.beta_upper
+            alpha = alpha_lower, alpha_upper
+            beta = beta_lower, beta_upper
             upper = crown_backward_act_jit(linear_bounds.upper[0], alpha, beta)
             upper = (upper[0], upper[1] + linear_bounds.upper[1])
 
@@ -103,6 +116,10 @@ class BoundActivation(BoundModule, abc.ABC):
         self.size = in_size
         return in_size
 
+    @abc.abstractmethod
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        raise NotImplementedError()
+
 
 def regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     zero_width = torch.isclose(lower, upper, rtol=0.0, atol=1e-8)
@@ -117,6 +134,21 @@ class BoundReLU(BoundActivation):
     def __init__(self, module, factory, adaptive_relu=True, **kwargs):
         super().__init__(module, factory)
         self.adaptive_relu = adaptive_relu
+
+        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
+
+    @property
+    def unstable_slope_lower(self):
+        return self._unstable_slope_lower
+
+    @unstable_slope_lower.setter
+    def unstable_slope_lower(self, value):
+        self._unstable_slope_lower = value
+        self.initial_unstable_slope_lower = value
+
+    def clear_relaxation(self):
+        super().clear_relaxation()
+        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
 
     @assert_bound_order
     def alpha_beta(self, preactivation):
@@ -165,8 +197,63 @@ class BoundReLU(BoundActivation):
         self.alpha_lower[np], self.beta_lower[np] = a, 0
         self.alpha_upper[np], self.beta_upper[np] = z, -lower * z
 
+        self.unstable_lower = np
+        self.unstable_slope_lower = z.detach().clone().requires_grad_()
+
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        if self.unstable_lower is not None:
+            alpha_lower[self.unstable_lower] = self.unstable_slope_lower
+        else:
+            logger.warning('ReLU bound not parameterized but expected to')
+
+        return alpha_lower, alpha_upper, beta_lower, beta_upper
+
+    def bound_parameters(self):
+        if self.unstable_slope_lower is not None:
+            yield self.unstable_slope_lower
+        else:
+            logger.warning('ReLU bound not parameterized but expected to')
+
+    def reset_params(self):
+        self._unstable_slope_lower = self.initial_unstable_slope_lower
+
+    def clip_params(self):
+        self._unstable_slope_lower.data.clamp_(min=0, max=1)
+
 
 class BoundSigmoid(BoundActivation):
+    def __init__(self, module, factory, adaptive_relu=True, **kwargs):
+        super().__init__(module, factory)
+        self.adaptive_relu = adaptive_relu
+
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_lower, self.unstable_range_upper = None, None
+
+    @property
+    def unstable_d_lower(self):
+        return self._unstable_d_lower
+
+    @unstable_d_lower.setter
+    def unstable_d_lower(self, value):
+        self._unstable_d_lower = value
+        self.initial_unstable_d_lower = value
+
+    @property
+    def unstable_d_upper(self):
+        return self._unstable_d_upper
+
+    @unstable_d_upper.setter
+    def unstable_d_upper(self, value):
+        self._unstable_d_upper = value
+        self.initial_unstable_d_upper = value
+
+    def clear_relaxation(self):
+        super().clear_relaxation()
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_lower, self.unstable_range_upper = None, None
+
     def func(self, x):
         return torch.sigmoid(x)
 
@@ -234,6 +321,9 @@ class BoundSigmoid(BoundActivation):
         # - d = (lower + upper) / 2 for midpoint
         # - Slope is sigma'(d) and it has to cross through sigma(d)
         add_linear(self.alpha_lower, self.beta_lower, mask=n, a=d_prime, x=d, y=d_act)
+        self.unstable_lower = n
+        self.unstable_d_lower = d[n]
+        self.unstable_range_lower = lower[n], upper[n]
 
         ###################
         # Positive regime #
@@ -246,6 +336,9 @@ class BoundSigmoid(BoundActivation):
         # - d = (lower + upper) / 2 for midpoint
         # - Slope is sigma'(d) and it has to cross through sigma(d)
         add_linear(self.alpha_upper, self.beta_upper, mask=p, a=d_prime, x=d, y=d_act)
+        self.unstable_upper = p
+        self.unstable_d_upper = d[p]
+        self.unstable_range_upper = lower[p], upper[p]
 
         #################
         # Crossing zero #
@@ -288,6 +381,37 @@ class BoundSigmoid(BoundActivation):
         # Slope has to attach to (upper, sigma(upper))
         add_linear(self.alpha_lower, self.beta_lower, mask=implicit_lower, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
 
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        if self.unstable_lower is None or self.unstable_upper is None:
+            logger.warning('Sigmoid/tanh bound not parameterized but expected to')
+
+        def add_linear(alpha, beta, mask, x):
+            a = self.derivative(x)
+            y = self.func(x)
+
+            alpha[mask] = a
+            beta[mask] = y - a * x
+
+        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower, x=self.unstable_d_lower)
+        add_linear(alpha_upper, beta_upper, mask=self.unstable_upper, x=self.unstable_d_upper)
+
+        return alpha_lower, alpha_upper, beta_lower, beta_upper
+
+    def bound_parameters(self):
+        if self.unstable_d_lower is None or self._unstable_d_upper is None:
+            logger.warning('Sigmoid/tanh bound not parameterized but expected to')
+
+        yield self.unstable_d_lower
+        yield self.unstable_d_upper
+
+    def reset_params(self):
+        self._unstable_d_lower = self.initial_unstable_d_lower
+        self._unstable_d_upper = self.initial_unstable_d_upper
+
+    def clip_params(self):
+        self._unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        self._unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+
 
 def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int = 10) -> Tuple[torch.Tensor, torch.Tensor]:
     midpoint = (l + h) / 2
@@ -320,7 +444,7 @@ class BoundIdentity(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds):
+    def crown_backward(self, linear_bounds, optimize):
         return linear_bounds
 
     @assert_bound_order
