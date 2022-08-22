@@ -154,25 +154,39 @@ class BoundClamp(BoundActivation):
             self.alpha_upper[full_range], self.beta_upper[full_range] = z_upper, self(lower[full_range]) - lower[full_range] * z_upper
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
-        if self.unstable_lower is None or self.unstable_upper is None:
+        if self.unstable_lower is None and self.unstable_upper is None:
             logger.warning('Clamp bound not parameterized but expected to')
 
-        alpha_lower[self.unstable_lower], self.beta_lower[self.unstable_lower] = self.unstable_slope_lower, self.module.min * (1 - self.unstable_slope_lower)
-        alpha_upper[self.unstable_upper], self.beta_upper[self.unstable_upper] = self.unstable_slope_upper, self.module.max * (1 - self.unstable_slope_upper)
+        if self.unstable_lower is not None:
+            alpha_lower[self.unstable_lower], self.beta_lower[
+                self.unstable_lower] = self.unstable_slope_lower, self.module.min * (1 - self.unstable_slope_lower)
+
+        if self.unstable_upper is not None:
+            alpha_upper[self.unstable_upper], self.beta_upper[
+                self.unstable_upper] = self.unstable_slope_upper, self.module.max * (1 - self.unstable_slope_upper)
 
         return alpha_lower, alpha_upper, beta_lower, beta_upper
 
     def bound_parameters(self):
-        if self.unstable_slope_lower is None or self.unstable_slope_upper is None:
+        if self.unstable_lower is None and self.unstable_upper is None:
             logger.warning('Clamp bound not parameterized but expected to')
 
-        yield self.unstable_slope_lower
-        yield self.unstable_slope_upper
+        if self.unstable_lower is not None:
+            yield self.unstable_slope_lower
+
+        if self.unstable_upper is not None:
+            yield self.unstable_slope_upper
 
     def reset_params(self):
-        self._unstable_slope_lower = self.initial_unstable_slope_lower
-        self._unstable_slope_upper = self.initial_unstable_slope_upper
+        if self.unstable_lower is not None:
+            self._unstable_slope_lower = self.initial_unstable_slope_lower
+
+        if self.unstable_upper is not None:
+            self._unstable_slope_upper = self.initial_unstable_slope_upper
 
     def clip_params(self):
-        self._unstable_slope_lower.data.clamp_(min=0, max=1)
-        self._unstable_slope_upper.data.clamp_(min=0, max=1)
+        if self.unstable_lower is not None:
+            self._unstable_slope_lower.data.clamp_(min=0, max=1)
+
+        if self.unstable_upper is not None:
+            self._unstable_slope_upper.data.clamp_(min=0, max=1)

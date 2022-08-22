@@ -209,7 +209,7 @@ class BoundReLU(BoundActivation):
         return alpha_lower, alpha_upper, beta_lower, beta_upper
 
     def bound_parameters(self):
-        if self.unstable_slope_lower is not None:
+        if self.unstable_lower is not None:
             yield self.unstable_slope_lower
         else:
             logger.warning('ReLU bound not parameterized but expected to')
@@ -398,7 +398,7 @@ class BoundSigmoid(BoundActivation):
         return alpha_lower, alpha_upper, beta_lower, beta_upper
 
     def bound_parameters(self):
-        if self.unstable_d_lower is None or self._unstable_d_upper is None:
+        if self.unstable_lower is None or self.unstable_upper is None:
             logger.warning('Sigmoid/tanh bound not parameterized but expected to')
 
         yield self.unstable_d_lower
