@@ -54,10 +54,12 @@ epsilon = 0.1
 input_bounds = HyperRectangle.from_eps(x, epsilon)
 
 ibp_bounds = net.ibp(input_bounds)
+
 crown_bounds = net.crown(input_bounds).concretize()
 crown_ibp_bounds = net.crown_ibp(input_bounds).concretize()
-crown_bounds = net.crown(input_bounds, alpha=True).concretize()
-crown_ibp_bounds = net.crown_ibp(input_bounds, alpha=True).concretize()
+
+alpha_crown_bounds = net.crown(input_bounds, alpha=True).concretize()
+alpha_crown_ibp_bounds = net.crown_ibp(input_bounds, alpha=True).concretize()
 ```
 
 The parameter `alpha=True` enables alpha-CROWN, which means bounds are optimized using projected gradient descent at the cost of more computation.
@@ -72,8 +74,9 @@ input_bounds = HyperRectangle.from_eps(x, epsilon)
 
 crown_bounds = net.crown(input_bounds)
 crown_ibp_bounds = net.crown_ibp(input_bounds)
-crown_bounds = net.crown(input_bounds, alpha=True)
-crown_ibp_bounds = net.crown_ibp(input_bounds, alpha=True)
+
+alpha_crown_bounds = net.crown(input_bounds, alpha=True)
+alpha_crown_ibp_bounds = net.crown_ibp(input_bounds, alpha=True)
 ```
 If lower or upper bounds are not needed, then you can add `bound_lower=False` or `bound_lower=True` to avoid the unnecessary computation.
 This also works for interval bounds with CROWN and CROWN-IBP.
