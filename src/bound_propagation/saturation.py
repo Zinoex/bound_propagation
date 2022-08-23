@@ -23,7 +23,9 @@ class Clamp(nn.Module):
         return x.clamp(min=self.min, max=self.max)
 
 
-def regimes(lower: torch.Tensor, upper: torch.Tensor, min: Optional[Union[Tensor, float]], max: Optional[Union[Tensor, float]]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def regimes(lower: torch.Tensor, upper: torch.Tensor, min: Optional[Union[Tensor, float]],
+            max: Optional[Union[Tensor, float]]) -> Tuple[
+    torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     flat_lower = torch.full_like(lower, False, dtype=torch.bool)
     flat_upper = torch.full_like(lower, False, dtype=torch.bool)
     slope = torch.full_like(lower, False, dtype=torch.bool)
@@ -84,7 +86,6 @@ class BoundClamp(BoundActivation):
         self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
         self.unstable_upper, self._unstable_slope_upper, self.initial_unstable_slope_upper = None, None, None
 
-
     @assert_bound_order
     def alpha_beta(self, preactivation):
         """
@@ -94,23 +95,37 @@ class BoundClamp(BoundActivation):
         :param preactivation:
         """
         lower, upper = preactivation.lower, preactivation.upper
-        zero_width, flat_lower, flat_upper, slope, lower_bend, upper_bend, full_range = regimes(lower, upper, self.module.min, self.module.max)
+        zero_width, flat_lower, flat_upper, slope, lower_bend, upper_bend, full_range = regimes(lower, upper,
+                                                                                                self.module.min,
+                                                                                                self.module.max)
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
         self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
 
+        act_lower, act_upper = self(lower), self(upper)
+
         # Use upper and lower in the bias to account for a small numerical difference between lower and upper
         # which ought to be negligible, but may still be present due to torch.isclose.
-        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
-        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
+        if zero_width.any():
+            self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, act_lower[zero_width]
+            self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, act_upper[zero_width]
+
+        min, max = self.module.min, self.module.max
+        if min is not None and torch.is_tensor(min):
+            min = min.view(*[1 for _ in range(self.alpha_lower.dim() - 1)], -1).expand_as(self.alpha_lower)
+
+        if max is not None and torch.is_tensor(max):
+            max = max.view(*[1 for _ in range(self.alpha_lower.dim() - 1)], -1).expand_as(self.alpha_lower)
 
         # Flat lower
-        self.alpha_lower[flat_lower], self.beta_lower[flat_lower] = 0, self.module.min or 0
-        self.alpha_upper[flat_lower], self.beta_upper[flat_lower] = 0, self.module.min or 0
+        flat_lower_min = min[flat_lower] if min is not None and torch.is_tensor(min) else min
+        self.alpha_lower[flat_lower], self.beta_lower[flat_lower] = 0, 0 if min is None else flat_lower_min
+        self.alpha_upper[flat_lower], self.beta_upper[flat_lower] = 0, 0 if min is None else flat_lower_min
 
         # Flat upper
-        self.alpha_lower[flat_upper], self.beta_lower[flat_upper] = 0, self.module.max or 0
-        self.alpha_upper[flat_upper], self.beta_upper[flat_upper] = 0, self.module.max or 0
+        flat_upper_max = max[flat_upper] if max is not None and torch.is_tensor(max) else max
+        self.alpha_lower[flat_upper], self.beta_lower[flat_upper] = 0, 0 if max is None else flat_upper_max
+        self.alpha_upper[flat_upper], self.beta_upper[flat_upper] = 0, 0 if max is None else flat_upper_max
 
         # Slope
         self.alpha_lower[slope], self.beta_lower[slope] = 1, 0
@@ -119,51 +134,67 @@ class BoundClamp(BoundActivation):
         z = (self(upper) - self(lower)) / (upper - lower)
 
         # Lower bend
-        if self.module.min is not None:
+        if min is not None:
             if self.adaptive_clamp:
                 # Utilize that bool->float conversion is true=1 and false=0
-                a = (upper - self.module.min >= self.module.min - lower).to(lower.dtype)
+                a = (upper - min >= min - lower).to(lower.dtype)
             else:
                 a = z
 
-            self.alpha_lower[lower_bend], self.beta_lower[lower_bend] = a[lower_bend], self.module.min * (1 - a[lower_bend])
-            self.alpha_upper[lower_bend], self.beta_upper[lower_bend] = z[lower_bend], self(lower[lower_bend]) - lower[lower_bend] * z[lower_bend]
+            lower_bend_min = min[lower_bend] if torch.is_tensor(min) else min
+            self.alpha_lower[lower_bend], self.beta_lower[lower_bend] = a[lower_bend], lower_bend_min * (
+                        1 - a[lower_bend])
+            self.alpha_upper[lower_bend], self.beta_upper[lower_bend] = z[lower_bend], act_lower[lower_bend] - lower[
+                lower_bend] * z[lower_bend]
 
             self.unstable_lower = lower_bend
             self.unstable_slope_lower = z[lower_bend].detach().clone().requires_grad_()
 
         # Upper bend
-        if self.module.max is not None:
+        if max is not None:
             if self.adaptive_clamp:
                 # Utilize that bool->float conversion is true=1 and false=0
-                a = (upper - self.module.max <= self.module.max - lower).to(lower.dtype)
+                a = (upper - max <= max - lower).to(lower.dtype)
             else:
                 a = z
 
-            self.alpha_lower[upper_bend], self.beta_lower[upper_bend] = z[upper_bend], self(lower[upper_bend]) - lower[upper_bend] * z[upper_bend]
-            self.alpha_upper[upper_bend], self.beta_upper[upper_bend] = a[upper_bend], self.module.max * (1 - a[upper_bend])
+            upper_bend_max = max[upper_bend] if torch.is_tensor(max) else max
+            self.alpha_lower[upper_bend], self.beta_lower[upper_bend] = z[upper_bend], act_lower[upper_bend] - lower[
+                upper_bend] * z[upper_bend]
+            self.alpha_upper[upper_bend], self.beta_upper[upper_bend] = a[upper_bend], upper_bend_max * (
+                        1 - a[upper_bend])
 
             self.unstable_upper = upper_bend
             self.unstable_slope_upper = z[upper_bend].detach().clone().requires_grad_()
 
         # Full range
         if self.module.min is not None and self.module.max is not None:
-            z_lower = (self(upper[full_range]) - self.module.min) / (upper[full_range] - self.module.min)
-            self.alpha_lower[full_range], self.beta_lower[full_range] = z_lower, self(upper[full_range]) - upper[full_range] * z_lower
-            z_upper = (self.module.max - self(lower[full_range])) / (self.module.max - lower[full_range])
-            self.alpha_upper[full_range], self.beta_upper[full_range] = z_upper, self(lower[full_range]) - lower[full_range] * z_upper
+            full_range_min = min[full_range] if torch.is_tensor(min) else min
+            full_range_max = max[full_range] if torch.is_tensor(max) else max
+
+            z_lower = (act_upper[full_range] - full_range_min) / (upper[full_range] - full_range_max)
+            self.alpha_lower[full_range], self.beta_lower[full_range] = z_lower, act_upper[full_range] - upper[
+                full_range] * z_lower
+
+            z_upper = (full_range_max - act_lower[full_range]) / (full_range_max - lower[full_range])
+            self.alpha_upper[full_range], self.beta_upper[full_range] = z_upper, act_lower[full_range] - lower[
+                full_range] * z_upper
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
         if self.unstable_lower is None and self.unstable_upper is None:
             logger.warning('Clamp bound not parameterized but expected to')
 
         if self.unstable_lower is not None:
-            alpha_lower[self.unstable_lower], self.beta_lower[
-                self.unstable_lower] = self.unstable_slope_lower, self.module.min * (1 - self.unstable_slope_lower)
+            min = self.module.min.view(*[1 for _ in range(self.alpha_lower.dim() - 1)], -1).expand_as(self.alpha_lower)[
+                self.unstable_lower]
+            alpha_lower[self.unstable_lower], beta_lower[self.unstable_lower] = self.unstable_slope_lower, min * (
+                        1 - self.unstable_slope_lower)
 
         if self.unstable_upper is not None:
-            alpha_upper[self.unstable_upper], self.beta_upper[
-                self.unstable_upper] = self.unstable_slope_upper, self.module.max * (1 - self.unstable_slope_upper)
+            max = self.module.max.view(*[1 for _ in range(self.alpha_lower.dim() - 1)], -1).expand_as(self.alpha_lower)[
+                self.unstable_upper]
+            alpha_upper[self.unstable_upper], beta_upper[self.unstable_upper] = self.unstable_slope_upper, max * (
+                        1 - self.unstable_slope_upper)
 
         return alpha_lower, alpha_upper, beta_lower, beta_upper
 
