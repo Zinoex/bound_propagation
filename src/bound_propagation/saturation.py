@@ -185,16 +185,16 @@ class BoundClamp(BoundActivation):
             logger.warning('Clamp bound not parameterized but expected to')
 
         if self.unstable_lower is not None:
-            min = self.module.min.view(*[1 for _ in range(self.alpha_lower.dim() - 1)], -1).expand_as(self.alpha_lower)[
-                self.unstable_lower]
-            alpha_lower[self.unstable_lower], beta_lower[self.unstable_lower] = self.unstable_slope_lower, min * (
-                        1 - self.unstable_slope_lower)
+            min = self.module.min
+            if torch.is_tensor(min):
+                min = min.view(*[1 for _ in range(alpha_lower.dim() - 1)], -1).expand_as(alpha_lower)[self.unstable_lower]
+            alpha_lower[self.unstable_lower], beta_lower[self.unstable_lower] = self.unstable_slope_lower, min * (1 - self.unstable_slope_lower)
 
         if self.unstable_upper is not None:
-            max = self.module.max.view(*[1 for _ in range(self.alpha_lower.dim() - 1)], -1).expand_as(self.alpha_lower)[
-                self.unstable_upper]
-            alpha_upper[self.unstable_upper], beta_upper[self.unstable_upper] = self.unstable_slope_upper, max * (
-                        1 - self.unstable_slope_upper)
+            max = self.module.max
+            if torch.is_tensor(max):
+                max = max.view(*[1 for _ in range(alpha_upper.dim() - 1)], -1).expand_as(alpha_upper)[self.unstable_upper]
+            alpha_upper[self.unstable_upper], beta_upper[self.unstable_upper] = self.unstable_slope_upper, max * (1 - self.unstable_slope_upper)
 
         return alpha_lower, alpha_upper, beta_lower, beta_upper
 
