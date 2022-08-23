@@ -322,7 +322,7 @@ class BoundSigmoid(BoundActivation):
         # - Slope is sigma'(d) and it has to cross through sigma(d)
         add_linear(self.alpha_lower, self.beta_lower, mask=n, a=d_prime, x=d, y=d_act)
         self.unstable_lower = n
-        self.unstable_d_lower = d[n]
+        self.unstable_d_lower = d[n].detach().clone().requires_grad_()
         self.unstable_range_lower = lower[n], upper[n]
 
         ###################
@@ -337,7 +337,7 @@ class BoundSigmoid(BoundActivation):
         # - Slope is sigma'(d) and it has to cross through sigma(d)
         add_linear(self.alpha_upper, self.beta_upper, mask=p, a=d_prime, x=d, y=d_act)
         self.unstable_upper = p
-        self.unstable_d_upper = d[p]
+        self.unstable_d_upper = d[p].detach().clone().requires_grad_()
         self.unstable_range_upper = lower[p], upper[p]
 
         #################
