@@ -90,11 +90,13 @@ class LinearBounds:
     def __getitem__(self, idx):
         if isinstance(idx, tuple) and len(idx) >= 2 and idx[0] == Ellipsis:
             bias_idx = idx[:-1]
+            region_idx = idx[:-2] + idx[-1:]
         else:
             bias_idx = idx
+            region_idx = idx
 
         return LinearBounds(
-            self.region[bias_idx],
+            self.region[region_idx],
             (self.lower[0][idx], self.lower[1][bias_idx]) if self.lower is not None else None,
             (self.upper[0][idx], self.upper[1][bias_idx]) if self.upper is not None else None
         )
