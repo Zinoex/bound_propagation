@@ -1,5 +1,6 @@
 import torch
 from torch import nn
+from torch.nn import Identity
 
 from .general import BoundModule
 from .bounds import IntervalBounds, LinearBounds
@@ -123,6 +124,11 @@ class BoundVectorAdd(BoundModule):
         assert in_size % 2 == 0
 
         return in_size // 2
+
+
+class Residual(Add):
+    def __init__(self, subnetwork):
+        super().__init__(Identity(), subnetwork)
 
 
 class Sub(nn.Module):

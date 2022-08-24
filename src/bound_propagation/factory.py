@@ -5,7 +5,6 @@ from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, 
 from .cat import BoundCat, Cat
 from .linear import BoundLinear
 from .parallel import BoundParallel, Parallel
-from .residual import BoundResidual, Residual
 from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
 
@@ -29,7 +28,6 @@ class BoundModelFactory:
             (VectorAdd, BoundVectorAdd),
             (Sub, BoundSub),
             (VectorSub, BoundVectorSub),
-            (Residual, BoundResidual),
             (Cat, BoundCat),
             (Parallel, BoundParallel),
             (Clamp, BoundClamp)
