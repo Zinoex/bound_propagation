@@ -4,8 +4,6 @@ from .factory import BoundModelFactory
 from .general import BoundModule
 from .linear import BoundLinear
 from .sequential import BoundSequential
-from .residual import Residual, BoundResidual
-from .cat import Cat, BoundCat
-from .parallel import Parallel, BoundParallel
-from .bivariate import Add, Sub, BoundAdd, BoundSub
+from .parallel import Parallel, BoundParallel, Cat
+from .bivariate import Add, BoundAdd, VectorAdd, BoundVectorAdd, Sub, BoundSub, VectorSub, BoundVectorSub, Residual
 from .saturation import Clamp, BoundClamp

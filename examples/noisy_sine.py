@@ -11,10 +11,7 @@ from torch.utils.data import TensorDataset
 
 from matplotlib import pyplot as plt
 
-from bound_propagation.factory import BoundModelFactory
-from bound_propagation.bounds import HyperRectangle
-from bound_propagation.parallel import Parallel
-from bound_propagation.residual import Residual
+from bound_propagation import BoundModelFactory, HyperRectangle, Parallel
 
 
 def bound_propagation(model, lower_x, upper_x, alpha=False):

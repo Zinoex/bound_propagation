@@ -6,129 +6,167 @@ from .general import BoundModule
 
 
 class Parallel(nn.Module):
-    def __init__(self, subnetwork1, subnetwork2, split_size=None):
+    def __init__(self, *subnetworks, split_size=None):
         super().__init__()
 
         self.split_size = split_size
-        self.subnetwork1 = subnetwork1
-        self.subnetwork2 = subnetwork2
+        self.subnetworks = subnetworks
 
     def forward(self, x):
-        if self.split_size:
-            x1, x2 = x[..., :self.split_size], x[..., self.split_size:]
+        if self.split_size is not None:
+            x = x.split(self.split_size, dim=-1)
+            y = [network(x) for network, x in zip(self.subnetworks, x)]
         else:
-            x1, x2 = x, x
+            y = [network(x) for network in self.subnetworks]
 
-        return torch.cat([self.subnetwork1(x1), self.subnetwork2(x2)], dim=-1)
+        return torch.cat(y, dim=-1)
 
 
 class BoundParallel(BoundModule):
-    def __init__(self, model, factory, **kwargs):
-        super().__init__(model, factory)
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory)
 
-        self.out_size1 = None
-        self.subnetwork1 = factory.build(model.subnetwork1)
-        self.subnetwork2 = factory.build(model.subnetwork2)
+        self.in_sizes = None
+        self.out_sizes = None
+        self.subnetworks = [factory.build(network) for network in module.subnetworks]
 
     @property
     def need_relaxation(self):
-        return self.subnetwork1.need_relaxation or self.subnetwork2.need_relaxation
+        return any([network.need_relaxation for network in self.subnetworks])
 
     def clear_relaxation(self):
-        self.subnetwork1.clear_relaxation()
-        self.subnetwork2.clear_relaxation()
+        for network in self.subnetworks:
+            network.clear_relaxation()
+
+    def set_relaxation(self, linear_bounds, modules, sizes, extras):
+        indices = self.indices(sizes)
+        for module, index, extra in zip(modules, indices, extras):
+            module.set_relaxation(linear_bounds[..., index[0]:index[1], :], *extra)
 
     def backward_relaxation(self, region):
-        if self.subnetwork1.need_relaxation:
-            linear_bounds, relaxation_module = self.subnetwork1.backward_relaxation(region)
-            return self.padding(linear_bounds, order=0), relaxation_module
+        if self.in_sizes is None:
+            for network in self.subnetworks:
+                if network.need_relaxation:
+                    return network.backward_relaxation(region)
+
+            assert False
         else:
-            assert self.subnetwork2.need_relaxation
-            linear_bounds, relaxation_module = self.subnetwork2.backward_relaxation(region)
-            return self.padding(linear_bounds, order=1), relaxation_module
+            assert any([network.need_relaxation for network in self.subnetworks])
 
-    def padding(self, linear_bounds, order=0):
-        if self.module.split_size is None:
-            return linear_bounds
+            bounds = [self.submodule_backward_relaxation(region, network, in_size) for network, in_size in zip(self.subnetworks, self.in_sizes)]
+            bounds = [bound for bound in bounds if bound[1] is not None]
 
-        if order == 0:
-            lowerA = torch.cat([linear_bounds.lower[0], torch.zeros_like(linear_bounds.lower[0])], dim=-1)
-            upperA = torch.cat([linear_bounds.upper[0], torch.zeros_like(linear_bounds.upper[0])], dim=-1)
+            modules = [bound[1] for bound in bounds]
+            sizes = [bound[0].lower[1].size(-1) for bound in bounds]
+            indices = self.indices(sizes)
+            total_size = sum(sizes)
+
+            lowerA = torch.cat([self.padding(bound[0].lower[0], index, total_size) for bound, index in zip(bounds, indices)], dim=-1)
+            lower_bias = torch.cat([bound[0].lower[1] for bound in bounds], dim=-1)
+
+            upperA = torch.cat([self.padding(bound[0].upper[0], index, total_size) for bound, index in zip(bounds, indices)], dim=-1)
+            upper_bias = torch.cat([bound[0].upper[1] for bound in bounds], dim=-1)
+
+            extras = [bound[2:] for bound in bounds]
+
+            return LinearBounds(region, (lowerA, lower_bias), (upperA, upper_bias)), self, modules, sizes, extras
+
+    def submodule_backward_relaxation(self, region, network, in_size):
+        if network.need_relaxation:
+            return network.backward_relaxation(region)
         else:
-            lowerA = torch.cat([torch.zeros_like(linear_bounds.lower[0]), linear_bounds.lower[0]], dim=-1)
-            upperA = torch.cat([torch.zeros_like(linear_bounds.upper[0]), linear_bounds.upper[0]], dim=-1)
+            return None, None
 
-        return LinearBounds(
-            linear_bounds.region,
-            (lowerA, linear_bounds.lower[1]),
-            (upperA, linear_bounds.upper[1])
-        )
+    def padding(self, A, index, total_size):
+        size = list(A.size())
+        size[-2] = index[0]
+        pre_padding = torch.zeros(size, device=A.device)
+
+        size[-2] = total_size - index[1]
+        post_padding = torch.zeros(size, device=A.device)
+
+        return torch.cat([pre_padding, A, post_padding], dim=-2)
 
     def crown_backward(self, linear_bounds, optimize):
-        assert self.out_size1 is not None
-
-        residual_linear_bounds1 = self.subnetwork1.crown_backward(linear_bounds[..., :self.out_size1], optimize)
-        residual_linear_bounds2 = self.subnetwork2.crown_backward(linear_bounds[..., self.out_size1:], optimize)
+        assert self.out_sizes is not None
+        split_bounds = self.split(linear_bounds, self.out_sizes)
+        residual_bounds = [network.crown_backward(split_linear_bound, optimize) for network, split_linear_bound in zip(self.subnetworks, split_bounds)]
 
         if linear_bounds.lower is None:
             lower = None
         else:
-            if self.module.split_size is not None:
-                lowerA = torch.cat([residual_linear_bounds1.lower[0], residual_linear_bounds2.lower[0]], dim=-1)
+            if self.module.split_size is None:
+                lowerA = torch.stack([residual_linear_bound.lower[0] for residual_linear_bound in residual_bounds], dim=-1).sum(dim=-1)
             else:
-                lowerA = residual_linear_bounds1.lower[0] + residual_linear_bounds2.lower[0]
+                lowerA = torch.cat([residual_linear_bound.lower[0] for residual_linear_bound in residual_bounds], dim=-1)
 
-            lower = (lowerA, residual_linear_bounds1.lower[1] + residual_linear_bounds2.lower[1] - linear_bounds.lower[1])
+            lower = (lowerA, torch.stack([residual_linear_bound.lower[1] for residual_linear_bound in residual_bounds], dim=-1).sum(dim=-1) - (len(self.subnetworks) - 1) * linear_bounds.lower[1])
 
         if linear_bounds.upper is None:
             upper = None
         else:
-            if self.module.split_size is not None:
-                upperA = torch.cat([residual_linear_bounds1.upper[0], residual_linear_bounds2.upper[0]], dim=-1)
+            if self.module.split_size is None:
+                upperA = torch.stack([residual_linear_bound.upper[0] for residual_linear_bound in residual_bounds], dim=-1).sum(dim=-1)
             else:
-                upperA = residual_linear_bounds1.upper[0] + residual_linear_bounds2.upper[0]
+                upperA = torch.cat([residual_linear_bound.upper[0] for residual_linear_bound in residual_bounds], dim=-1)
 
-            upper = (upperA, residual_linear_bounds1.upper[1] + residual_linear_bounds2.upper[1] - linear_bounds.upper[1])
+            upper = (upperA, torch.stack([residual_linear_bound.upper[1] for residual_linear_bound in residual_bounds], dim=-1).sum(dim=-1) - (len(self.subnetworks) - 1) * linear_bounds.upper[1])
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
     def ibp_forward(self, bounds, save_relaxation=False):
-        if self.module.split_size is not None:
-            bounds1, bounds2 = bounds[..., :self.module.split_size], bounds[..., self.module.split_size:]
+        if self.module.split_size is None:
+            split_bounds = [bounds for _ in range(len(self.subnetworks))]
         else:
-            bounds1, bounds2 = bounds, bounds
+            split_bounds = self.split(bounds, self.split_sizes(len(bounds)))
 
-        residual_bounds1 = self.subnetwork1.ibp_forward(bounds1, save_relaxation=save_relaxation)
-        residual_bounds2 = self.subnetwork2.ibp_forward(bounds2, save_relaxation=save_relaxation)
+        residual_bounds = [network.ibp_forward(bound, save_relaxation=save_relaxation) for network, bound in zip(self.subnetworks, split_bounds)]
 
-        # Order matters here! - must match forward on Parallel class
-        lower = torch.cat([residual_bounds1.lower, residual_bounds2.lower], dim=-1)
-        upper = torch.cat([residual_bounds1.upper, residual_bounds2.upper], dim=-1)
+        lower = torch.cat([bound.lower for bound in residual_bounds], dim=-1)
+        upper = torch.cat([bound.upper for bound in residual_bounds], dim=-1)
         return IntervalBounds(bounds.region, lower, upper)
 
+    def split(self, bounds, sizes):
+        indices = self.indices(sizes)
+        return [bounds[..., from_:to_] for from_, to_ in indices]
+
+    def indices(self, sizes):
+        indices = torch.tensor(sizes).cumsum(0).tolist()
+        return list(zip([0] + indices[:-1], indices))
+
     def propagate_size(self, in_size):
-        if self.module.split_size is not None:
-            out_size1 = self.subnetwork1.propagate_size(self.module.split_size)
-            out_size2 = self.subnetwork2.propagate_size(in_size - self.module.split_size)
+        split_sizes = self.module.split_size
+        if split_sizes is not None:
+            split_sizes = self.split_sizes(in_size)
+
+            out_sizes = [network.propagate_size(split_size) for network, split_size in zip(self.subnetworks, split_sizes)]
         else:
-            out_size1 = self.subnetwork1.propagate_size(in_size)
-            out_size2 = self.subnetwork2.propagate_size(in_size)
+            out_sizes = [network.propagate_size(in_size) for network in self.subnetworks]
 
-        self.out_size1 = out_size1
+        self.out_sizes = out_sizes
+        self.in_sizes = split_sizes
 
-        return out_size1 + out_size2
+        return sum(out_sizes)
+
+    def split_sizes(self, in_size):
+        split_sizes = self.module.split_size
+        if isinstance(split_sizes, int):
+            num_full_size = in_size // split_sizes
+            split_sizes = [split_sizes for _ in range(num_full_size)] + [in_size - num_full_size * split_sizes]
+
+        return split_sizes
 
     def bound_parameters(self):
-        yield from self.subnetwork1.bound_parameters()
-        yield from self.subnetwork2.bound_parameters()
+        for network in self.subnetworks:
+            yield from network.bound_parameters()
 
     def reset_params(self):
-        self.subnetwork1.reset_params()
-        self.subnetwork2.reset_params()
+        for network in self.subnetworks:
+            network.reset_params()
 
     def clip_params(self):
-        self.subnetwork1.clip_params()
-        self.subnetwork2.clip_params()
+        for network in self.subnetworks:
+            network.clip_params()
 
 
 class Cat(Parallel):
