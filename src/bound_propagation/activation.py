@@ -197,7 +197,11 @@ class BoundReLU(BoundActivation):
         self.alpha_lower[np], self.beta_lower[np] = a, 0
         self.alpha_upper[np], self.beta_upper[np] = z, -lower * z
 
+        # Allow parameterization
+        # Save mask
         self.unstable_lower = np
+        # Optimization variables [0, 1] - detach, clone, and require grad to perform back prop and optimization
+        # Be sure that slope != 0 as that would result in zero gradient
         self.unstable_slope_lower = z.detach().clone().requires_grad_()
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
@@ -321,8 +325,13 @@ class BoundSigmoid(BoundActivation):
         # - d = (lower + upper) / 2 for midpoint
         # - Slope is sigma'(d) and it has to cross through sigma(d)
         add_linear(self.alpha_lower, self.beta_lower, mask=n, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
         self.unstable_lower = n
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
         self.unstable_d_lower = d[n].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
         self.unstable_range_lower = lower[n], upper[n]
 
         ###################
@@ -336,8 +345,13 @@ class BoundSigmoid(BoundActivation):
         # - d = (lower + upper) / 2 for midpoint
         # - Slope is sigma'(d) and it has to cross through sigma(d)
         add_linear(self.alpha_upper, self.beta_upper, mask=p, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
         self.unstable_upper = p
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
         self.unstable_d_upper = d[p].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
         self.unstable_range_upper = lower[p], upper[p]
 
         #################
@@ -385,6 +399,7 @@ class BoundSigmoid(BoundActivation):
         if self.unstable_lower is None or self.unstable_upper is None:
             logger.warning('Sigmoid/tanh bound not parameterized but expected to')
 
+        # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
             a = self.derivative(x)
             y = self.func(x)
@@ -429,6 +444,7 @@ def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int
 
 
 class BoundTanh(BoundSigmoid):
+    # Tanh is actually just a scaled sigmoid, so let's reuse that code
     def func(self, x):
         return torch.tanh(x)
 
@@ -453,3 +469,9 @@ class BoundIdentity(BoundModule):
 
     def propagate_size(self, in_size):
         return in_size
+
+# TODO: Sin
+# TODO: Cos - sin + offset
+# TODO: Log - Only positive numbers
+# TODO: Exp
+# TODO: Reciprocal - Only negative or positive. If crossing zero then no linear relaxation can exist.
