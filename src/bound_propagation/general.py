@@ -22,8 +22,8 @@ class BoundModule(nn.Module, abc.ABC):
     def crown_relax(self, region):
         # No grad for relaxations improves accuracy and stabilizes training for CROWN.
         while self.need_relaxation:
-            linear_bounds, module = self.backward_relaxation(region)
-            module.set_relaxation(linear_bounds)
+            linear_bounds, module, *extra = self.backward_relaxation(region)
+            module.set_relaxation(linear_bounds, *extra)
 
     @torch.no_grad()
     def ibp_relax(self, region):
@@ -52,10 +52,9 @@ class BoundModule(nn.Module, abc.ABC):
         return linear_bounds
 
     def initial_linear_bounds(self, region, out_size, lower=True, upper=True):
-        W_tilde = torch.eye(out_size, device=region.lower.device)\
-            .unsqueeze(-3).expand(*region.lower.size()[:-1], out_size, out_size)
-        bias = torch.zeros((out_size,), device=region.lower.device)\
-            .unsqueeze(-2).expand(*region.lower.size()[:-1], out_size)
+        device = region.lower.device
+        W_tilde = torch.eye(out_size, device=device).unsqueeze(-3).expand(*region.lower.size()[:-1], out_size, out_size)
+        bias = torch.zeros((out_size,), device=device).unsqueeze(-2).expand(*region.lower.size()[:-1], out_size)
 
         lower = (W_tilde, bias) if lower else None
         upper = (W_tilde, bias) if upper else None
@@ -111,7 +110,7 @@ class BoundModule(nn.Module, abc.ABC):
     def clear_relaxation(self):
         pass
 
-    def set_relaxation(self, linear_bounds):
+    def set_relaxation(self, linear_bounds, *args):
         pass
 
     def backward_relaxation(self, region):

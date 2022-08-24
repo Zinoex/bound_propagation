@@ -19,8 +19,8 @@ class BoundSequential(BoundModule):
     def backward_relaxation(self, region):
         for i, module in enumerate(self.bound_sequential):
             if module.need_relaxation:
-                linear_bounds, relaxation_module = module.backward_relaxation(region)
-                return self.subnetwork_crown_backward(self.bound_sequential[:i], linear_bounds, False), relaxation_module
+                linear_bounds, relaxation_module, *extra = module.backward_relaxation(region)
+                return self.subnetwork_crown_backward(self.bound_sequential[:i], linear_bounds, False), relaxation_module, *extra
 
         assert False, 'At least one module needs relaxation'
 
