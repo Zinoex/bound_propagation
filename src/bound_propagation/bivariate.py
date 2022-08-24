@@ -260,3 +260,7 @@ class BoundVectorSub(BoundModule):
         assert in_size % 2 == 0
 
         return in_size // 2
+
+
+# TODO: Mul
+# TODO: Div = Mul(a, Reciprocal(b))
