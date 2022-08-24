@@ -129,3 +129,11 @@ class BoundParallel(BoundModule):
     def clip_params(self):
         self.subnetwork1.clip_params()
         self.subnetwork2.clip_params()
+
+
+class Cat(Parallel):
+    def __init__(self, subnetwork):
+        super().__init__(
+            nn.Identity(),
+            subnetwork
+        )

@@ -2,7 +2,6 @@ from torch import nn
 
 from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity
 from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub
-from .cat import BoundCat, Cat
 from .linear import BoundLinear
 from .parallel import BoundParallel, Parallel
 from .saturation import BoundClamp, Clamp
@@ -28,7 +27,6 @@ class BoundModelFactory:
             (VectorAdd, BoundVectorAdd),
             (Sub, BoundSub),
             (VectorSub, BoundVectorSub),
-            (Cat, BoundCat),
             (Parallel, BoundParallel),
             (Clamp, BoundClamp)
         ]
