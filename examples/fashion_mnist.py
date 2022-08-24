@@ -22,11 +22,13 @@ class FashionMNISTNetwork(nn.Sequential):
             classes = 10
 
             super().__init__(
-                nn.Linear(img_size, 128),
-                nn.Tanh(),
-                nn.Linear(128, 128),
-                nn.Tanh(),
-                nn.Linear(128, classes)
+                nn.Linear(img_size, 64),
+                nn.ReLU(),
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64, classes)
             )
 
 
@@ -53,10 +55,10 @@ def train(net, args):
     train_loader = DataLoader(train_data, batch_size=500, shuffle=True, num_workers=8)
 
     criterion = torch.nn.CrossEntropyLoss()
-    optimizer = torch.optim.AdamW(net.parameters(), lr=5e-4)
+    optimizer = torch.optim.Adam(net.parameters(), lr=5e-4)
 
     k = 1.0
-    for epoch in trange(10):
+    for epoch in trange(20):
 
         running_loss = 0.0
         running_cross_entropy = 0.0
@@ -68,7 +70,7 @@ def train(net, args):
 
             cross_entropy = criterion(y_hat, y)
 
-            bounds = net.crown_ibp(HyperRectangle.from_eps(X, 0.01)).concretize()
+            bounds = net.ibp(HyperRectangle.from_eps(X, 0.01))
             logit = adversarial_logit(bounds, y)
 
             loss = k * cross_entropy + (1 - k) * criterion(logit, y)
@@ -118,7 +120,9 @@ def timing(net, args):
     methods = [
         ('ibp', net.ibp),
         ('crown_ibp', lambda x: net.crown_ibp(x).concretize()),
-        ('crown', lambda x: net.crown(x).concretize())
+        ('crown', lambda x: net.crown(x).concretize()),
+        ('alpha_crown_ibp', lambda x: net.crown_ibp(x, alpha=True).concretize()),
+        ('alpha_crown', lambda x: net.crown(x, alpha=True).concretize())
     ]
 
     for method_name, method in methods:
@@ -168,7 +172,9 @@ def verify(net, args):
     methods = [
         ('ibp', net.ibp),
         ('crown_ibp', lambda x: net.crown_ibp(x).concretize()),
-        ('crown', lambda x: net.crown(x).concretize())
+        ('crown', lambda x: net.crown(x).concretize()),
+        ('alpha_crown_ibp', lambda x: net.crown_ibp(x, alpha=True).concretize()),
+        ('alpha_crown', lambda x: net.crown(x, alpha=True).concretize())
     ]
 
     transform, target_transform = construct_transform()

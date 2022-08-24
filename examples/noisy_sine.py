@@ -217,7 +217,7 @@ class NoisySineDataset(TensorDataset):
         else:
             raise NotImplementedError()
 
-        super(NoisySineDataset, self).__init__(X, y)
+        super().__init__(X, y)
 
 
 class Model(nn.Sequential):
