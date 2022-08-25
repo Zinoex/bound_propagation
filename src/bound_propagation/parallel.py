@@ -114,13 +114,13 @@ class BoundParallel(BoundModule):
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         if self.module.split_size is None:
             split_bounds = [bounds for _ in range(len(self.subnetworks))]
         else:
             split_bounds = self.split(bounds, self.split_sizes(len(bounds)))
 
-        residual_bounds = [network.ibp_forward(bound, save_relaxation=save_relaxation) for network, bound in zip(self.subnetworks, split_bounds)]
+        residual_bounds = [network.ibp_forward(bound, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds) for network, bound in zip(self.subnetworks, split_bounds)]
 
         lower = torch.cat([bound.lower for bound in residual_bounds], dim=-1)
         upper = torch.cat([bound.upper for bound in residual_bounds], dim=-1)

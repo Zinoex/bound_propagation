@@ -54,9 +54,9 @@ class BoundAdd(BoundModule):
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
-    def ibp_forward(self, bounds, save_relaxation=False):
-        bounds1 = self.bound_network1.ibp_forward(bounds, save_relaxation=save_relaxation)
-        bounds2 = self.bound_network2.ibp_forward(bounds, save_relaxation=save_relaxation)
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
+        bounds1 = self.bound_network1.ibp_forward(bounds, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds)
+        bounds2 = self.bound_network2.ibp_forward(bounds, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds)
 
         return IntervalBounds(
             bounds.region,
@@ -111,7 +111,7 @@ class BoundVectorAdd(BoundModule):
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         half_size = bounds.lower.size(-1) // 2
 
         return IntervalBounds(
@@ -190,9 +190,9 @@ class BoundSub(BoundModule):
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
-    def ibp_forward(self, bounds, save_relaxation=False):
-        bounds1 = self.bound_network1.ibp_forward(bounds, save_relaxation=save_relaxation)
-        bounds2 = self.bound_network2.ibp_forward(bounds, save_relaxation=save_relaxation)
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
+        bounds1 = self.bound_network1.ibp_forward(bounds, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds)
+        bounds2 = self.bound_network2.ibp_forward(bounds, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds)
 
         return IntervalBounds(
             bounds.region,
@@ -247,7 +247,7 @@ class BoundVectorSub(BoundModule):
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         half_size = bounds.lower.size(-1) // 2
 
         return IntervalBounds(

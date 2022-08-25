@@ -20,6 +20,11 @@ class BoundModule(nn.Module, abc.ABC):
 
     @torch.no_grad()
     def crown_relax(self, region):
+        # Force bounds based on IBP, which may be tighter. More importantly, this also works if say there
+        # is a Clamp in front of a Log which requires x > 0, and a linear relaxation may violate this
+        interval_bounds = IntervalBounds(region, region.lower, region.upper)
+        self.ibp_forward(interval_bounds, save_input_bounds=True)
+
         # No grad for relaxations improves accuracy and stabilizes training for CROWN.
         while self.need_relaxation:
             linear_bounds, module, *extra = self.backward_relaxation(region)
@@ -125,7 +130,7 @@ class BoundModule(nn.Module, abc.ABC):
         return self.ibp_forward(bounds)
 
     @abc.abstractmethod
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         raise NotImplementedError()
 
     @abc.abstractmethod

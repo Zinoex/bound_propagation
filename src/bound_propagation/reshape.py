@@ -49,7 +49,7 @@ class BoundSelect(BoundModule):
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         return IntervalBounds(bounds.region, bounds.lower[..., self.module.indices], bounds.upper[..., self.module.indices])
 
     def propagate_size(self, in_size):

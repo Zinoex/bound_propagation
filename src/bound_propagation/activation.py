@@ -44,6 +44,8 @@ class BoundActivation(BoundModule, abc.ABC):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
 
+        self.input_bounds = None
+
         self.alpha_lower, self.beta_lower = None, None
         self.alpha_upper, self.beta_upper = None, None
 
@@ -60,6 +62,12 @@ class BoundActivation(BoundModule, abc.ABC):
 
     def set_relaxation(self, linear_bounds):
         interval_bounds = linear_bounds.concretize()
+        interval_bounds = IntervalBounds(
+            linear_bounds.region,
+            torch.max(interval_bounds.lower, self.input_bounds.lower),
+            torch.min(interval_bounds.upper, self.input_bounds.upper)
+        )
+
         self.alpha_beta(preactivation=interval_bounds)
         self.bounded = True
 
@@ -70,6 +78,8 @@ class BoundActivation(BoundModule, abc.ABC):
         return linear_bounds, self
 
     def clear_relaxation(self):
+        self.input_bounds = None
+
         self.alpha_lower, self.beta_lower = None, None
         self.alpha_upper, self.beta_upper = None, None
 
@@ -106,10 +116,13 @@ class BoundActivation(BoundModule, abc.ABC):
         return LinearBounds(linear_bounds.region, lower, upper)
 
     @assert_bound_order
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         if save_relaxation:
             self.alpha_beta(preactivation=bounds)
             self.bounded = True
+
+        if save_input_bounds:
+            self.input_bounds = bounds
 
         return IntervalBounds(bounds.region, self.module(bounds.lower), self.module(bounds.upper))
 

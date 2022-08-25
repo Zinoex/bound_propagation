@@ -33,9 +33,9 @@ class BoundSequential(BoundModule):
     def crown_backward(self, linear_bounds, optimize):
         return self.subnetwork_crown_backward(self.bound_sequential, linear_bounds, optimize)
 
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         for module in self.bound_sequential:
-            bounds = module.ibp_forward(bounds, save_relaxation=save_relaxation)
+            bounds = module.ibp_forward(bounds, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds)
 
         return bounds
 

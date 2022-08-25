@@ -66,7 +66,7 @@ class BoundLinear(BoundModule):
         return LinearBounds(linear_bounds.region, lower, upper)
 
     @assert_bound_order
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         center, diff = bounds.center, bounds.width / 2
         lower, upper = ibp_forward_linear_jit(self.module.weight, self.module.bias, center, diff)
 
