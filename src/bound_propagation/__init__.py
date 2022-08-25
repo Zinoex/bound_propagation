@@ -1,4 +1,4 @@
-from .activation import BoundActivation, BoundTanh, BoundReLU, BoundSigmoid, bisection
+from .activation import BoundActivation, BoundTanh, BoundReLU, BoundSigmoid, bisection, Exp, BoundExp
 from .bounds import LinearBounds, IntervalBounds, HyperRectangle
 from .factory import BoundModelFactory
 from .general import BoundModule

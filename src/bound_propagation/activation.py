@@ -4,6 +4,7 @@ from functools import wraps
 from typing import Tuple
 
 import torch
+from torch import nn
 
 from .general import BoundModule
 from .bounds import LinearBounds, IntervalBounds
@@ -226,9 +227,8 @@ class BoundReLU(BoundActivation):
 
 
 class BoundSigmoid(BoundActivation):
-    def __init__(self, module, factory, adaptive_relu=True, **kwargs):
+    def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory)
-        self.adaptive_relu = adaptive_relu
 
         self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
         self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
@@ -469,6 +469,111 @@ class BoundIdentity(BoundModule):
 
     def propagate_size(self, in_size):
         return in_size
+
+
+class Exp(nn.Module):
+    def forward(self, x):
+        return x.exp()
+
+
+class BoundExp(BoundActivation):
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory)
+
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_range_lower = None
+
+    @property
+    def unstable_d_lower(self):
+        return self._unstable_d_lower
+
+    @unstable_d_lower.setter
+    def unstable_d_lower(self, value):
+        self._unstable_d_lower = value
+        self.initial_unstable_d_lower = value
+
+    def clear_relaxation(self):
+        super().clear_relaxation()
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_range_lower = None
+
+    def func(self, x):
+        return x.exp()
+
+    def derivative(self, x):
+        return x.exp()
+
+    @assert_bound_order
+    def alpha_beta(self, preactivation):
+        lower, upper = preactivation.lower, preactivation.upper
+        zero_width, n, p, np = regimes(lower, upper)
+        all = (n | p | np)
+
+        self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
+        self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+
+        # Use upper and lower in the bias to account for a small numerical difference between lower and upper
+        # which ought to be negligible, but may still be present due to torch.isclose.
+        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
+        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
+
+        lower_act, upper_act = self.func(lower), self.func(upper)
+        lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
+
+        d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
+        d_act = self.func(d)
+        d_prime = self.derivative(d)
+
+        slope = (upper_act - lower_act) / (upper - lower)
+
+        def add_linear(alpha, beta, a, x, y, a_mask=True):
+            if a_mask:
+                a = a[all]
+
+            alpha[all] = a
+            beta[all] = y[all] - a * x[all]
+
+        # Upper bound
+        # - Exact slope between lower and upper
+        add_linear(self.alpha_upper, self.beta_upper, a=slope, x=lower, y=lower_act)
+
+        # Lower bound
+        # - d = (lower + upper) / 2 for midpoint
+        # - Slope is sigma'(d) and it has to cross through sigma(d)
+        add_linear(self.alpha_lower, self.beta_lower, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
+        self.unstable_lower = all
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        self.unstable_d_lower = d[all].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
+        self.unstable_range_lower = lower[all], upper[all]
+
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        if self.unstable_lower is None:
+            logger.warning('Exp not parameterized but expected to')
+
+        # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
+        a = self.derivative(self.unstable_d_lower)
+        y = self.func(self.unstable_d_lower)
+
+        alpha_lower[self.unstable_lower] = a
+        beta_lower[self.unstable_lower] = y - a * self.unstable_d_lower
+
+        return alpha_lower, alpha_upper, beta_lower, beta_upper
+
+    def bound_parameters(self):
+        if self.unstable_lower is None:
+            logger.warning('Exp bound not parameterized but expected to')
+
+        yield self.unstable_d_lower
+
+    def reset_params(self):
+        self._unstable_d_lower = self.initial_unstable_d_lower
+
+    def clip_params(self):
+        self._unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
 
 # TODO: Sin
 # TODO: Cos - sin + offset

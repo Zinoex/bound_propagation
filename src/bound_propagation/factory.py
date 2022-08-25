@@ -1,6 +1,6 @@
 from torch import nn
 
-from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity
+from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity, BoundExp, Exp
 from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub
 from .linear import BoundLinear
 from .parallel import BoundParallel, Parallel
@@ -24,6 +24,7 @@ class BoundModelFactory:
             (nn.Tanh, BoundTanh),
             (nn.Sigmoid, BoundSigmoid),
             (nn.Identity, BoundIdentity),
+            (Exp, BoundExp),
             (Add, BoundAdd),
             (VectorAdd, BoundVectorAdd),
             (Sub, BoundSub),
