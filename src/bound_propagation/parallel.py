@@ -53,25 +53,26 @@ class BoundParallel(BoundModule):
         else:
             assert any([network.need_relaxation for network in self.subnetworks])
 
-            bounds = [self.submodule_backward_relaxation(region, network, in_size) for network, in_size in zip(self.subnetworks, self.in_sizes)]
-            bounds = [bound for bound in bounds if bound[1] is not None]
+            bounds = [self.submodule_backward_relaxation(region, network) for network in self.subnetworks]
 
-            modules = [bound[1] for bound in bounds]
-            sizes = [bound[0].lower[1].size(-1) for bound in bounds]
-            indices = self.indices(sizes)
-            total_size = sum(sizes)
+            indices = self.indices(self.in_sizes)
+            bounds = [(bound, in_size, index) for bound, in_size, index in zip(bounds, self.in_sizes, indices) if bound[1] is not None]
 
-            lowerA = torch.cat([self.padding(bound[0].lower[0], index, total_size) for bound, index in zip(bounds, indices)], dim=-1)
-            lower_bias = torch.cat([bound[0].lower[1] for bound in bounds], dim=-1)
+            modules = [bound[1] for bound, in_size, index in bounds]
+            sizes = [in_size for bound, in_size, index in bounds]
+            total_size = sum(self.in_sizes)
 
-            upperA = torch.cat([self.padding(bound[0].upper[0], index, total_size) for bound, index in zip(bounds, indices)], dim=-1)
-            upper_bias = torch.cat([bound[0].upper[1] for bound in bounds], dim=-1)
+            lowerA = torch.cat([self.padding(bound[0].lower[0], index, total_size) for bound, in_size, index in bounds], dim=-2)
+            lower_bias = torch.cat([bound[0].lower[1] for bound, in_size, index in bounds], dim=-1)
 
-            extras = [bound[2:] for bound in bounds]
+            upperA = torch.cat([self.padding(bound[0].upper[0], index, total_size) for bound, in_size, index in bounds], dim=-2)
+            upper_bias = torch.cat([bound[0].upper[1] for bound, in_size, index in bounds], dim=-1)
+
+            extras = [bound[2:] for bound, in_size, index in bounds]
 
             return LinearBounds(region, (lowerA, lower_bias), (upperA, upper_bias)), self, modules, sizes, extras
 
-    def submodule_backward_relaxation(self, region, network, in_size):
+    def submodule_backward_relaxation(self, region, network):
         if network.need_relaxation:
             return network.backward_relaxation(region)
         else:
@@ -79,13 +80,13 @@ class BoundParallel(BoundModule):
 
     def padding(self, A, index, total_size):
         size = list(A.size())
-        size[-2] = index[0]
+        size[-1] = index[0]
         pre_padding = torch.zeros(size, device=A.device)
 
-        size[-2] = total_size - index[1]
+        size[-1] = total_size - index[1]
         post_padding = torch.zeros(size, device=A.device)
 
-        return torch.cat([pre_padding, A, post_padding], dim=-2)
+        return torch.cat([pre_padding, A, post_padding], dim=-1)
 
     def crown_backward(self, linear_bounds, optimize):
         assert self.out_sizes is not None
@@ -152,7 +153,9 @@ class BoundParallel(BoundModule):
         split_sizes = self.module.split_size
         if isinstance(split_sizes, int):
             num_full_size = in_size // split_sizes
-            split_sizes = [split_sizes for _ in range(num_full_size)] + [in_size - num_full_size * split_sizes]
+            split_sizes = [split_sizes for _ in range(num_full_size)]
+            if in_size % self.module.split_size != 0:
+                split_sizes.append(in_size - num_full_size * self.module.split_size)
 
         return split_sizes
 
