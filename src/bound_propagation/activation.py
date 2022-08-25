@@ -531,7 +531,6 @@ class BoundExp(BoundActivation):
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
         lower_act, upper_act = self.func(lower), self.func(upper)
-        lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
 
         d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
         d_act = self.func(d)
@@ -587,6 +586,115 @@ class BoundExp(BoundActivation):
 
     def clip_params(self):
         self._unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+
+
+class Log(nn.Module):
+    def forward(self, x):
+        # Assumption: x > 0 (as log is only defined for x > 0)
+        return x.log()
+
+
+class BoundLog(BoundActivation):
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory)
+
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_upper = None
+
+    @property
+    def unstable_d_upper(self):
+        return self._unstable_d_upper
+
+    @unstable_d_upper.setter
+    def unstable_d_upper(self, value):
+        self._unstable_d_upper = value
+        self.initial_unstable_d_upper = value
+
+    def clear_relaxation(self):
+        super().clear_relaxation()
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_upper = None
+
+    def func(self, x):
+        return x.log()
+
+    def derivative(self, x):
+        # As we already assume x > 0, this is well-defined
+        return 1 / x
+
+    @assert_bound_order
+    def alpha_beta(self, preactivation):
+        lower, upper = preactivation.lower, preactivation.upper
+        assert torch.all(lower > 0)
+
+        zero_width, n, p, np = regimes(lower, upper)
+        all = (n | p | np)
+
+        self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
+        self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+
+        # Use upper and lower in the bias to account for a small numerical difference between lower and upper
+        # which ought to be negligible, but may still be present due to torch.isclose.
+        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
+        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
+
+        lower_act, upper_act = self.func(lower), self.func(upper)
+
+        d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
+        d_act = self.func(d)
+        d_prime = self.derivative(d)
+
+        slope = (upper_act - lower_act) / (upper - lower)
+
+        def add_linear(alpha, beta, a, x, y, a_mask=True):
+            if a_mask:
+                a = a[all]
+
+            alpha[all] = a
+            beta[all] = y[all] - a * x[all]
+
+        # Lower bound
+        # - Exact slope between lower and upper
+        add_linear(self.alpha_lower, self.beta_lower, a=slope, x=lower, y=lower_act)
+
+        # Upper bound
+        # - d = (lower + upper) / 2 for midpoint
+        # - Slope is sigma'(d) and it has to cross through sigma(d)
+        add_linear(self.alpha_upper, self.beta_upper, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
+        self.unstable_upper = all
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        self.unstable_d_upper = d[all].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
+        self.unstable_range_upper = lower[all], upper[all]
+
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        if self.unstable_upper is None:
+            logger.warning('Log not parameterized but expected to')
+
+        # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
+        a = self.derivative(self.unstable_d_upper)
+        y = self.func(self.unstable_d_upper)
+
+        alpha_upper[self.unstable_upper] = a
+        beta_upper[self.unstable_upper] = y - a * self.unstable_d_upper
+
+        return alpha_lower, alpha_upper, beta_lower, beta_upper
+
+    def bound_parameters(self):
+        if self.unstable_upper is None:
+            logger.warning('Log bound not parameterized but expected to')
+
+        yield self.unstable_d_upper
+
+    def reset_params(self):
+        self._unstable_d_upper = self.initial_unstable_d_upper
+
+    def clip_params(self):
+        self._unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+
 
 # TODO: Sin
 # TODO: Cos - sin + offset
