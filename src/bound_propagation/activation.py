@@ -696,6 +696,170 @@ class BoundLog(BoundActivation):
         self._unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
+class Reciprocal(nn.Module):
+    def forward(self, x):
+        return 1 / x
+
+
+class BoundReciprocal(BoundActivation):
+    # Only negative or positive. If crossing zero then no linear relaxation can exist as it goes to +- \infty
+
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory)
+
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_lower, self.unstable_range_upper = None, None
+
+    @property
+    def unstable_d_lower(self):
+        return self._unstable_d_lower
+
+    @unstable_d_lower.setter
+    def unstable_d_lower(self, value):
+        self._unstable_d_lower = value
+        self.initial_unstable_d_lower = value
+
+    @property
+    def unstable_d_upper(self):
+        return self._unstable_d_upper
+
+    @unstable_d_upper.setter
+    def unstable_d_upper(self, value):
+        self._unstable_d_upper = value
+        self.initial_unstable_d_upper = value
+
+    def clear_relaxation(self):
+        super().clear_relaxation()
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_lower, self.unstable_range_upper = None, None
+
+    def func(self, x):
+        return 1 / x
+
+    def derivative(self, x):
+        return -1 / (x ** 2)
+
+    @assert_bound_order
+    def alpha_beta(self, preactivation):
+        lower, upper = preactivation.lower, preactivation.upper
+        zero_width, n, p, np = regimes(lower, upper)
+        assert not torch.any(np)
+
+        self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
+        self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+
+        # Use upper and lower in the bias to account for a small numerical difference between lower and upper
+        # which ought to be negligible, but may still be present due to torch.isclose.
+        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
+        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
+
+        lower_act, upper_act = self.func(lower), self.func(upper)
+        lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
+
+        d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
+        d_act = self.func(d)
+        d_prime = self.derivative(d)
+
+        slope = (upper_act - lower_act) / (upper - lower)
+
+        def add_linear(alpha, beta, mask, a, x, y, a_mask=True):
+            if a_mask:
+                a = a[mask]
+
+            alpha[mask] = a
+            beta[mask] = y[mask] - a * x[mask]
+
+        ###################
+        # Negative regime #
+        ###################
+        # Lower bound
+        # - Exact slope between lower and upper
+        add_linear(self.alpha_lower, self.beta_lower, mask=n, a=slope, x=upper, y=upper_act)
+
+        # Upper bound
+        # - d = (lower + upper) / 2 for midpoint
+        # - Slope is sigma'(d) and it has to cross through sigma(d)
+        add_linear(self.alpha_upper, self.alpha_upper, mask=n, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
+        self.unstable_upper = n
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        self.unstable_d_upper = d[n].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
+        self.unstable_range_upper = lower[n], upper[n]
+
+        ###################
+        # Positive regime #
+        ###################
+        # Upper bound
+        # - Exact slope between lower and upper
+        add_linear(self.alpha_upper, self.beta_upper, mask=p, a=slope, x=lower, y=lower_act)
+
+        # Lower bound
+        # - d = (lower + upper) / 2 for midpoint
+        # - Slope is sigma'(d) and it has to cross through sigma(d)
+        add_linear(self.alpha_lower, self.beta_lower, mask=p, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
+        self.unstable_lower = p
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        self.unstable_d_lower = d[p].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
+        self.unstable_range_lower = lower[p], upper[p]
+
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
+        if save_relaxation:
+            self.alpha_beta(preactivation=bounds)
+            self.bounded = True
+
+        if save_input_bounds:
+            self.input_bounds = bounds
+
+        lower_act = self.module(bounds.lower)
+        upper_act = self.module(bounds.upper)
+
+        lower = torch.min(lower_act, upper_act)
+        upper = torch.max(lower_act, upper_act)
+
+        return IntervalBounds(bounds.region, lower, upper)
+
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        if self.unstable_lower is None or self.unstable_upper is None:
+            logger.warning('Reciprocal bound not parameterized but expected to')
+
+        # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
+        def add_linear(alpha, beta, mask, x):
+            a = self.derivative(x)
+            y = self.func(x)
+
+            alpha[mask] = a
+            beta[mask] = y - a * x
+
+        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower, x=self.unstable_d_lower)
+        add_linear(alpha_upper, beta_upper, mask=self.unstable_upper, x=self.unstable_d_upper)
+
+        return alpha_lower, alpha_upper, beta_lower, beta_upper
+
+    def bound_parameters(self):
+        if self.unstable_lower is None or self.unstable_upper is None:
+            logger.warning('Reciprocal bound not parameterized but expected to')
+
+        yield self.unstable_d_lower
+        yield self.unstable_d_upper
+
+    def reset_params(self):
+        self._unstable_d_lower = self.initial_unstable_d_lower
+        self._unstable_d_upper = self.initial_unstable_d_upper
+
+    def clip_params(self):
+        self._unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        self._unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+
+
 # TODO: Sin
 # TODO: Cos - sin + offset
 # TODO: Log - Only positive numbers
