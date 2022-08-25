@@ -4,6 +4,7 @@ from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity
 from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub
 from .linear import BoundLinear
 from .parallel import BoundParallel, Parallel
+from .reshape import BoundSelect, Select
 from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
 
@@ -28,7 +29,8 @@ class BoundModelFactory:
             (Sub, BoundSub),
             (VectorSub, BoundVectorSub),
             (Parallel, BoundParallel),
-            (Clamp, BoundClamp)
+            (Clamp, BoundClamp),
+            (Select, BoundSelect)
         ]
 
         self.kwargs = kwargs
