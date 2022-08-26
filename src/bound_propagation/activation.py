@@ -483,7 +483,7 @@ class BoundIdentity(BoundModule):
         return linear_bounds
 
     @assert_bound_order
-    def ibp_forward(self, bounds, save_relaxation=False):
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         return bounds
 
     def propagate_size(self, in_size):
