@@ -233,10 +233,10 @@ class BoundReLU(BoundActivation):
             logger.warning('ReLU bound not parameterized but expected to')
 
     def reset_params(self):
-        self._unstable_slope_lower = self.initial_unstable_slope_lower
+        self.unstable_slope_lower.data.copy_(self.initial_unstable_slope_lower)
 
     def clip_params(self):
-        self._unstable_slope_lower.data.clamp_(min=0, max=1)
+        self.unstable_slope_lower.data.clamp_(min=0, max=1)
 
 
 class BoundSigmoid(BoundActivation):
@@ -433,12 +433,12 @@ class BoundSigmoid(BoundActivation):
         yield self.unstable_d_upper
 
     def reset_params(self):
-        self._unstable_d_lower = self.initial_unstable_d_lower
-        self._unstable_d_upper = self.initial_unstable_d_upper
+        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
+        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
 
     def clip_params(self):
-        self._unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-        self._unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
 def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int = 10) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -582,10 +582,10 @@ class BoundExp(BoundActivation):
         yield self.unstable_d_lower
 
     def reset_params(self):
-        self._unstable_d_lower = self.initial_unstable_d_lower
+        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
 
     def clip_params(self):
-        self._unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
 
 
 class Log(nn.Module):
@@ -690,10 +690,10 @@ class BoundLog(BoundActivation):
         yield self.unstable_d_upper
 
     def reset_params(self):
-        self._unstable_d_upper = self.initial_unstable_d_upper
+        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
 
     def clip_params(self):
-        self._unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
 class Reciprocal(nn.Module):
@@ -852,12 +852,12 @@ class BoundReciprocal(BoundActivation):
         yield self.unstable_d_upper
 
     def reset_params(self):
-        self._unstable_d_lower = self.initial_unstable_d_lower
-        self._unstable_d_upper = self.initial_unstable_d_upper
+        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
+        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
 
     def clip_params(self):
-        self._unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-        self._unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
 # TODO: Sin
