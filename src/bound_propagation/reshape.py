@@ -12,7 +12,12 @@ class Select(nn.Module):
         if isinstance(indices, int):
             indices = [indices]
         elif isinstance(indices, slice):
-            indices = [i for i in range(indices.start, indices.stop, indices.step)]
+            if indices.step is None:
+                r = range(indices.start, indices.stop)
+            else:
+                r = range(indices.start, indices.stop, indices.step)
+
+            indices = [i for i in r]
 
         self.indices = indices
 
