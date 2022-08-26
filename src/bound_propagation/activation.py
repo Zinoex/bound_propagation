@@ -5,6 +5,7 @@ from typing import Tuple
 
 import torch
 from torch import nn
+import numpy as np
 
 from .general import BoundModule
 from .bounds import LinearBounds, IntervalBounds
@@ -38,9 +39,6 @@ def crown_backward_act_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, tor
     W_tilde = W_tilde * _lambda
 
     return W_tilde, bias
-
-
-# TODO: Improve numerical conditioning (be conservative when taking the slope (attach in both ends)
 
 
 class BoundActivation(BoundModule, abc.ABC):
@@ -448,19 +446,20 @@ class BoundSigmoid(BoundActivation):
         self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
-def bisection(l: torch.Tensor, h: torch.Tensor, f: TensorFunction, num_iter: int = 10) -> Tuple[torch.Tensor, torch.Tensor]:
-    midpoint = (l + h) / 2
+def bisection(l: torch.Tensor, u: torch.Tensor, f: TensorFunction, num_iter: int = 10) -> Tuple[torch.Tensor, torch.Tensor]:
+    l, u = l.detach().clone(), u.detach().clone()
+    midpoint = (l + u) / 2
 
     for _ in range(num_iter):
         y = f(midpoint)
 
         msk = y <= 0
         l[msk] = midpoint[msk]
-        h[~msk] = midpoint[~msk]
+        u[~msk] = midpoint[~msk]
 
-        midpoint = (l + h) / 2
+        midpoint = (l + u) / 2
 
-    return l, h
+    return l, u
 
 
 class BoundTanh(BoundSigmoid):
@@ -867,8 +866,372 @@ class BoundReciprocal(BoundActivation):
         self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
-# TODO: Sin
-# TODO: Cos - sin + offset
-# TODO: Log - Only positive numbers
-# TODO: Exp
-# TODO: Reciprocal - Only negative or positive. If crossing zero then no linear relaxation can exist.
+class Sin(nn.Module):
+    def forward(self, x):
+        return x.sin()
+
+
+def sine_like_regimes(lower, upper, period, zero_increasing):
+    zero_width = torch.isclose(lower, upper, rtol=0.0, atol=1e-8)
+
+    half_period = upper - lower >= period / 2
+
+    zero_shifted_lower = lower - zero_increasing
+    zero_shifted_upper = upper - zero_increasing
+
+    shift = torch.div(zero_shifted_lower, period, rounding_mode='floor') * period
+    shifted_lower = zero_shifted_lower - shift
+    shifted_upper = zero_shifted_upper - shift
+
+    increasing_region1 = (shifted_upper <= (1 / 4) * period)
+    increasing_region2 = (shifted_lower >= (3 / 4) * period) & (shifted_upper <= (5 / 4) * period)
+    increasing_region3 = (shifted_lower >= (7 / 4) * period)
+    increasing = (~zero_width) & (~half_period) & (increasing_region1 | increasing_region2 | increasing_region3)
+
+    increasing_region1 = (shifted_lower >= (3 / 4) * period) & (shifted_upper <= period)
+    increasing_region2 = (shifted_lower >= (7 / 4) * period)
+    increasing_lower_curve = increasing & (increasing_region1 | increasing_region2)
+
+    increasing_region1 = (shifted_upper <= (1 / 4) * period)
+    increasing_region2 = (shifted_lower >= period) & (shifted_upper <= (5 / 4) * period)
+    increasing_upper_curve = increasing & (increasing_region1 | increasing_region2)
+
+    increasing_full_region = increasing & (~increasing_lower_curve) & (~increasing_upper_curve)
+    increasing = increasing, (increasing_lower_curve, increasing_upper_curve, increasing_full_region)
+
+    decreasing_region1 = (shifted_lower >= (1 / 4) * period) & (shifted_upper <= (3 / 4) * period)
+    decreasing_region2 = (shifted_lower >= (5 / 4) * period) & (shifted_upper <= (7 / 4) * period)
+    decreasing = (~zero_width) & (~half_period) & (decreasing_region1 | decreasing_region2)
+
+    decreasing_region1 = (shifted_lower >= (2 / 4) * period) & (shifted_upper <= (3 / 4) * period)
+    decreasing_region2 = (shifted_lower >= (6 / 4) * period) & (shifted_upper <= (7 / 4) * period)
+    decreasing_lower_curve = decreasing & (decreasing_region1 | decreasing_region2)
+
+    decreasing_region1 = (shifted_lower >= (1 / 4) * period) & (shifted_upper <= (2 / 4) * period)
+    decreasing_region2 = (shifted_lower >= (5 / 4) * period) & (shifted_upper <= (6 / 4) * period)
+    decreasing_upper_curve = decreasing & (decreasing_region1 | decreasing_region2)
+
+    decreasing_full_region = decreasing & (~decreasing_lower_curve) & (~decreasing_upper_curve)
+    decreasing = decreasing, (decreasing_lower_curve, decreasing_upper_curve, decreasing_full_region)
+
+    crossing_peak_region1 = (shifted_lower < (1 / 4) * period) & (shifted_upper > (1 / 4) * period)
+    crossing_peak_region2 = (shifted_lower < (5 / 4) * period) & (shifted_upper > (5 / 4) * period)
+    crossing_peak = (~zero_width) & (~half_period) & (crossing_peak_region1 | crossing_peak_region2)
+
+    crossing_trough_region1 = (shifted_lower < (3 / 4) * period) & (shifted_upper > (3 / 4) * period)
+    crossing_trough_region2 = (shifted_lower < (7 / 4) * period) & (shifted_upper > (7 / 4) * period)
+    crossing_trough = (~zero_width) & (~half_period) & (crossing_trough_region1 | crossing_trough_region2)
+
+    return zero_width, half_period, increasing, decreasing, crossing_peak, crossing_trough
+
+
+class BoundSin(BoundActivation):
+    period = 2 * np.pi
+    zero_increasing = 0
+
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory)
+
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_lower, self.unstable_range_upper = None, None
+
+    @property
+    def unstable_d_lower(self):
+        return self._unstable_d_lower
+
+    @unstable_d_lower.setter
+    def unstable_d_lower(self, value):
+        self._unstable_d_lower = value
+        self.initial_unstable_d_lower = value
+
+    @property
+    def unstable_d_upper(self):
+        return self._unstable_d_upper
+
+    @unstable_d_upper.setter
+    def unstable_d_upper(self, value):
+        self._unstable_d_upper = value
+        self.initial_unstable_d_upper = value
+
+    def clear_relaxation(self):
+        super().clear_relaxation()
+        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
+        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
+        self.unstable_range_lower, self.unstable_range_upper = None, None
+
+    def func(self, x):
+        return x.sin()
+
+    def derivative(self, x):
+        return x.cos()
+
+    @assert_bound_order
+    def alpha_beta(self, preactivation):
+        lower, upper = preactivation.lower, preactivation.upper
+
+        zero_width, half_period, (_, increasing), (_, decreasing), crossing_peak, crossing_trough = \
+            sine_like_regimes(lower, upper, period=self.period, zero_increasing=self.zero_increasing)
+        increasing_lower_curve, increasing_upper_curve, increasing_full_region = increasing
+        decreasing_lower_curve, decreasing_upper_curve, decreasing_full_region = decreasing
+
+        self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
+        self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
+
+        # Use upper and lower in the bias to account for a small numerical difference between lower and upper
+        # which ought to be negligible, but may still be present due to torch.isclose.
+        self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
+        self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
+
+        lower_act, upper_act = self.func(lower), self.func(upper)
+        lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
+
+        d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
+        d_act = self.func(d)
+        d_prime = self.derivative(d)
+
+        slope = (upper_act - lower_act) / (upper - lower)
+
+        ones = torch.ones_like(lower)
+        zeros = torch.zeros_like(lower)
+
+        def add_linear(alpha, beta, mask, a, x, y, a_mask=True):
+            if a_mask:
+                a = a[mask]
+
+            alpha[mask] = a
+            beta[mask] = y[mask] - a * x[mask]
+
+        ##################
+        # >= Half period #
+        ##################
+        # Lower bound
+        # - Flat line = -1
+        add_linear(self.alpha_lower, self.beta_lower, mask=half_period, a=zeros, x=zeros, y=-ones)
+
+        # Upper bound
+        # - Flat line = +1
+        add_linear(self.alpha_upper, self.beta_upper, mask=half_period, a=zeros, x=zeros, y=ones)
+
+        ###############
+        # Lower curve #
+        ###############
+        lower_curve = increasing_lower_curve | decreasing_lower_curve | crossing_trough
+
+        # Upper bound
+        # - Exact slope between lower and upper
+        add_linear(self.alpha_upper, self.beta_upper, mask=lower_curve, a=slope, x=lower, y=lower_act)
+
+        # Lower bound
+        # - d = (lower + upper) / 2 for midpoint
+        # - Slope is sigma'(d) and it has to cross through sigma(d)
+        add_linear(self.alpha_lower, self.beta_lower, mask=lower_curve, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
+        self.unstable_lower = lower_curve
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        self.unstable_d_lower = d[lower_curve].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
+        self.unstable_range_lower = lower[lower_curve], upper[lower_curve]
+
+        ###############
+        # Upper curve #
+        ###############
+        upper_curve = increasing_upper_curve | decreasing_upper_curve | crossing_peak
+
+        # Lower bound
+        # - Exact slope between lower and upper
+        add_linear(self.alpha_lower, self.beta_lower, mask=upper_curve, a=slope, x=upper, y=upper_act)
+
+        # Upper bound
+        # - d = (lower + upper) / 2 for midpoint
+        # - Slope is sigma'(d) and it has to cross through sigma(d)
+        add_linear(self.alpha_upper, self.beta_upper, mask=upper_curve, a=d_prime, x=d, y=d_act)
+
+        # Allow parameterization
+        # Save mask
+        self.unstable_upper = upper_curve
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        self.unstable_d_upper = d[upper_curve].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
+        self.unstable_range_upper = lower[upper_curve], upper[upper_curve]
+
+        # ##########################
+        # Increasing full region #
+        ##########################
+        # Upper bound #
+        # If tangent to upper is below lower, then take direct slope between lower and upper
+        direct = increasing_full_region & (slope <= upper_prime)
+        add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope, x=lower, y=lower_act)
+
+        # Else use bisection to find upper bound on slope.
+        implicit = increasing_full_region & (slope > upper_prime)
+        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+        implicit_lower_act = self.func(implicit_lower)
+
+        def f_upper(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (self.func(d) - implicit_lower_act) / (d - implicit_lower)
+            a_derivative = self.derivative(d)
+            return a_slope - a_derivative
+
+        # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
+        # Derivative of left bound will over-approximate the slope - hence a true bound
+        bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
+        d_upper, _ = bisection(bisection_lower, implicit_upper, f_upper)
+        # Slope has to attach to (lower, sigma(lower))
+        add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
+
+        # Lower bound #
+        # If tangent to lower is above upper, then take direct slope between lower and upper
+        direct = increasing_full_region & (slope <= lower_prime)
+        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope, x=upper, y=upper_act)
+
+        # Else use bisection to find upper bound on slope.
+        implicit = increasing_full_region & (slope > lower_prime)
+        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+        implicit_upper_act = self.func(implicit_upper)
+
+        def f_lower(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (implicit_upper_act - self.func(d)) / (implicit_upper - d)
+            a_derivative = self.derivative(d)
+            return a_derivative - a_slope
+
+        # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
+        # Derivative of right bound will over-approximate the slope - hence a true bound
+        bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
+        _, d_lower = bisection(implicit_lower, bisection_upper, f_lower)
+        # Slope has to attach to (upper, sigma(upper))
+        add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
+
+        ##########################
+        # Decreasing full region #
+        ##########################
+        # Upper bound #
+        # If tangent to lower is below upper, then take direct slope between lower and upper
+        direct = decreasing_full_region & (slope >= lower_prime)
+        add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope, x=lower, y=lower_act)
+
+        # Else use bisection to find upper bound on slope.
+        implicit = decreasing_full_region & (slope < lower_prime)
+        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+        implicit_lower_act = self.func(implicit_lower)
+
+        def f_upper(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (implicit_lower_act - self.func(d)) / (implicit_lower - d)
+            a_derivative = self.derivative(d)
+            return a_derivative - a_slope
+
+        # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
+        # Derivative of right bound will over-approximate the slope - hence a true bound
+        bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
+        _, d_upper = bisection(implicit_lower, bisection_upper, f_upper)
+        # Slope has to attach to (lower, sigma(lower))
+        add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=upper, y=upper_act, a_mask=False)
+
+        # Lower bound #
+        # If tangent to upper is above lower, then take direct slope between lower and upper
+        direct = decreasing_full_region & (slope >= upper_prime)
+        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope, x=lower, y=lower_act)
+
+        # Else use bisection to find upper bound on slope.
+        implicit = decreasing_full_region & (slope < upper_prime)
+        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+        implicit_upper_act = self.func(implicit_upper)
+
+        def f_lower(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (self.func(d) - implicit_upper_act) / (d - implicit_upper)
+            a_derivative = self.derivative(d)
+            return a_slope - a_derivative
+
+        # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
+        # Derivative of left bound will over-approximate the slope - hence a true bound
+        bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
+        d_lower, _ = bisection(bisection_lower, implicit_upper, f_lower)
+        # Slope has to attach to (upper, sigma(upper))
+        add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=lower, y=lower_act, a_mask=False)
+
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
+        if save_relaxation:
+            self.alpha_beta(preactivation=bounds)
+            self.bounded = True
+
+        if save_input_bounds:
+            self.input_bounds = bounds
+
+        zero_width, half_period, (increasing, _), (decreasing, _), crossing_peak, crossing_trough = \
+            sine_like_regimes(bounds.lower, bounds.upper, period=self.period, zero_increasing=self.zero_increasing)
+
+        lower = torch.zeros_like(bounds.lower)
+        upper = torch.zeros_like(bounds.upper)
+
+        lower_act = self.module(bounds.lower)
+        upper_act = self.module(bounds.upper)
+
+        lower[zero_width] = torch.min(lower_act[zero_width], upper_act[zero_width])
+        upper[zero_width] = torch.max(lower_act[zero_width], upper_act[zero_width])
+
+        lower[half_period] = -1
+        upper[half_period] = 1
+
+        lower[increasing] = lower_act[increasing]
+        upper[increasing] = upper_act[increasing]
+
+        lower[decreasing] = upper_act[decreasing]
+        upper[decreasing] = lower_act[decreasing]
+
+        lower[crossing_peak] = torch.min(lower_act[crossing_peak], upper_act[crossing_peak])
+        upper[crossing_peak] = 1
+
+        lower[crossing_trough] = -1
+        upper[crossing_trough] = torch.max(lower_act[crossing_trough], upper_act[crossing_trough])
+
+        return IntervalBounds(bounds.region, lower, upper)
+
+    def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
+        if self.unstable_lower is None or self.unstable_upper is None:
+            logger.warning('Sin/cos bound not parameterized but expected to')
+
+        # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
+        def add_linear(alpha, beta, mask, x):
+            a = self.derivative(x)
+            y = self.func(x)
+
+            alpha[mask] = a
+            beta[mask] = y - a * x
+
+        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower, x=self.unstable_d_lower)
+        add_linear(alpha_upper, beta_upper, mask=self.unstable_upper, x=self.unstable_d_upper)
+
+        return alpha_lower, alpha_upper, beta_lower, beta_upper
+
+    def bound_parameters(self):
+        if self.unstable_lower is None or self.unstable_upper is None:
+            logger.warning('Sin/cos bound not parameterized but expected to')
+
+        yield self.unstable_d_lower
+        yield self.unstable_d_upper
+
+    def reset_params(self):
+        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
+        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
+
+    def clip_params(self):
+        self.unstable_d_lower.data.clamp(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        self.unstable_d_upper.data.clamp(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+
+
+class Cos(nn.Module):
+    def forward(self, x):
+        return x.cos()
+
+
+class BoundCos(BoundSin):
+    period = 2 * np.pi
+    zero_increasing = -np.pi / 2
+
+    def func(self, x):
+        return x.cos()
+
+    def derivative(self, x):
+        return -x.sin()
