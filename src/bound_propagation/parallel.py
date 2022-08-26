@@ -119,7 +119,7 @@ class BoundParallel(BoundModule):
         if self.module.split_size is None:
             split_bounds = [bounds for _ in range(len(self.subnetworks))]
         else:
-            split_bounds = self.split(bounds, self.split_sizes(len(bounds)))
+            split_bounds = self.split(bounds, self.split_sizes(bounds.lower.size(-1)))
 
         residual_bounds = [network.ibp_forward(bound, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds) for network, bound in zip(self.subnetworks, split_bounds)]
 
