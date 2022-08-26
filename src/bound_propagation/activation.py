@@ -40,6 +40,9 @@ def crown_backward_act_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, tor
     return W_tilde, bias
 
 
+# TODO: Improve numerical conditioning (be conservative when taking the slope (attach in both ends)
+
+
 class BoundActivation(BoundModule, abc.ABC):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
@@ -372,41 +375,45 @@ class BoundSigmoid(BoundActivation):
         #################
         # Upper bound #
         # If tangent to upper is below lower, then take direct slope between lower and upper
-        direct_upper = np & (slope <= upper_prime)
-        add_linear(self.alpha_upper, self.beta_upper, mask=direct_upper, a=slope, x=lower, y=lower_act)
+        direct = np & (slope <= upper_prime)
+        add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope, x=lower, y=lower_act)
 
         # Else use bisection to find upper bound on slope.
-        implicit_upper = np & (slope > upper_prime)
+        implicit = np & (slope > upper_prime)
+        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+        implicit_lower_act = self.func(implicit_lower)
 
         def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self.func(d) - self.func(lower[implicit_upper])) / (d - lower[implicit_upper])
+            a_slope = (self.func(d) - implicit_lower_act) / (d - implicit_lower)
             a_derivative = self.derivative(d)
             return a_slope - a_derivative
 
         # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
         # Derivative of left bound will over-approximate the slope - hence a true bound
-        d_upper, _ = bisection(torch.zeros_like(upper[implicit_upper]), upper[implicit_upper], f_upper)
+        d_upper, _ = bisection(torch.zeros_like(implicit_upper), implicit_upper, f_upper)
         # Slope has to attach to (lower, sigma(lower))
-        add_linear(self.alpha_upper, self.beta_upper, mask=implicit_upper, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
+        add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
 
         # Lower bound #
         # If tangent to lower is above upper, then take direct slope between lower and upper
-        direct_lower = np & (slope <= lower_prime)
-        add_linear(self.alpha_lower, self.beta_lower, mask=direct_lower, a=slope, x=upper, y=upper_act)
+        direct = np & (slope <= lower_prime)
+        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope, x=upper, y=upper_act)
 
         # Else use bisection to find upper bound on slope.
-        implicit_lower = np & (slope > lower_prime)
+        implicit = np & (slope > lower_prime)
+        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+        implicit_upper_act = self.func(implicit_lower)
 
         def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self.func(upper[implicit_lower]) - self.func(d)) / (upper[implicit_lower] - d)
+            a_slope = (implicit_upper_act - self.func(d)) / (implicit_upper - d)
             a_derivative = self.derivative(d)
             return a_derivative - a_slope
 
         # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
         # Derivative of right bound will over-approximate the slope - hence a true bound
-        _, d_lower = bisection(lower[implicit_lower], torch.zeros_like(lower[implicit_lower]), f_lower)
+        _, d_lower = bisection(implicit_lower, torch.zeros_like(implicit_lower), f_lower)
         # Slope has to attach to (upper, sigma(upper))
-        add_linear(self.alpha_lower, self.beta_lower, mask=implicit_lower, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
+        add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
         if self.unstable_lower is None or self.unstable_upper is None:
