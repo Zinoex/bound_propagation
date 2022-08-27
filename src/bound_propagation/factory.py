@@ -5,6 +5,7 @@ from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity, Bound
 from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub
 from .linear import BoundLinear
 from .parallel import BoundParallel, Parallel
+from .polynomial import BoundUnivariateMonomial, UnivariateMonomial
 from .reshape import BoundSelect, Select
 from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
@@ -36,7 +37,8 @@ class BoundModelFactory:
             (VectorSub, BoundVectorSub),
             (Parallel, BoundParallel),
             (Clamp, BoundClamp),
-            (Select, BoundSelect)
+            (Select, BoundSelect),
+            (UnivariateMonomial, BoundUnivariateMonomial)
         ]
 
         self.kwargs = kwargs
