@@ -272,9 +272,6 @@ class BoundSigmoid(BoundActivation):
         self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
         self.unstable_range_lower, self.unstable_range_upper = None, None
 
-    def func(self, x):
-        return torch.sigmoid(x)
-
     def derivative(self, x):
         return torch.sigmoid(x) * (1 - torch.sigmoid(x))
 
@@ -312,11 +309,11 @@ class BoundSigmoid(BoundActivation):
         self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
-        lower_act, upper_act = self.func(lower), self.func(upper)
+        lower_act, upper_act = self(lower), self(upper)
         lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
 
         d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
-        d_act = self.func(d)
+        d_act = self(d)
         d_prime = self.derivative(d)
 
         slope = (upper_act - lower_act) / (upper - lower)
@@ -379,10 +376,10 @@ class BoundSigmoid(BoundActivation):
         # Else use bisection to find upper bound on slope.
         implicit = np & (slope > upper_prime)
         implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_lower_act = self.func(implicit_lower)
+        implicit_lower_act = self(implicit_lower)
 
         def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self.func(d) - implicit_lower_act) / (d - implicit_lower)
+            a_slope = (self(d) - implicit_lower_act) / (d - implicit_lower)
             a_derivative = self.derivative(d)
             return a_slope - a_derivative
 
@@ -400,10 +397,10 @@ class BoundSigmoid(BoundActivation):
         # Else use bisection to find upper bound on slope.
         implicit = np & (slope > lower_prime)
         implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_upper_act = self.func(implicit_lower)
+        implicit_upper_act = self(implicit_lower)
 
         def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (implicit_upper_act - self.func(d)) / (implicit_upper - d)
+            a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
             a_derivative = self.derivative(d)
             return a_derivative - a_slope
 
@@ -464,9 +461,6 @@ def bisection(l: torch.Tensor, u: torch.Tensor, f: TensorFunction, num_iter: int
 
 class BoundTanh(BoundSigmoid):
     # Tanh is actually just a scaled sigmoid, so let's reuse that code
-    def func(self, x):
-        return torch.tanh(x)
-
     def derivative(self, x):
         return 1 - torch.tanh(x) ** 2
 
@@ -516,9 +510,6 @@ class BoundExp(BoundActivation):
         self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
         self.unstable_range_lower = None
 
-    def func(self, x):
-        return x.exp()
-
     def derivative(self, x):
         return x.exp()
 
@@ -536,10 +527,10 @@ class BoundExp(BoundActivation):
         self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
-        lower_act, upper_act = self.func(lower), self.func(upper)
+        lower_act, upper_act = self(lower), self(upper)
 
         d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
-        d_act = self.func(d)
+        d_act = self(d)
         d_prime = self.derivative(d)
 
         slope = (upper_act - lower_act) / (upper - lower)
@@ -621,9 +612,6 @@ class BoundLog(BoundActivation):
         self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
         self.unstable_range_upper = None
 
-    def func(self, x):
-        return x.log()
-
     def derivative(self, x):
         # As we already assume x > 0, this is well-defined
         return 1 / x
@@ -644,10 +632,10 @@ class BoundLog(BoundActivation):
         self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
-        lower_act, upper_act = self.func(lower), self.func(upper)
+        lower_act, upper_act = self(lower), self(upper)
 
         d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
-        d_act = self.func(d)
+        d_act = self(d)
         d_prime = self.derivative(d)
 
         slope = (upper_act - lower_act) / (upper - lower)
@@ -741,9 +729,6 @@ class BoundReciprocal(BoundActivation):
         self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
         self.unstable_range_lower, self.unstable_range_upper = None, None
 
-    def func(self, x):
-        return 1 / x
-
     def derivative(self, x):
         return -1 / (x ** 2)
 
@@ -761,11 +746,10 @@ class BoundReciprocal(BoundActivation):
         self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
-        lower_act, upper_act = self.func(lower), self.func(upper)
-        lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
+        lower_act, upper_act = self(lower), self(upper)
 
         d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
-        d_act = self.func(d)
+        d_act = self(d)
         d_prime = self.derivative(d)
 
         slope = (upper_act - lower_act) / (upper - lower)
@@ -960,9 +944,6 @@ class BoundSin(BoundActivation):
         self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
         self.unstable_range_lower, self.unstable_range_upper = None, None
 
-    def func(self, x):
-        return x.sin()
-
     def derivative(self, x):
         return x.cos()
 
@@ -983,11 +964,11 @@ class BoundSin(BoundActivation):
         self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, self(lower[zero_width])
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, self(upper[zero_width])
 
-        lower_act, upper_act = self.func(lower), self.func(upper)
+        lower_act, upper_act = self(lower), self(upper)
         lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
 
         d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
-        d_act = self.func(d)
+        d_act = self(d)
         d_prime = self.derivative(d)
 
         slope = (upper_act - lower_act) / (upper - lower)
@@ -1068,10 +1049,10 @@ class BoundSin(BoundActivation):
         # Else use bisection to find upper bound on slope.
         implicit = increasing_full_region & (slope > upper_prime)
         implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_lower_act = self.func(implicit_lower)
+        implicit_lower_act = self(implicit_lower)
 
         def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self.func(d) - implicit_lower_act) / (d - implicit_lower)
+            a_slope = (self(d) - implicit_lower_act) / (d - implicit_lower)
             a_derivative = self.derivative(d)
             return a_slope - a_derivative
 
@@ -1090,10 +1071,10 @@ class BoundSin(BoundActivation):
         # Else use bisection to find upper bound on slope.
         implicit = increasing_full_region & (slope > lower_prime)
         implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_upper_act = self.func(implicit_upper)
+        implicit_upper_act = self(implicit_upper)
 
         def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (implicit_upper_act - self.func(d)) / (implicit_upper - d)
+            a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
             a_derivative = self.derivative(d)
             return a_derivative - a_slope
 
@@ -1115,10 +1096,10 @@ class BoundSin(BoundActivation):
         # Else use bisection to find upper bound on slope.
         implicit = decreasing_full_region & (slope < lower_prime)
         implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_lower_act = self.func(implicit_lower)
+        implicit_lower_act = self(implicit_lower)
 
         def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (implicit_lower_act - self.func(d)) / (implicit_lower - d)
+            a_slope = (implicit_lower_act - self(d)) / (implicit_lower - d)
             a_derivative = self.derivative(d)
             return a_derivative - a_slope
 
@@ -1229,9 +1210,6 @@ class Cos(nn.Module):
 class BoundCos(BoundSin):
     period = 2 * np.pi
     zero_increasing = -np.pi / 2
-
-    def func(self, x):
-        return x.cos()
 
     def derivative(self, x):
         return -x.sin()
