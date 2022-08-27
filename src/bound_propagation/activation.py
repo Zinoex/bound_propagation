@@ -375,19 +375,21 @@ class BoundSigmoid(BoundActivation):
 
         # Else use bisection to find upper bound on slope.
         implicit = np & (slope > upper_prime)
-        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_lower_act = self(implicit_lower)
 
-        def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self(d) - implicit_lower_act) / (d - implicit_lower)
-            a_derivative = self.derivative(d)
-            return a_slope - a_derivative
+        if torch.any(implicit):
+            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+            implicit_lower_act = self(implicit_lower)
 
-        # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
-        # Derivative of left bound will over-approximate the slope - hence a true bound
-        d_upper, _ = bisection(torch.zeros_like(implicit_upper), implicit_upper, f_upper)
-        # Slope has to attach to (lower, sigma(lower))
-        add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
+            def f_upper(d: torch.Tensor) -> torch.Tensor:
+                a_slope = (self(d) - implicit_lower_act) / (d - implicit_lower)
+                a_derivative = self.derivative(d)
+                return a_slope - a_derivative
+
+            # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
+            # Derivative of left bound will over-approximate the slope - hence a true bound
+            d_upper, _ = bisection(torch.zeros_like(implicit_upper), implicit_upper, f_upper)
+            # Slope has to attach to (lower, sigma(lower))
+            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
 
         # Lower bound #
         # If tangent to lower is above upper, then take direct slope between lower and upper
@@ -396,19 +398,21 @@ class BoundSigmoid(BoundActivation):
 
         # Else use bisection to find upper bound on slope.
         implicit = np & (slope > lower_prime)
-        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_upper_act = self(implicit_upper)
 
-        def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
-            a_derivative = self.derivative(d)
-            return a_derivative - a_slope
+        if torch.any(implicit):
+            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+            implicit_upper_act = self(implicit_upper)
 
-        # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
-        # Derivative of right bound will over-approximate the slope - hence a true bound
-        _, d_lower = bisection(implicit_lower, torch.zeros_like(implicit_lower), f_lower)
-        # Slope has to attach to (upper, sigma(upper))
-        add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
+            def f_lower(d: torch.Tensor) -> torch.Tensor:
+                a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
+                a_derivative = self.derivative(d)
+                return a_derivative - a_slope
+
+            # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
+            # Derivative of right bound will over-approximate the slope - hence a true bound
+            _, d_lower = bisection(implicit_lower, torch.zeros_like(implicit_lower), f_lower)
+            # Slope has to attach to (upper, sigma(upper))
+            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
         if self.unstable_lower is None or self.unstable_upper is None:
@@ -1048,20 +1052,22 @@ class BoundSin(BoundActivation):
 
         # Else use bisection to find upper bound on slope.
         implicit = increasing_full_region & (slope > upper_prime)
-        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_lower_act = self(implicit_lower)
 
-        def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self(d) - implicit_lower_act) / (d - implicit_lower)
-            a_derivative = self.derivative(d)
-            return a_slope - a_derivative
+        if torch.any(implicit):
+            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+            implicit_lower_act = self(implicit_lower)
 
-        # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
-        # Derivative of left bound will over-approximate the slope - hence a true bound
-        bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
-        d_upper, _ = bisection(bisection_lower, implicit_upper, f_upper)
-        # Slope has to attach to (lower, sigma(lower))
-        add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
+            def f_upper(d: torch.Tensor) -> torch.Tensor:
+                a_slope = (self(d) - implicit_lower_act) / (d - implicit_lower)
+                a_derivative = self.derivative(d)
+                return a_slope - a_derivative
+
+            # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
+            # Derivative of left bound will over-approximate the slope - hence a true bound
+            bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
+            d_upper, _ = bisection(bisection_lower, implicit_upper, f_upper)
+            # Slope has to attach to (lower, sigma(lower))
+            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
 
         # Lower bound #
         # If tangent to lower is above upper, then take direct slope between lower and upper
@@ -1070,20 +1076,22 @@ class BoundSin(BoundActivation):
 
         # Else use bisection to find upper bound on slope.
         implicit = increasing_full_region & (slope > lower_prime)
-        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_upper_act = self(implicit_upper)
 
-        def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
-            a_derivative = self.derivative(d)
-            return a_derivative - a_slope
+        if torch.any(implicit):
+            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+            implicit_upper_act = self(implicit_upper)
 
-        # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
-        # Derivative of right bound will over-approximate the slope - hence a true bound
-        bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
-        _, d_lower = bisection(implicit_lower, bisection_upper, f_lower)
-        # Slope has to attach to (upper, sigma(upper))
-        add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
+            def f_lower(d: torch.Tensor) -> torch.Tensor:
+                a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
+                a_derivative = self.derivative(d)
+                return a_derivative - a_slope
+
+            # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
+            # Derivative of right bound will over-approximate the slope - hence a true bound
+            bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
+            _, d_lower = bisection(implicit_lower, bisection_upper, f_lower)
+            # Slope has to attach to (upper, sigma(upper))
+            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
 
         ##########################
         # Decreasing full region #
@@ -1095,20 +1103,22 @@ class BoundSin(BoundActivation):
 
         # Else use bisection to find upper bound on slope.
         implicit = decreasing_full_region & (slope < lower_prime)
-        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_lower_act = self(implicit_lower)
 
-        def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (implicit_lower_act - self(d)) / (implicit_lower - d)
-            a_derivative = self.derivative(d)
-            return a_derivative - a_slope
+        if torch.any(implicit):
+            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+            implicit_lower_act = self(implicit_lower)
 
-        # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
-        # Derivative of right bound will over-approximate the slope - hence a true bound
-        bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
-        _, d_upper = bisection(implicit_lower, bisection_upper, f_upper)
-        # Slope has to attach to (lower, sigma(lower))
-        add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=upper, y=upper_act, a_mask=False)
+            def f_upper(d: torch.Tensor) -> torch.Tensor:
+                a_slope = (implicit_lower_act - self(d)) / (implicit_lower - d)
+                a_derivative = self.derivative(d)
+                return a_derivative - a_slope
+
+            # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
+            # Derivative of right bound will over-approximate the slope - hence a true bound
+            bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
+            _, d_upper = bisection(implicit_lower, bisection_upper, f_upper)
+            # Slope has to attach to (lower, sigma(lower))
+            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=upper, y=upper_act, a_mask=False)
 
         # Lower bound #
         # If tangent to upper is above lower, then take direct slope between lower and upper
@@ -1117,20 +1127,22 @@ class BoundSin(BoundActivation):
 
         # Else use bisection to find upper bound on slope.
         implicit = decreasing_full_region & (slope < upper_prime)
-        implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_upper_act = self.func(implicit_upper)
 
-        def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self.func(d) - implicit_upper_act) / (d - implicit_upper)
-            a_derivative = self.derivative(d)
-            return a_slope - a_derivative
+        if torch.any(implicit):
+            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
+            implicit_upper_act = self.func(implicit_upper)
 
-        # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
-        # Derivative of left bound will over-approximate the slope - hence a true bound
-        bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
-        d_lower, _ = bisection(bisection_lower, implicit_upper, f_lower)
-        # Slope has to attach to (upper, sigma(upper))
-        add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=lower, y=lower_act, a_mask=False)
+            def f_lower(d: torch.Tensor) -> torch.Tensor:
+                a_slope = (self.func(d) - implicit_upper_act) / (d - implicit_upper)
+                a_derivative = self.derivative(d)
+                return a_slope - a_derivative
+
+            # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
+            # Derivative of left bound will over-approximate the slope - hence a true bound
+            bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
+            d_lower, _ = bisection(bisection_lower, implicit_upper, f_lower)
+            # Slope has to attach to (upper, sigma(upper))
+            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=lower, y=lower_act, a_mask=False)
 
     def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         if save_relaxation:
