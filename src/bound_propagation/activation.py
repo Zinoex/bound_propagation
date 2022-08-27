@@ -397,7 +397,7 @@ class BoundSigmoid(BoundActivation):
         # Else use bisection to find upper bound on slope.
         implicit = np & (slope > lower_prime)
         implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-        implicit_upper_act = self(implicit_lower)
+        implicit_upper_act = self(implicit_upper)
 
         def f_lower(d: torch.Tensor) -> torch.Tensor:
             a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
@@ -417,7 +417,7 @@ class BoundSigmoid(BoundActivation):
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
             a = self.derivative(x)
-            y = self.func(x)
+            y = self(x)
 
             alpha[mask] = a
             beta[mask] = y - a * x
@@ -565,7 +565,7 @@ class BoundExp(BoundActivation):
 
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         a = self.derivative(self.unstable_d_lower)
-        y = self.func(self.unstable_d_lower)
+        y = self(self.unstable_d_lower)
 
         alpha_lower[self.unstable_lower] = a
         beta_lower[self.unstable_lower] = y - a * self.unstable_d_lower
@@ -670,7 +670,7 @@ class BoundLog(BoundActivation):
 
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         a = self.derivative(self.unstable_d_upper)
-        y = self.func(self.unstable_d_upper)
+        y = self(self.unstable_d_upper)
 
         alpha_upper[self.unstable_upper] = a
         beta_upper[self.unstable_upper] = y - a * self.unstable_d_upper
@@ -824,7 +824,7 @@ class BoundReciprocal(BoundActivation):
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
             a = self.derivative(x)
-            y = self.func(x)
+            y = self(x)
 
             alpha[mask] = a
             beta[mask] = y - a * x
@@ -1176,7 +1176,7 @@ class BoundSin(BoundActivation):
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
             a = self.derivative(x)
-            y = self.func(x)
+            y = self(x)
 
             alpha[mask] = a
             beta[mask] = y - a * x
