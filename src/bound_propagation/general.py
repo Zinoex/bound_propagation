@@ -19,7 +19,7 @@ class BoundModule(nn.Module, abc.ABC):
 
         self.optimizer = kwargs.get('bounds_optimizer', Adam)
         self.bounds_iterations = kwargs.get('bounds_iterations', 40)
-        self.lr = kwargs.get('bounds_lr', 1e-3)
+        self.lr = kwargs.get('bounds_lr', 1e-2)
         self.lr_decay = kwargs.get('bounds_lr_decay', 0.97)
 
     @torch.no_grad()
