@@ -1,9 +1,15 @@
+import logging
+from typing import Tuple
+
 import torch
 from torch import nn
 from torch.nn import Identity
 
 from .general import BoundModule
 from .bounds import IntervalBounds, LinearBounds
+
+
+logger = logging.getLogger(__name__)
 
 
 class Add(nn.Module):
@@ -262,5 +268,183 @@ class BoundVectorSub(BoundModule):
         return in_size // 2
 
 
-# TODO: Mul
-# TODO: Div = Mul(a, Reciprocal(b))
+class VectorMul(nn.Module):
+    def forward(self, x):
+        assert x.size(-1) % 2 == 0
+        half_size = x.size(-1) // 2
+
+        return x[..., :half_size] * x[..., half_size:]
+
+
+# @torch.jit.script
+def crown_backward_mul_jit(W_tilde: torch.Tensor, alpha_x: Tuple[torch.Tensor, torch.Tensor], alpha_y: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    _delta = torch.where(W_tilde < 0, beta[0].unsqueeze(-2), beta[1].unsqueeze(-2))
+    bias = torch.sum(W_tilde * _delta, dim=-1)
+
+    _lambda = torch.where(W_tilde < 0, alpha_x[0].unsqueeze(-2), alpha_x[1].unsqueeze(-2))
+    W_tilde_x = W_tilde * _lambda
+
+    _lambda = torch.where(W_tilde < 0, alpha_y[0].unsqueeze(-2), alpha_y[1].unsqueeze(-2))
+    W_tilde_y = W_tilde * _lambda
+
+    return W_tilde_x, W_tilde_y, bias
+
+
+class BoundVectorMul(BoundModule):
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory, **kwargs)
+
+        self.input_bounds = None
+        self.kappa_lower, self.kappa_upper = None, None
+
+        self.bounded = False
+        self.size = None
+
+    def alpha_beta(self, optimize):
+        preactivation = self.input_bounds
+        half_size = preactivation.lower.size(-1) // 2
+
+        lower_x, upper_x = preactivation.lower[..., :half_size], preactivation.upper[..., :half_size]
+        lower_y, upper_y = preactivation.lower[..., half_size:], preactivation.upper[..., half_size:]
+
+        # Lower bound
+        first_corner = lower_x, lower_y
+        second_corner = upper_x, upper_y
+
+        kappa_lower = self.kappa_lower if optimize else 0.5
+
+        d = first_corner[0] * kappa_lower + second_corner[0] * (1 - kappa_lower), first_corner[1] * kappa_lower + second_corner[1] * (1 - kappa_lower)
+        d_prime = d[1], d[0]
+
+        alpha_x_lower = d_prime[0]
+        alpha_y_lower = d_prime[1]
+
+        beta_corner = lower_x, upper_y
+        beta_lower = beta_corner[0] * beta_corner[1] - d_prime[0] * beta_corner[0] - d_prime[1] * beta_corner[1]
+
+        # Upper bound
+        first_corner = lower_x, upper_y
+        second_corner = upper_x, lower_y
+
+        kappa_upper = self.kappa_upper if optimize else 0.5
+
+        d = first_corner[0] * kappa_upper + second_corner[0] * (1 - kappa_upper), first_corner[1] * kappa_upper + second_corner[1] * (1 - kappa_upper)
+        d_prime = d[1], d[0]
+
+        alpha_x_upper = d_prime[0]
+        alpha_y_upper = d_prime[1]
+
+        beta_corner = lower_x, lower_y
+        beta_upper = beta_corner[0] * beta_corner[1] - d_prime[0] * beta_corner[0] - d_prime[1] * beta_corner[1]
+
+        return (alpha_x_lower, alpha_x_upper), (alpha_y_lower, alpha_y_upper), (beta_lower, beta_upper)
+
+    def init_kappa(self):
+        half_size = self.input_bounds.lower.size(-1) // 2
+        lower_x = self.input_bounds.lower[..., :half_size]
+
+        self.kappa_lower = torch.full_like(lower_x, 0.5).requires_grad_()
+        self.kappa_upper = torch.full_like(lower_x, 0.5).requires_grad_()
+
+    @property
+    def need_relaxation(self):
+        return not self.bounded
+
+    def set_relaxation(self, linear_bounds):
+        interval_bounds = linear_bounds.concretize()
+        self.input_bounds = IntervalBounds(
+            linear_bounds.region,
+            torch.max(interval_bounds.lower, self.input_bounds.lower),
+            torch.min(interval_bounds.upper, self.input_bounds.upper)
+        )
+
+        self.init_kappa()
+        self.bounded = True
+
+    def backward_relaxation(self, region):
+        assert self.size is not None
+
+        linear_bounds = self.initial_linear_bounds(region, self.size)
+        return linear_bounds, self
+
+    def clear_relaxation(self):
+        self.input_bounds = None
+        self.kappa_lower, self.kappa_upper = None, None
+
+        self.bounded = False
+
+    def crown_backward(self, linear_bounds, optimize):
+        assert self.bounded
+
+        (alpha_x_lower, alpha_x_upper), (alpha_y_lower, alpha_y_upper), (beta_lower, beta_upper) = self.alpha_beta(optimize)
+
+        # NOTE: The order of alpha and beta are deliberately reverse - this is not a mistake!
+        if linear_bounds.lower is None:
+            lower = None
+        else:
+            alpha_x = alpha_x_upper, alpha_x_lower
+            alpha_y = alpha_y_upper, alpha_y_lower
+            beta = beta_upper, beta_lower
+
+            lower = crown_backward_mul_jit(linear_bounds.lower[0], alpha_x, alpha_y, beta)
+            lower = (torch.cat(lower[:2], dim=-1), lower[2] + linear_bounds.lower[1])
+
+        if linear_bounds.upper is None:
+            upper = None
+        else:
+            alpha_x = alpha_x_lower, alpha_x_upper
+            alpha_y = alpha_y_lower, alpha_y_upper
+            beta = beta_lower, beta_upper
+            upper = crown_backward_mul_jit(linear_bounds.upper[0], alpha_x, alpha_y, beta)
+            upper = (torch.cat(upper[:2], dim=-1), upper[2] + linear_bounds.upper[1])
+
+        return LinearBounds(linear_bounds.region, lower, upper)
+
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
+        if save_relaxation:
+            self.input_bounds = bounds
+            self.init_kappa()
+            self.bounded = True
+
+        if save_input_bounds:
+            self.input_bounds = bounds
+
+        half_size = bounds.lower.size(-1) // 2
+
+        lower_x, upper_x = bounds.lower[..., :half_size], bounds.upper[..., :half_size]
+        lower_y, upper_y = bounds.lower[..., half_size:], bounds.upper[..., half_size:]
+
+        combinations = torch.stack([
+            lower_x * lower_y,
+            lower_x * upper_y,
+            upper_x * lower_y,
+            upper_x * upper_y
+        ], dim=-1)
+
+        return IntervalBounds(
+            bounds.region,
+            combinations.min(dim=-1).values,
+            combinations.max(dim=-1).values
+        )
+
+    def propagate_size(self, in_size):
+        assert in_size % 2 == 0
+
+        self.size = in_size
+        return in_size // 2
+
+    def bound_parameters(self):
+        if self.kappa_lower is None or self.kappa_upper is None:
+            logger.warning('VectorMul bound not parameterized but expected to')
+
+        yield self.kappa_lower
+        yield self.kappa_upper
+
+    def reset_params(self):
+        self.kappa_lower.data.fill_(0.5)
+        self.kappa_upper.data.fill_(0.5)
+
+    def clip_params(self):
+        self.kappa_lower.data.clamp_(min=0.0, max=1.0)
+        self.kappa_upper.data.clamp_(min=0.0, max=1.0)
+
