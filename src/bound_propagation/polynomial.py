@@ -68,7 +68,7 @@ class BoundUnivariateMonomial(BoundModule):
     @unstable_d_lower.setter
     def unstable_d_lower(self, value):
         self._unstable_d_lower = value
-        self.initial_unstable_d_lower = value
+        self.initial_unstable_d_lower = [x.detach().clone() for x in value]
 
     @property
     def unstable_d_upper(self):
@@ -119,9 +119,9 @@ class BoundUnivariateMonomial(BoundModule):
         alpha_lower, alpha_upper = self.alpha_lower.detach().clone(), self.alpha_upper.detach().clone()
         beta_lower, beta_upper = self.beta_lower.detach().clone(), self.beta_upper.detach().clone()
 
-        # if optimize:
-        #     alpha_lower, alpha_upper, beta_lower, beta_upper = \
-        #         self.parameterize_alpha_beta(alpha_lower, alpha_upper, beta_lower, beta_upper)
+        if optimize:
+            alpha_lower, alpha_upper, beta_lower, beta_upper = \
+                self.parameterize_alpha_beta(alpha_lower, alpha_upper, beta_lower, beta_upper)
 
         # NOTE: The order of alpha and beta are deliberately reverse - this is not a mistake!
         if linear_bounds.lower is None:
@@ -235,7 +235,13 @@ class BoundUnivariateMonomial(BoundModule):
         add_linear(self.alpha_lower, self.beta_lower, mask=all_even, a=d_prime, x=d, y=d_act)
         add_linear(self.alpha_upper, self.beta_upper, mask=all_even, a=slope, x=lower, y=lower_act)
 
-        # TODO: Optimize lower
+        # Allow parameterization
+        # Save mask
+        unstable_lower = [all_even]
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        unstable_d_lower = [d[all_even].detach().clone().requires_grad_()]
+        # Save ranges to clip (aka. PGD)
+        unstable_range_lower = [(lower[all_even], upper[all_even])]
 
         #########################
         # Odd - negative regime #
@@ -245,7 +251,13 @@ class BoundUnivariateMonomial(BoundModule):
         add_linear(self.alpha_lower, self.beta_lower, mask=n_odd, a=slope, x=lower, y=lower_act)
         add_linear(self.alpha_upper, self.beta_upper, mask=n_odd, a=d_prime, x=d, y=d_act)
 
-        # TODO: Optimize upper
+        # Allow parameterization
+        # Save mask
+        self.unstable_upper = n_odd
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        self.unstable_d_upper = d[n_odd].detach().clone().requires_grad_()
+        # Save ranges to clip (aka. PGD)
+        self.unstable_range_upper = lower[n_odd], upper[n_odd]
 
         #########################
         # Odd - positive regime #
@@ -255,15 +267,17 @@ class BoundUnivariateMonomial(BoundModule):
         add_linear(self.alpha_lower, self.beta_lower, mask=p_odd, a=d_prime, x=d, y=d_act)
         add_linear(self.alpha_upper, self.beta_upper, mask=p_odd, a=slope, x=lower, y=lower_act)
 
-        # TODO: Optimize lower
+        # Allow parameterization
+        # Save mask
+        unstable_lower.append(p_odd)
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        unstable_d_lower.append(d[p_odd].detach().clone().requires_grad_())
+        # Save ranges to clip (aka. PGD)
+        unstable_range_lower.append((lower[p_odd], upper[p_odd]))
 
-        # # Allow parameterization
-        # # Save mask
-        # self.unstable_upper = p
-        # # Optimization variables - detach, clone, and require grad to perform back prop and optimization
-        # self.unstable_d_upper = d[p].detach().clone().requires_grad_()
-        # # Save ranges to clip (aka. PGD)
-        # self.unstable_range_upper = lower[p], upper[p]
+        self.unstable_lower = unstable_lower
+        self.unstable_d_lower = unstable_d_lower
+        self.unstable_range_lower = unstable_range_lower
 
         #######################
         # Odd - crossing zero #
@@ -323,33 +337,40 @@ class BoundUnivariateMonomial(BoundModule):
         if self.unstable_lower is None or self.unstable_upper is None:
             logger.warning('Polynomial bound not parameterized but expected to')
 
+        powers = torch.tensor(self.module.powers, device=alpha_lower.device).view(*[1 for _ in range(alpha_lower.dim() - 1)], -1).expand_as(alpha_lower)
+
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
-            a = self.derivative(x)
-            y = self.func(x)
+            p = powers[mask]
+
+            a = self.derivative(x, p)
+            y = self.func(x, p)
 
             alpha[mask] = a
             beta[mask] = y - a * x
 
-        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower, x=self.unstable_d_lower)
+        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower[0], x=self.unstable_d_lower[0])
+        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower[1], x=self.unstable_d_lower[1])
         add_linear(alpha_upper, beta_upper, mask=self.unstable_upper, x=self.unstable_d_upper)
 
         return alpha_lower, alpha_upper, beta_lower, beta_upper
 
-    # def bound_parameters(self):
-    #     if self.unstable_lower is None or self.unstable_upper is None:
-    #         logger.warning('Polynomial bound not parameterized but expected to')
-    #
-    #     yield self.unstable_d_lower
-    #     yield self.unstable_d_upper
-    #
-    # def reset_params(self):
-    #     self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
-    #     self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
-    #
-    # def clip_params(self):
-    #     self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-    #     self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+    def bound_parameters(self):
+        if self.unstable_lower is None or self.unstable_upper is None:
+            logger.warning('Polynomial bound not parameterized but expected to')
+
+        yield from self.unstable_d_lower
+        yield self.unstable_d_upper
+
+    def reset_params(self):
+        self.unstable_d_lower[0].data.copy_(self.initial_unstable_d_lower[0])
+        self.unstable_d_lower[1].data.copy_(self.initial_unstable_d_lower[1])
+        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
+
+    def clip_params(self):
+        self.unstable_d_lower[0].data.clamp_(min=self.unstable_range_lower[0][0], max=self.unstable_range_lower[0][1])
+        self.unstable_d_lower[1].data.clamp_(min=self.unstable_range_lower[1][0], max=self.unstable_range_lower[1][1])
+        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
 class MultivariateMonomial(nn.Module):
