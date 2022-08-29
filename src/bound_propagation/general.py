@@ -1,4 +1,5 @@
 import abc
+import logging
 
 import torch
 from torch import nn
@@ -6,6 +7,9 @@ from torch.optim import Adam
 from torch.optim.lr_scheduler import ExponentialLR
 
 from .bounds import LinearBounds, IntervalBounds
+
+
+logger = logging.getLogger(__name__)
 
 
 class BoundModule(nn.Module, abc.ABC):
@@ -71,6 +75,13 @@ class BoundModule(nn.Module, abc.ABC):
     def alpha_crown(self, region, out_size, bound_lower, bound_upper):
         params = list(self.bound_parameters())
 
+        if all([param.numel() == 0 for param in params]):
+            logger.warning('No parameters available for alpha-CROWN. Check architecture of network.')
+
+            with torch.no_grad():
+                linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
+                return self.crown_backward(linear_bounds, False)
+
         if bound_lower:
             lower = self.optimize_bounds(region, out_size, True, params).lower
         else:
@@ -94,7 +105,7 @@ class BoundModule(nn.Module, abc.ABC):
             linear_bounds = self.crown_backward(linear_bounds, True)
             interval_bounds = linear_bounds.concretize()
 
-            loss = (-interval_bounds.lower if lower else interval_bounds.upper).sum()
+            loss = (-interval_bounds.lower if lower else interval_bounds.upper).mean()
 
             optimizer.zero_grad(set_to_none=True)
             loss.backward()
