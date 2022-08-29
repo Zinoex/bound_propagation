@@ -740,7 +740,7 @@ class BoundReciprocal(BoundActivation):
     def alpha_beta(self, preactivation):
         lower, upper = preactivation.lower, preactivation.upper
         zero_width, n, p, np = regimes(lower, upper)
-        assert not torch.any(np)
+        assert not torch.any(np), 'Input to reciprocal cannot cross zero as no linear bound can exist'
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
         self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
