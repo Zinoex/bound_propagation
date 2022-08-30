@@ -85,7 +85,7 @@ class LinearBounds:
         return IntervalBounds(self.region, lower, upper)
 
     def __len__(self):
-        return self.lower.size(0)
+        return len(self.region)
 
     def __getitem__(self, idx):
         if isinstance(idx, tuple) and len(idx) >= 2 and idx[0] == Ellipsis:
