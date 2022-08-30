@@ -10,7 +10,7 @@ class Parallel(nn.Module):
         super().__init__()
 
         self.split_size = split_size
-        self.subnetworks = subnetworks
+        self.subnetworks = nn.ModuleList(subnetworks)
 
     def forward(self, x):
         if self.split_size is not None:
@@ -28,7 +28,7 @@ class BoundParallel(BoundModule):
 
         self.in_sizes = None
         self.out_sizes = None
-        self.subnetworks = [factory.build(network) for network in module.subnetworks]
+        self.subnetworks = nn.ModuleList([factory.build(network) for network in module.subnetworks])
 
     @property
     def need_relaxation(self):
