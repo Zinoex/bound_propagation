@@ -1,5 +1,5 @@
 from .activation import BoundActivation, BoundTanh, BoundReLU, BoundSigmoid, bisection, Exp, BoundExp, Log, BoundLog, \
-    Reciprocal, BoundReciprocal, Sin, BoundSin, Cos, BoundCos
+    Reciprocal, BoundReciprocal, Sin, BoundSin, Cos, BoundCos, Erf, BoundErf
 from .bounds import LinearBounds, IntervalBounds, HyperRectangle
 from .factory import BoundModelFactory
 from .general import BoundModule

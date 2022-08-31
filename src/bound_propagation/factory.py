@@ -1,7 +1,7 @@
 from torch import nn
 
 from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity, BoundExp, Exp, BoundLog, Log, \
-    BoundReciprocal, Reciprocal, BoundSin, Sin, BoundCos, Cos
+    BoundReciprocal, Reciprocal, BoundSin, Sin, BoundCos, Cos, BoundErf, Erf
 from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub, VectorMul, \
     BoundVectorMul, BoundMul, Mul
 from .linear import BoundLinear
@@ -24,6 +24,7 @@ class BoundModelFactory:
             (nn.Sequential, BoundSequential),
             (nn.Linear, BoundLinear),
             (nn.ReLU, BoundReLU),
+            (Erf, BoundErf),
             (nn.Tanh, BoundTanh),
             (nn.Sigmoid, BoundSigmoid),
             (nn.Identity, BoundIdentity),
