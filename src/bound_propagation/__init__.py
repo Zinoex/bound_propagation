@@ -9,4 +9,4 @@ from .parallel import Parallel, BoundParallel, Cat
 from .bivariate import Add, BoundAdd, VectorAdd, BoundVectorAdd, Sub, BoundSub, VectorSub, BoundVectorSub, Residual, Mul, BoundMul, Div, VectorMul, BoundVectorMul
 from .saturation import Clamp, BoundClamp
 from .reshape import Select, BoundSelect
-from .polynomial import UnivariateMonomial, BoundUnivariateMonomial
+from .polynomial import UnivariateMonomial, BoundUnivariateMonomial, MultivariateMonomial

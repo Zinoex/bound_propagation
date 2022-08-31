@@ -4,6 +4,9 @@ from typing import Tuple, List
 import torch
 from torch import nn
 
+from .parallel import Parallel
+from .reshape import Select
+from .bivariate import Mul
 from .activation import assert_bound_order, regimes, bisection
 from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
@@ -376,10 +379,49 @@ class BoundUnivariateMonomial(BoundModule):
         self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
-class MultivariateMonomial(nn.Module):
-    pass
+class MultivariateMonomial(nn.Sequential):
+    def __init__(self, monomials):
+        super().__init__()
 
-    # Combine Mul and UnivariateMonomial to support multivariate monomials
+        monomials = [self.coalesce_factors(monomial) for monomial in monomials]
+
+        # Assume powers are of the structure [[(index, power)]]
+        linear_terms = list(set([index for monomial in monomials for index, power in monomial if power == 1]))
+        factors = list(set([(index, power) for monomial in monomials for index, power in monomial if power >= 2]))
+        monomial_indices = []
+
+        for monomial in monomials:
+            monomial_index = []
+            for index, power in monomial:
+                if power == 1:
+                    monomial_index.append(linear_terms.index(index))
+                else:
+                    assert isinstance(power, int) and power >= 2, 'Multivariate monomial only supports integer powers'
+
+                    monomial_index.append(len(linear_terms) + factors.index((index, power)))
+
+            monomial_indices.append(monomial_index)
+
+        super().__init__(
+            Parallel(Select(linear_terms), UnivariateMonomial(factors)),
+            Parallel(*[self.construct_mul(monomial_index) for monomial_index in monomial_indices])
+        )
+
+    def construct_mul(self, monomial_index):
+        module = Select(monomial_index[0])
+
+        for index in monomial_index[1:]:
+            module = Mul(module, Select(index))
+
+        return module
+
+    def coalesce_factors(self, monomial):
+        powers = {}
+
+        for index, power in monomial:
+            powers[index] = powers.get(index, 0) + power
+
+        return list(powers.items())
 
 
 class Polynomials(nn.Module):
