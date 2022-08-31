@@ -38,8 +38,11 @@ def crown_backward_poly_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, to
 
     W_tilde = torch.zeros((*W_tilde.size()[:-1], in_size), device=W_tilde.device, dtype=W_tilde.dtype)
 
-    for out_index, in_index in enumerate(indices):
-        W_tilde[..., in_index] += out_W_tilde[..., out_index]
+    view_size = *[1 for _ in range(W_tilde.dim() - 1)], -1
+    indices = torch.tensor(indices, device=W_tilde.device).view(*view_size).expand_as(out_W_tilde)
+    W_tilde.scatter_add_(-1, indices, out_W_tilde)
+    # for out_index, in_index in enumerate(indices):
+    #     W_tilde[..., in_index] += out_W_tilde[..., out_index]
 
     return W_tilde, bias
 
