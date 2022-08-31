@@ -42,14 +42,21 @@ class BoundSelect(BoundModule):
             lower = None
         else:
             lowerA = torch.zeros((*linear_bounds.lower[0].size()[:-1], self.in_size), device=linear_bounds.lower[0].device)
-            lowerA[..., self.module.indices] = linear_bounds.lower[0]
+
+            view_size = *[1 for _ in range(linear_bounds.lower[0].dim() - 1)], -1
+            indices = torch.tensor(self.module.indices, device=linear_bounds.lower[0].device).view(*view_size).expand_as(linear_bounds.lower[0])
+            lowerA.scatter_add_(-1, indices, linear_bounds.lower[0])
+
             lower = (lowerA, linear_bounds.lower[1])
 
         if linear_bounds.upper is None:
             upper = None
         else:
             upperA = torch.zeros((*linear_bounds.upper[0].size()[:-1], self.in_size), device=linear_bounds.upper[0].device)
-            upperA[..., self.module.indices] = linear_bounds.upper[0]
+
+            view_size = *[1 for _ in range(linear_bounds.upper[0].dim() - 1)], -1
+            indices = torch.tensor(self.module.indices, device=linear_bounds.upper[0].device).view(*view_size).expand_as(linear_bounds.upper[0])
+            upperA.scatter_add_(-1, indices, linear_bounds.upper[0])
             upper = (upperA, linear_bounds.upper[1])
 
         return LinearBounds(linear_bounds.region, lower, upper)
