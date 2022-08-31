@@ -1130,10 +1130,10 @@ class BoundSin(BoundActivation):
 
         if torch.any(implicit):
             implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_upper_act = self.func(implicit_upper)
+            implicit_upper_act = self(implicit_upper)
 
             def f_lower(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (self.func(d) - implicit_upper_act) / (d - implicit_upper)
+                a_slope = (self(d) - implicit_upper_act) / (d - implicit_upper)
                 a_derivative = self.derivative(d)
                 return a_slope - a_derivative
 
