@@ -81,12 +81,12 @@ class FixedLinear(nn.Linear):
     def __init__(self, weight, bias=None):
         super().__init__(weight.size(-1), weight.size(-2), bias=bias is not None)
 
-        del weight
-        self.weight = weight
+        del self.weight
+        self.register_buffer('weight', weight)
 
         if bias is not None:
-            del bias
-            self.bias = bias
+            del self.bias
+            self.register_buffer('bias', bias)
 
 
 class ElementWiseLinear(nn.Module):
