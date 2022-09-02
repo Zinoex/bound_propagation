@@ -1,12 +1,13 @@
 from torch import nn
 
 from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity, BoundExp, Exp, BoundLog, Log, \
-    BoundReciprocal, Reciprocal, BoundSin, Sin, BoundCos, Cos, BoundErf, Erf
+    BoundReciprocal, Reciprocal, BoundSin, Sin, BoundCos, Cos
 from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub, VectorMul, \
     BoundVectorMul, BoundMul, Mul
 from .linear import BoundLinear, BoundElementWiseLinear, ElementWiseLinear
 from .parallel import BoundParallel, Parallel
-from .polynomial import UnivariateMonomial, BoundPow, Pow
+from .polynomial import BoundPow, Pow
+from .probability import BoundErf, Erf
 from .reshape import BoundSelect, Select
 from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
@@ -25,7 +26,6 @@ class BoundModelFactory:
             (nn.Linear, BoundLinear),
             (ElementWiseLinear, BoundElementWiseLinear),
             (nn.ReLU, BoundReLU),
-            (Erf, BoundErf),
             (nn.Tanh, BoundTanh),
             (nn.Sigmoid, BoundSigmoid),
             (nn.Identity, BoundIdentity),
@@ -43,7 +43,8 @@ class BoundModelFactory:
             (Parallel, BoundParallel),
             (Clamp, BoundClamp),
             (Select, BoundSelect),
-            (Pow, BoundPow)
+            (Pow, BoundPow),
+            (Erf, BoundErf)
         ]
 
         self.kwargs = kwargs

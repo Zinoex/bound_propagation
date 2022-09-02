@@ -1,5 +1,5 @@
 from .activation import BoundActivation, BoundTanh, BoundReLU, BoundSigmoid, bisection, Exp, BoundExp, Log, BoundLog, \
-    Reciprocal, BoundReciprocal, Sin, BoundSin, Cos, BoundCos, Erf, BoundErf
+    Reciprocal, BoundReciprocal, Sin, BoundSin, Cos, BoundCos
 from .bounds import LinearBounds, IntervalBounds, HyperRectangle
 from .factory import BoundModelFactory
 from .general import BoundModule
@@ -10,3 +10,4 @@ from .bivariate import Add, BoundAdd, VectorAdd, BoundVectorAdd, Sub, BoundSub, 
 from .saturation import Clamp, BoundClamp
 from .reshape import Select, BoundSelect
 from .polynomial import Pow, BoundPow, UnivariateMonomial, MultivariateMonomial
+from .probability import Erf, BoundErf, StandardNormalPDF, NormalPDF, NormalCDF
