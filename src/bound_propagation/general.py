@@ -17,10 +17,9 @@ class BoundModule(nn.Module, abc.ABC):
         super().__init__()
         self.module = module
 
-        self.optimizer = kwargs.get('bounds_optimizer', Adam)
-        self.bounds_iterations = kwargs.get('bounds_iterations', 40)
-        self.lr = kwargs.get('bounds_lr', 1e-2)
-        self.lr_decay = kwargs.get('bounds_lr_decay', 0.97)
+        self.alpha_optimizer = kwargs.get('alpha_optimizer', Adam)
+        self.alpha_iterations = kwargs.get('alpha_iterations', 20)
+        self.alpha_lr = kwargs.get('alpha_lr', 1.0)
 
     @torch.no_grad()
     def crown_relax(self, region):
@@ -71,52 +70,48 @@ class BoundModule(nn.Module, abc.ABC):
         linear_bounds = LinearBounds(region, lower, upper)
         return linear_bounds
 
-    @torch.enable_grad()
     def alpha_crown(self, region, out_size, bound_lower, bound_upper):
         params = list(self.bound_parameters())
 
         if all([param.numel() == 0 for param in params]):
             logger.warning('No parameters available for alpha-CROWN. Check architecture of network.')
 
-            with torch.no_grad():
-                linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
-                return self.crown_backward(linear_bounds, False)
+            linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
+            return self.crown_backward(linear_bounds, False)
 
-        if bound_lower:
-            lower = self.optimize_bounds(region, out_size, True, params).lower
-        else:
-            lower = None
+        self.optimize_bounds(region, out_size, params, bound_lower=bound_lower, bound_upper=bound_upper)
 
-        if bound_upper:
-            upper = self.optimize_bounds(region, out_size, False, params).upper
-        else:
-            upper = None
+        linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
+        return self.crown_backward(linear_bounds, True)
 
-        return LinearBounds(region, lower, upper)
+    @torch.enable_grad()
+    def optimize_bounds(self, region, out_size, params, bound_lower=True, bound_upper=True):
+        optimizer = self.alpha_optimizer(params, self.alpha_lr)
 
-    def optimize_bounds(self, region, out_size, lower, params):
-        optimizer = self.optimizer(params, self.lr)
-        scheduler = ExponentialLR(optimizer, self.lr_decay)
-
-        self.reset_params()
-
-        for iteration in range(self.bounds_iterations):
-            linear_bounds = self.initial_linear_bounds(region, out_size, lower=lower, upper=not lower)
+        for iteration in range(self.alpha_iterations):
+            linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
             linear_bounds = self.crown_backward(linear_bounds, True)
             interval_bounds = linear_bounds.concretize()
 
-            loss = (-interval_bounds.lower if lower else interval_bounds.upper).mean()
+            loss = 0
+            if bound_lower:
+                # Use sum for aggregation because bound parameters are per sample, hence we need to scale the loss with
+                # the number of samples
+                loss = -interval_bounds.lower.sum()
 
-            optimizer.zero_grad(set_to_none=True)
+            if bound_upper:
+                loss = interval_bounds.upper.sum()
+
+            optimizer.zero_grad(set_to_none=True)  # Bound parameters
+            self.zero_grad(set_to_none=True)       # Network/model parameters
+
             loss.backward()
             optimizer.step()
-            scheduler.step()
 
             self.clip_params()  # Projected Gradient Descent
 
-        with torch.no_grad():
-            linear_bounds = self.initial_linear_bounds(region, out_size, lower=lower, upper=not lower)
-            return self.crown_backward(linear_bounds, True)
+        optimizer.zero_grad(set_to_none=True)
+        self.zero_grad(set_to_none=True)
 
     @property
     @abc.abstractmethod
@@ -162,9 +157,6 @@ class BoundModule(nn.Module, abc.ABC):
 
     def bound_parameters(self):
         return []
-
-    def reset_params(self):
-        pass
 
     def clip_params(self):
         pass

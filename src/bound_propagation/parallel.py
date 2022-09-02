@@ -171,10 +171,6 @@ class BoundParallel(BoundModule):
         for network in self.subnetworks:
             yield from network.bound_parameters()
 
-    def reset_params(self):
-        for network in self.subnetworks:
-            network.reset_params()
-
     def clip_params(self):
         for network in self.subnetworks:
             network.clip_params()

@@ -83,10 +83,6 @@ class BoundAdd(BoundModule):
         yield from self.bound_network1.bound_parameters()
         yield from self.bound_network2.bound_parameters()
 
-    def reset_params(self):
-        self.bound_network1.reset_params()
-        self.bound_network2.reset_params()
-
     def clip_params(self):
         self.bound_network1.clip_params()
         self.bound_network2.clip_params()
@@ -218,10 +214,6 @@ class BoundSub(BoundModule):
     def bound_parameters(self):
         yield from self.bound_network1.bound_parameters()
         yield from self.bound_network2.bound_parameters()
-
-    def reset_params(self):
-        self.bound_network1.reset_params()
-        self.bound_network2.reset_params()
 
     def clip_params(self):
         self.bound_network1.clip_params()
@@ -483,10 +475,6 @@ class BoundMul(BoundModule):
         yield self.kappa_lower
         yield self.kappa_upper
 
-    def reset_params(self):
-        self.kappa_lower.data.fill_(0.5)
-        self.kappa_upper.data.fill_(0.5)
-
     def clip_params(self):
         self.kappa_lower.data.clamp_(min=0.0, max=1.0)
         self.kappa_upper.data.clamp_(min=0.0, max=1.0)
@@ -647,10 +635,6 @@ class BoundVectorMul(BoundModule):
 
         yield self.kappa_lower
         yield self.kappa_upper
-
-    def reset_params(self):
-        self.kappa_lower.data.fill_(0.5)
-        self.kappa_upper.data.fill_(0.5)
 
     def clip_params(self):
         self.kappa_lower.data.clamp_(min=0.0, max=1.0)

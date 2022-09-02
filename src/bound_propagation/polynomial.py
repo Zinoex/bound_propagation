@@ -60,27 +60,8 @@ class BoundUnivariateMonomial(BoundModule):
 
         self.bounded = False
 
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
-
-    @property
-    def unstable_d_lower(self):
-        return self._unstable_d_lower
-
-    @unstable_d_lower.setter
-    def unstable_d_lower(self, value):
-        self._unstable_d_lower = value
-        self.initial_unstable_d_lower = [x.detach().clone() for x in value]
-
-    @property
-    def unstable_d_upper(self):
-        return self._unstable_d_upper
-
-    @unstable_d_upper.setter
-    def unstable_d_upper(self, value):
-        self._unstable_d_upper = value
-        self.initial_unstable_d_upper = value
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def clear_relaxation(self):
         self.input_bounds = None
@@ -90,9 +71,8 @@ class BoundUnivariateMonomial(BoundModule):
 
         self.bounded = False
 
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     @property
     def need_relaxation(self):
@@ -364,11 +344,6 @@ class BoundUnivariateMonomial(BoundModule):
 
         yield from self.unstable_d_lower
         yield self.unstable_d_upper
-
-    def reset_params(self):
-        self.unstable_d_lower[0].data.copy_(self.initial_unstable_d_lower[0])
-        self.unstable_d_lower[1].data.copy_(self.initial_unstable_d_lower[1])
-        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
 
     def clip_params(self):
         self.unstable_d_lower[0].data.clamp_(min=self.unstable_range_lower[0][0], max=self.unstable_range_lower[0][1])

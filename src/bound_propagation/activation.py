@@ -150,20 +150,11 @@ class BoundReLU(BoundActivation):
         super().__init__(module, factory)
         self.adaptive_relu = adaptive_relu
 
-        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
-
-    @property
-    def unstable_slope_lower(self):
-        return self._unstable_slope_lower
-
-    @unstable_slope_lower.setter
-    def unstable_slope_lower(self, value):
-        self._unstable_slope_lower = value
-        self.initial_unstable_slope_lower = value
+        self.unstable_lower, self.unstable_slope_lower = None, None
 
     def clear_relaxation(self):
         super().clear_relaxation()
-        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
+        self.unstable_lower, self.unstable_slope_lower = None, None
 
     @assert_bound_order
     def alpha_beta(self, preactivation):
@@ -233,9 +224,6 @@ class BoundReLU(BoundActivation):
         else:
             logger.warning('ReLU bound not parameterized but expected to')
 
-    def reset_params(self):
-        self.unstable_slope_lower.data.copy_(self.initial_unstable_slope_lower)
-
     def clip_params(self):
         self.unstable_slope_lower.data.clamp_(min=0, max=1)
 
@@ -244,33 +232,13 @@ class BoundSigmoid(BoundActivation):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory)
 
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
-
-    @property
-    def unstable_d_lower(self):
-        return self._unstable_d_lower
-
-    @unstable_d_lower.setter
-    def unstable_d_lower(self, value):
-        self._unstable_d_lower = value
-        self.initial_unstable_d_lower = value
-
-    @property
-    def unstable_d_upper(self):
-        return self._unstable_d_upper
-
-    @unstable_d_upper.setter
-    def unstable_d_upper(self, value):
-        self._unstable_d_upper = value
-        self.initial_unstable_d_upper = value
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def clear_relaxation(self):
         super().clear_relaxation()
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def derivative(self, x):
         return torch.sigmoid(x) * (1 - torch.sigmoid(x))
@@ -438,10 +406,6 @@ class BoundSigmoid(BoundActivation):
         yield self.unstable_d_lower
         yield self.unstable_d_upper
 
-    def reset_params(self):
-        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
-        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
-
     def clip_params(self):
         self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
         self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
@@ -497,22 +461,11 @@ class BoundExp(BoundActivation):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory)
 
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_range_lower = None
-
-    @property
-    def unstable_d_lower(self):
-        return self._unstable_d_lower
-
-    @unstable_d_lower.setter
-    def unstable_d_lower(self, value):
-        self._unstable_d_lower = value
-        self.initial_unstable_d_lower = value
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
 
     def clear_relaxation(self):
         super().clear_relaxation()
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_range_lower = None
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
 
     def derivative(self, x):
         return x.exp()
@@ -582,9 +535,6 @@ class BoundExp(BoundActivation):
 
         yield self.unstable_d_lower
 
-    def reset_params(self):
-        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
-
     def clip_params(self):
         self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
 
@@ -599,22 +549,11 @@ class BoundLog(BoundActivation):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory)
 
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_upper = None
-
-    @property
-    def unstable_d_upper(self):
-        return self._unstable_d_upper
-
-    @unstable_d_upper.setter
-    def unstable_d_upper(self, value):
-        self._unstable_d_upper = value
-        self.initial_unstable_d_upper = value
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def clear_relaxation(self):
         super().clear_relaxation()
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_upper = None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def derivative(self, x):
         # As we already assume x > 0, this is well-defined
@@ -687,9 +626,6 @@ class BoundLog(BoundActivation):
 
         yield self.unstable_d_upper
 
-    def reset_params(self):
-        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
-
     def clip_params(self):
         self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
@@ -705,33 +641,13 @@ class BoundReciprocal(BoundActivation):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory)
 
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
-
-    @property
-    def unstable_d_lower(self):
-        return self._unstable_d_lower
-
-    @unstable_d_lower.setter
-    def unstable_d_lower(self, value):
-        self._unstable_d_lower = value
-        self.initial_unstable_d_lower = value
-
-    @property
-    def unstable_d_upper(self):
-        return self._unstable_d_upper
-
-    @unstable_d_upper.setter
-    def unstable_d_upper(self, value):
-        self._unstable_d_upper = value
-        self.initial_unstable_d_upper = value
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def clear_relaxation(self):
         super().clear_relaxation()
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def derivative(self, x):
         return -1 / (x ** 2)
@@ -845,10 +761,6 @@ class BoundReciprocal(BoundActivation):
         yield self.unstable_d_lower
         yield self.unstable_d_upper
 
-    def reset_params(self):
-        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
-        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
-
     def clip_params(self):
         self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
         self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
@@ -920,33 +832,13 @@ class BoundSin(BoundActivation):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory)
 
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
-
-    @property
-    def unstable_d_lower(self):
-        return self._unstable_d_lower
-
-    @unstable_d_lower.setter
-    def unstable_d_lower(self, value):
-        self._unstable_d_lower = value
-        self.initial_unstable_d_lower = value
-
-    @property
-    def unstable_d_upper(self):
-        return self._unstable_d_upper
-
-    @unstable_d_upper.setter
-    def unstable_d_upper(self, value):
-        self._unstable_d_upper = value
-        self.initial_unstable_d_upper = value
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def clear_relaxation(self):
         super().clear_relaxation()
-        self.unstable_lower, self._unstable_d_lower, self.initial_unstable_d_lower = None, None, None
-        self.unstable_upper, self._unstable_d_upper, self.initial_unstable_d_upper = None, None, None
-        self.unstable_range_lower, self.unstable_range_upper = None, None
+        self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
+        self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def derivative(self, x):
         return x.cos()
@@ -1204,10 +1096,6 @@ class BoundSin(BoundActivation):
 
         yield self.unstable_d_lower
         yield self.unstable_d_upper
-
-    def reset_params(self):
-        self.unstable_d_lower.data.copy_(self.initial_unstable_d_lower)
-        self.unstable_d_upper.data.copy_(self.initial_unstable_d_upper)
 
     def clip_params(self):
         self.unstable_d_lower.data.clamp(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])

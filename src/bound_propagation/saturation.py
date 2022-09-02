@@ -60,31 +60,13 @@ class BoundClamp(BoundActivation):
         super().__init__(module, factory)
         self.adaptive_clamp = adaptive_clamp
 
-        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
-        self.unstable_upper, self._unstable_slope_upper, self.initial_unstable_slope_upper = None, None, None
-
-    @property
-    def unstable_slope_lower(self):
-        return self._unstable_slope_lower
-
-    @unstable_slope_lower.setter
-    def unstable_slope_lower(self, value):
-        self._unstable_slope_lower = value
-        self.initial_unstable_slope_lower = value
-
-    @property
-    def unstable_slope_upper(self):
-        return self._unstable_slope_upper
-
-    @unstable_slope_upper.setter
-    def unstable_slope_upper(self, value):
-        self._unstable_slope_upper = value
-        self.initial_unstable_slope_upper = value
+        self.unstable_lower, self.unstable_slope_lower = None, None
+        self.unstable_upper, self.unstable_slope_upper = None, None
 
     def clear_relaxation(self):
         super().clear_relaxation()
-        self.unstable_lower, self._unstable_slope_lower, self.initial_unstable_slope_lower = None, None, None
-        self.unstable_upper, self._unstable_slope_upper, self.initial_unstable_slope_upper = None, None, None
+        self.unstable_lower, self.unstable_slope_lower = None, None
+        self.unstable_upper, self.unstable_slope_upper = None, None
 
     @assert_bound_order
     def alpha_beta(self, preactivation):
@@ -207,13 +189,6 @@ class BoundClamp(BoundActivation):
 
         if self.unstable_upper is not None:
             yield self.unstable_slope_upper
-
-    def reset_params(self):
-        if self.unstable_lower is not None:
-            self.unstable_slope_lower.data.copy_(self.initial_unstable_slope_lower)
-
-        if self.unstable_upper is not None:
-            self.unstable_slope_upper.data.copy_(self.initial_unstable_slope_upper)
 
     def clip_params(self):
         if self.unstable_lower is not None:

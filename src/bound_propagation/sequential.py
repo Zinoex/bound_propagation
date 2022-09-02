@@ -50,10 +50,6 @@ class BoundSequential(BoundModule):
         for module in self.bound_sequential:
             yield from module.bound_parameters()
 
-    def reset_params(self):
-        for module in self.bound_sequential:
-            module.reset_params()
-
     def clip_params(self):
         for module in self.bound_sequential:
             module.clip_params()
