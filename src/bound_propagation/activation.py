@@ -147,7 +147,7 @@ def regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, tor
 
 class BoundReLU(BoundActivation):
     def __init__(self, module, factory, adaptive_relu=True, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
         self.adaptive_relu = adaptive_relu
 
         self.unstable_lower, self.unstable_slope_lower = None, None
@@ -230,7 +230,7 @@ class BoundReLU(BoundActivation):
 
 class BoundSigmoid(BoundActivation):
     def __init__(self, module, factory, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
 
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
@@ -469,7 +469,7 @@ class Exp(nn.Module):
 
 class BoundExp(BoundActivation):
     def __init__(self, module, factory, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
 
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
 
@@ -557,7 +557,7 @@ class Log(nn.Module):
 
 class BoundLog(BoundActivation):
     def __init__(self, module, factory, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
 
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
@@ -649,7 +649,7 @@ class BoundReciprocal(BoundActivation):
     # Only negative or positive. If crossing zero then no linear relaxation can exist as it goes to +- \infty
 
     def __init__(self, module, factory, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
 
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
@@ -840,7 +840,7 @@ class BoundSin(BoundActivation):
     zero_increasing = 0
 
     def __init__(self, module, factory, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
 
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None

@@ -6,7 +6,7 @@ from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, 
     BoundVectorMul, BoundMul, Mul
 from .linear import BoundLinear, BoundElementWiseLinear, ElementWiseLinear
 from .parallel import BoundParallel, Parallel
-from .polynomial import BoundUnivariateMonomial, UnivariateMonomial
+from .polynomial import UnivariateMonomial, BoundPow, Pow
 from .reshape import BoundSelect, Select
 from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
@@ -43,7 +43,7 @@ class BoundModelFactory:
             (Parallel, BoundParallel),
             (Clamp, BoundClamp),
             (Select, BoundSelect),
-            (UnivariateMonomial, BoundUnivariateMonomial)
+            (Pow, BoundPow)
         ]
 
         self.kwargs = kwargs

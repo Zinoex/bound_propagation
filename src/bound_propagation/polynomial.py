@@ -7,127 +7,37 @@ from torch import nn
 from .parallel import Parallel
 from .reshape import Select
 from .bivariate import Mul
-from .activation import assert_bound_order, regimes, bisection
+from .activation import assert_bound_order, regimes, bisection, BoundActivation
 from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
 
 logger = logging.getLogger(__name__)
 
 
-class UnivariateMonomial(nn.Module):
-    def __init__(self, powers):
+class Pow(nn.Module):
+    def __init__(self, power):
         super().__init__()
 
-        # Assume powers are of the structure [(index, power)] and this will be the output order too
-        self.indices = [index for index, _ in powers]
-        self.powers = [powers for _, powers in powers]
+        # assert power >= 1, 'Pow only supports integer powers'
+        # assert all([isinstance(power, int) and power >= 2 for power in self.powers]), 'Univariate monomial only supports integer powers'
 
-        assert all([isinstance(power, int) and power >= 2 for power in self.powers]), 'Univariate monomial only supports integer powers'
+        self.power = power
 
     def forward(self, x):
-        powers = torch.tensor(self.powers, device=x.device)
-
-        x = x[..., self.indices].pow(powers)
-        return x
+        return x.pow(self.power)
 
 
-# @torch.jit.script
-def crown_backward_poly_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor], indices: List[int], in_size) -> Tuple[torch.Tensor, torch.Tensor]:
-    _lambda = torch.where(W_tilde < 0, alpha[0].unsqueeze(-2), alpha[1].unsqueeze(-2))
-    _delta = torch.where(W_tilde < 0, beta[0].unsqueeze(-2), beta[1].unsqueeze(-2))
-
-    bias = torch.sum(W_tilde * _delta, dim=-1)
-    out_W_tilde = W_tilde * _lambda
-
-    W_tilde = torch.zeros((*W_tilde.size()[:-1], in_size), device=W_tilde.device, dtype=W_tilde.dtype)
-
-    view_size = *[1 for _ in range(W_tilde.dim() - 1)], -1
-    indices = torch.tensor(indices, device=W_tilde.device).view(*view_size).expand_as(out_W_tilde)
-    W_tilde.scatter_add_(-1, indices, out_W_tilde)
-    # for out_index, in_index in enumerate(indices):
-    #     W_tilde[..., in_index] += out_W_tilde[..., out_index]
-
-    return W_tilde, bias
-
-
-class BoundUnivariateMonomial(BoundModule):
+class BoundPow(BoundActivation):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
-
-        self.in_size = None
-
-        self.input_bounds = None
-
-        self.alpha_lower, self.beta_lower = None, None
-        self.alpha_upper, self.beta_upper = None, None
-
-        self.bounded = False
 
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     def clear_relaxation(self):
-        self.input_bounds = None
-
-        self.alpha_lower, self.beta_lower = None, None
-        self.alpha_upper, self.beta_upper = None, None
-
-        self.bounded = False
-
+        super().clear_relaxation()
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
-
-    @property
-    def need_relaxation(self):
-        return not self.bounded
-
-    def set_relaxation(self, linear_bounds):
-        interval_bounds = linear_bounds.concretize()
-        interval_bounds = IntervalBounds(
-            linear_bounds.region,
-            torch.max(interval_bounds.lower, self.input_bounds.lower),
-            torch.min(interval_bounds.upper, self.input_bounds.upper)
-        )
-
-        self.alpha_beta(preactivation=interval_bounds)
-        self.bounded = True
-
-    def backward_relaxation(self, region):
-        assert self.in_size is not None
-
-        linear_bounds = self.initial_linear_bounds(region, self.in_size)
-        return linear_bounds, self
-
-    def crown_backward(self, linear_bounds, optimize):
-        assert self.bounded
-        assert self.in_size is not None
-
-        alpha_lower, alpha_upper = self.alpha_lower.detach().clone(), self.alpha_upper.detach().clone()
-        beta_lower, beta_upper = self.beta_lower.detach().clone(), self.beta_upper.detach().clone()
-
-        if optimize:
-            alpha_lower, alpha_upper, beta_lower, beta_upper = \
-                self.parameterize_alpha_beta(alpha_lower, alpha_upper, beta_lower, beta_upper)
-
-        # NOTE: The order of alpha and beta are deliberately reverse - this is not a mistake!
-        if linear_bounds.lower is None:
-            lower = None
-        else:
-            alpha = alpha_upper, alpha_lower
-            beta = beta_upper, beta_lower
-
-            lower = crown_backward_poly_jit(linear_bounds.lower[0], alpha, beta, self.module.indices, self.in_size)
-            lower = (lower[0], lower[1] + linear_bounds.lower[1])
-
-        if linear_bounds.upper is None:
-            upper = None
-        else:
-            alpha = alpha_lower, alpha_upper
-            beta = beta_lower, beta_upper
-            upper = crown_backward_poly_jit(linear_bounds.upper[0], alpha, beta, self.module.indices, self.in_size)
-            upper = (upper[0], upper[1] + linear_bounds.upper[1])
-
-        return LinearBounds(linear_bounds.region, lower, upper)
 
     @assert_bound_order
     def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
@@ -138,13 +48,13 @@ class BoundUnivariateMonomial(BoundModule):
         if save_input_bounds:
             self.input_bounds = bounds
 
-        lower, upper = bounds.lower[..., self.module.indices], bounds.upper[..., self.module.indices]
-        lower_act, upper_act = self(bounds.lower), self(bounds.upper)
+        lower, upper = bounds.lower, bounds.upper
+        lower_act, upper_act = self(lower), self(upper)
 
-        lower_out, upper_out = torch.zeros_like(lower_act), torch.zeros_like(upper_act)
+        lower_out, upper_out = torch.zeros_like(lower), torch.zeros_like(upper)
 
         # Even powers
-        even = (torch.tensor(self.module.powers, device=lower.device) % 2) == 0
+        even = (torch.as_tensor(self.module.power, device=lower.device) % 2) == 0
         crossing = (lower < 0) & (upper > 0)
 
         crossing, not_crossing = (crossing & even), ((~crossing) & even)
@@ -160,36 +70,30 @@ class BoundUnivariateMonomial(BoundModule):
 
         return IntervalBounds(bounds.region, lower_out, upper_out)
 
-    def propagate_size(self, in_size):
-        assert all([index < in_size for index in self.module.indices]), 'Too large index in univariate polynomial'
-        self.in_size = in_size
+    def func(self, x, power=None):
+        if power is None:
+            power = torch.as_tensor(self.module.power, device=x.device)
 
-        return len(self.module.indices)
-
-    def func(self, x, powers=None):
-        if powers is None:
-            powers = torch.tensor(self.module.powers, device=x.device)
-
-        x = x.pow(powers)
+        x = x.pow(power)
         return x
 
-    def derivative(self, x, powers=None):
-        if powers is None:
-            powers = torch.tensor(self.module.powers, device=x.device)
+    def derivative(self, x, power=None):
+        if power is None:
+            power = torch.as_tensor(self.module.power, device=x.device)
 
-        x = powers * x.pow(powers - 1)
+        x = power * x.pow(power - 1)
         return x
 
     @assert_bound_order
     def alpha_beta(self, preactivation):
-        lower, upper = preactivation.lower[..., self.module.indices], preactivation.upper[..., self.module.indices]
+        lower, upper = preactivation.lower, preactivation.upper
         zero_width, n, p, np = regimes(lower, upper)
-        even = torch.tensor(self.module.powers, device=lower.device) % 2 == 0
+        power = torch.as_tensor(self.module.power, device=lower.device)
+        even = power % 2 == 0
         odd = ~even
 
-        zeros = torch.zeros((*lower.size()[:-1], len(self.module.indices)), device=lower.device, dtype=lower.dtype)
-        self.alpha_lower, self.beta_lower = zeros.detach().clone(), zeros.detach().clone()
-        self.alpha_upper, self.beta_upper = zeros.detach().clone(), zeros.detach().clone()
+        self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
+        self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
 
         lower_act, upper_act = self.func(lower), self.func(upper)
         lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
@@ -209,7 +113,6 @@ class BoundUnivariateMonomial(BoundModule):
 
         # Use upper and lower in the bias to account for a small numerical difference between lower and upper
         # which ought to be negligible, but may still be present due to torch.isclose.
-        zero_width = (odd | even) & zero_width  # Just to broadcast to the index shape
         self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, torch.min(lower_act[zero_width], upper_act[zero_width])
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, torch.max(lower_act[zero_width], upper_act[zero_width])
 
@@ -269,7 +172,7 @@ class BoundUnivariateMonomial(BoundModule):
         # Odd - crossing zero #
         #######################
         np_odd = np & odd
-        powers = torch.tensor(self.module.powers, device=np_odd.device).view(*[1 for _ in range(np.dim() - 1)], -1).expand_as(np_odd)
+        power = power.view(*[1 for _ in range(np.dim() - 1)], -1).expand_as(np_odd)
 
         # Upper bound #
         # If tangent to lower is below upper, then take direct slope between lower and upper
@@ -280,20 +183,20 @@ class BoundUnivariateMonomial(BoundModule):
         implicit = np_odd & (slope < lower_prime)
 
         if torch.any(implicit):
-            implicit_powers = powers[implicit]
+            implicit_power = power[implicit]
             implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_upper_act = self.func(implicit_upper, implicit_powers)
+            implicit_upper_act = self.func(implicit_upper, implicit_power)
 
             def f_upper(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (implicit_upper_act - self.func(d, implicit_powers)) / (implicit_upper - d)
-                a_derivative = self.derivative(d, implicit_powers)
+                a_slope = (implicit_upper_act - self.func(d, implicit_power)) / (implicit_upper - d)
+                a_derivative = self.derivative(d, implicit_power)
                 return a_slope - a_derivative
 
             # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
             # Derivative of left bound will over-approximate the slope - hence a true bound
             d_upper, _ = bisection(implicit_lower, torch.zeros_like(implicit_lower), f_upper)
             # Slope has to attach to (lower, sigma(lower))
-            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper, implicit_powers), x=upper, y=upper_act, a_mask=False)
+            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper, implicit_power), x=upper, y=upper_act, a_mask=False)
 
         # Lower bound #
         # If tangent to upper is above lower, then take direct slope between lower and upper
@@ -304,30 +207,30 @@ class BoundUnivariateMonomial(BoundModule):
         implicit = np_odd & (slope < upper_prime)
 
         if torch.any(implicit):
-            implicit_powers = powers[implicit]
+            implicit_power = power[implicit]
             implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_lower_act = self.func(implicit_lower, implicit_powers)
+            implicit_lower_act = self.func(implicit_lower, implicit_power)
 
             def f_lower(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (self.func(d, implicit_powers) - implicit_lower_act) / (d - implicit_lower)
-                a_derivative = self.derivative(d, implicit_powers)
+                a_slope = (self.func(d, implicit_power) - implicit_lower_act) / (d - implicit_lower)
+                a_derivative = self.derivative(d, implicit_power)
                 return a_derivative - a_slope
 
             # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
             # Derivative of right bound will over-approximate the slope - hence a true bound
             _, d_lower = bisection(torch.zeros_like(implicit_upper), implicit_upper, f_lower)
             # Slope has to attach to (upper, sigma(upper))
-            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower, implicit_powers), x=lower, y=lower_act, a_mask=False)
+            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower, implicit_power), x=lower, y=lower_act, a_mask=False)
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
         if self.unstable_lower is None or self.unstable_upper is None:
             logger.warning('Polynomial bound not parameterized but expected to')
 
-        powers = torch.tensor(self.module.powers, device=alpha_lower.device).view(*[1 for _ in range(alpha_lower.dim() - 1)], -1).expand_as(alpha_lower)
+        power = torch.as_tensor(self.module.power, device=alpha_lower.device).view(*[1 for _ in range(alpha_lower.dim() - 1)], -1).expand_as(alpha_lower)
 
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
-            p = powers[mask]
+            p = power[mask]
 
             a = self.derivative(x, p)
             y = self.func(x, p)
@@ -352,6 +255,18 @@ class BoundUnivariateMonomial(BoundModule):
         self.unstable_d_lower[0].data.clamp_(min=self.unstable_range_lower[0][0], max=self.unstable_range_lower[0][1])
         self.unstable_d_lower[1].data.clamp_(min=self.unstable_range_lower[1][0], max=self.unstable_range_lower[1][1])
         self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+
+
+class UnivariateMonomial(nn.Sequential):
+    def __init__(self, powers):
+        # Assume powers are of the structure [(index, power)] and this will be the output order too
+        indices = [index for index, _ in powers]
+        powers = [powers for _, powers in powers]
+
+        super().__init__(
+            Select(indices),
+            Pow(powers)
+        )
 
 
 class MultivariateMonomial(nn.Sequential):
