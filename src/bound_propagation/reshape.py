@@ -68,3 +68,44 @@ class BoundSelect(BoundModule):
         self.in_size = in_size
 
         return len(self.module.indices)
+
+
+class Flip(nn.Module):
+    def forward(self, x):
+        assert x.size(-1) % 2 == 0
+        size = x.size(-1) // 2
+
+        return torch.cat([x[..., size:], x[..., :size]], dim=-1)
+
+
+class BoundFlip(BoundModule):
+    @property
+    def need_relaxation(self):
+        return False
+
+    def crown_backward(self, linear_bounds, optimize):
+        if linear_bounds.lower is None:
+            lower = None
+        else:
+            assert linear_bounds.lower[0].size(-1) % 2 == 0
+            size = linear_bounds.lower[0].size(-1) // 2
+
+            lowerA = torch.cat([linear_bounds.lower[0][..., size:], linear_bounds.lower[0][..., :size]], dim=-1)
+            lower = (lowerA, linear_bounds.lower[1])
+
+        if linear_bounds.upper is None:
+            upper = None
+        else:
+            assert linear_bounds.upper[0].size(-1) % 2 == 0
+            size = linear_bounds.upper[0].size(-1) // 2
+
+            upperA = torch.cat([linear_bounds.upper[0][..., size:], linear_bounds.upper[0][..., :size]], dim=-1)
+            upper = (upperA, linear_bounds.upper[1])
+
+        return LinearBounds(linear_bounds.region, lower, upper)
+
+    def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
+        return IntervalBounds(bounds.region, self(bounds.lower), self(bounds.upper))
+
+    def propagate_size(self, in_size):
+        return in_size

@@ -8,6 +8,6 @@ from .sequential import BoundSequential
 from .parallel import Parallel, BoundParallel, Cat
 from .bivariate import Add, BoundAdd, VectorAdd, BoundVectorAdd, Sub, BoundSub, VectorSub, BoundVectorSub, Residual, Mul, BoundMul, Div, VectorMul, BoundVectorMul
 from .saturation import Clamp, BoundClamp
-from .reshape import Select, BoundSelect
+from .reshape import Select, BoundSelect, Flip, BoundFlip
 from .polynomial import Pow, BoundPow, UnivariateMonomial, MultivariateMonomial
 from .probability import Erf, BoundErf, StandardNormalPDF, NormalPDF, NormalCDF
