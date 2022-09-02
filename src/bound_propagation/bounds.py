@@ -56,6 +56,9 @@ class IntervalBounds(HyperRectangle):
             self.upper.to(*args, **kwargs) if self.upper is not None else None
         )
 
+    def concretize(self):
+        return self
+
 
 class LinearBounds:
     def __init__(self, region, lower, upper):

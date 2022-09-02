@@ -240,16 +240,16 @@ def train(model, args, eps=0.005):
     bounded_model = factory.build(model)
 
     optimizer = optim.Adam(model.parameters(), lr=4e-3)
-    criterion = nn.MSELoss()
+    criterion = nn.MSELoss(reduction='none')
 
     for epoch in trange(1000):
         optimizer.zero_grad(set_to_none=True)
 
         y_pred = model(X)
-        loss = criterion(y_pred, y)
+        loss = criterion(y_pred, y).mean()
 
         interval_bounds = bounded_model.ibp(HyperRectangle.from_eps(X, eps))
-        loss = loss + torch.max(criterion(interval_bounds.lower, y), criterion(interval_bounds.upper, y))
+        loss = loss + torch.max(criterion(interval_bounds.lower, y), criterion(interval_bounds.upper, y)).mean()
 
         loss.backward()
         optimizer.step()
@@ -257,7 +257,7 @@ def train(model, args, eps=0.005):
         if epoch % 100 == 99:
             with torch.no_grad():
                 y_pred = model(X)
-                loss = criterion(y_pred, y).item()
+                loss = criterion(y_pred, y).mean().item()
 
                 print(f"loss: {loss:>7f}")
 
