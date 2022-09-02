@@ -334,28 +334,28 @@ class TruncatedGaussianTwoSidedExpectation(nn.Sequential):
 
 
 class TruncatedGaussianLowerTailExpectation(nn.Sequential):
-    def __init__(self, loc, scale, epsilon=1e-8):
+    def __init__(self, loc, scale):
         inv_scale = 1 / scale
 
         super().__init__(
             ElementWiseLinear(inv_scale, -loc * inv_scale),
             Div(
                 StandardNormalPDF(),
-                nn.Sequential(StandardNormalCDF(), ElementWiseLinear(-1.0, 1.0), Clamp(min=epsilon)),
+                nn.Sequential(StandardNormalCDF(), ElementWiseLinear(-1.0, 1.0)),
             ),
             ElementWiseLinear(scale, loc)
         )
 
 
 class TruncatedGaussianUpperTailExpectation(nn.Sequential):
-    def __init__(self, loc, scale, epsilon=1e-8):
+    def __init__(self, loc, scale):
         inv_scale = 1 / scale
 
         super().__init__(
             ElementWiseLinear(inv_scale, -loc * inv_scale),
             Div(
                 StandardNormalPDF(),
-                nn.Sequential(StandardNormalCDF(), Clamp(min=epsilon))
+                nn.Sequential(StandardNormalCDF())
             ),
             ElementWiseLinear(-scale, loc)
         )
