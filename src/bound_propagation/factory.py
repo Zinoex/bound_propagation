@@ -1,10 +1,10 @@
 from torch import nn
 
 from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity, BoundExp, Exp, BoundLog, Log, \
-    BoundReciprocal, Reciprocal, BoundSin, Sin, BoundCos, Cos
+    BoundReciprocal, Reciprocal, BoundSin, Sin, BoundCos, Cos, BoundErf, Erf
 from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub, VectorMul, \
     BoundVectorMul, BoundMul, Mul
-from .linear import BoundLinear
+from .linear import BoundLinear, BoundElementWiseLinear, ElementWiseLinear
 from .parallel import BoundParallel, Parallel
 from .polynomial import BoundUnivariateMonomial, UnivariateMonomial
 from .reshape import BoundSelect, Select
@@ -23,7 +23,9 @@ class BoundModelFactory:
         self.class_mapping = [
             (nn.Sequential, BoundSequential),
             (nn.Linear, BoundLinear),
+            (ElementWiseLinear, BoundElementWiseLinear),
             (nn.ReLU, BoundReLU),
+            (Erf, BoundErf),
             (nn.Tanh, BoundTanh),
             (nn.Sigmoid, BoundSigmoid),
             (nn.Identity, BoundIdentity),

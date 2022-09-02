@@ -433,6 +433,16 @@ class BoundTanh(BoundSigmoid):
         return 1 - torch.tanh(x) ** 2
 
 
+class Erf(nn.Module):
+    def forward(self, x):
+        return torch.special.erf(x)
+
+
+class BoundErf(BoundSigmoid):
+    def derivative(self, x):
+        return (2 / np.sqrt(np.pi)) * torch.exp(-x.pow(2))
+
+
 class BoundIdentity(BoundModule):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
