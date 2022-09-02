@@ -5,6 +5,9 @@ import numpy as np
 import torch
 from torch import nn
 
+from .saturation import Clamp
+from .bivariate import Div, VectorSub
+from .reshape import Flip
 from .polynomial import Pow
 from .activation import BoundSigmoid, BoundActivation, assert_bound_order, Exp
 from .linear import ElementWiseLinear
@@ -30,9 +33,6 @@ class StandardNormalPDF(nn.Sequential):
             Exp(),
             ElementWiseLinear(1 / np.sqrt(2 * np.pi))
         )
-
-    def forward(self, x):
-        return (1 / np.sqrt(2 * np.pi)) * torch.exp(-0.5 * x.pow(2))
 
 
 # class StandardNormalPDF(nn.Module):
@@ -288,6 +288,15 @@ class BoundStandardNormalPDF(BoundActivation):
         self.unstable_d_upper.data.clamp(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
+class StandardNormalCDF(nn.Sequential):
+    def __init__(self):
+        super().__init__(
+            ElementWiseLinear(1 / np.sqrt(2)),
+            Erf(),
+            ElementWiseLinear(0.5, 0.5)
+        )
+
+
 class NormalPDF(nn.Sequential):
     def __init__(self, loc, scale):
         inv_scale = 1 / scale
@@ -307,4 +316,46 @@ class NormalCDF(nn.Sequential):
             ElementWiseLinear(inv_scale, -loc * inv_scale),
             Erf(),
             ElementWiseLinear(0.5, 0.5)
+        )
+
+
+class TruncatedGaussianTwoSidedExpectation(nn.Sequential):
+    def __init__(self, loc, scale, epsilon=1e-8):
+        inv_scale = 1 / scale
+
+        super().__init__(
+            ElementWiseLinear(inv_scale, -loc * inv_scale),
+            Div(
+                nn.Sequential(StandardNormalPDF(), VectorSub()),
+                nn.Sequential(Flip(), StandardNormalCDF(), VectorSub(), Clamp(min=epsilon)),
+            ),
+            ElementWiseLinear(scale, loc)
+        )
+
+
+class TruncatedGaussianLowerTailExpectation(nn.Sequential):
+    def __init__(self, loc, scale, epsilon=1e-8):
+        inv_scale = 1 / scale
+
+        super().__init__(
+            ElementWiseLinear(inv_scale, -loc * inv_scale),
+            Div(
+                StandardNormalPDF(),
+                nn.Sequential(StandardNormalCDF(), ElementWiseLinear(-1.0, 1.0), Clamp(min=epsilon)),
+            ),
+            ElementWiseLinear(scale, loc)
+        )
+
+
+class TruncatedGaussianUpperTailExpectation(nn.Sequential):
+    def __init__(self, loc, scale, epsilon=1e-8):
+        inv_scale = 1 / scale
+
+        super().__init__(
+            ElementWiseLinear(inv_scale, -loc * inv_scale),
+            Div(
+                StandardNormalPDF(),
+                nn.Sequential(StandardNormalCDF(), Clamp(min=epsilon))
+            ),
+            ElementWiseLinear(-scale, loc)
         )
