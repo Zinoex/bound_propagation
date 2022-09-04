@@ -67,14 +67,11 @@ class LinearBounds:
 
     def concretize(self):
         center, diff = self.region.center, self.region.width / 2
+        center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
 
         if self.lower is not None:
             slope, intercept = self.lower
             slope = slope.transpose(-1, -2)
-
-            view_size = [len(self.region)] + [1 for _ in range(slope.dim() - 2)] + [-1]
-            center, diff = center.view(*view_size), diff.view(*view_size)
-
             lower = center.matmul(slope) - diff.matmul(slope.abs())
             lower = lower.squeeze(-2) + intercept
         else:
@@ -83,10 +80,6 @@ class LinearBounds:
         if self.upper is not None:
             slope, intercept = self.upper
             slope = slope.transpose(-1, -2)
-
-            view_size = [len(self.region)] + [1 for _ in range(slope.dim() - 2)] + [-1]
-            center, diff = center.view(*view_size), diff.view(*view_size)
-
             upper = center.matmul(slope) + diff.matmul(slope.abs())
             upper = upper.squeeze(-2) + intercept
         else:
