@@ -112,7 +112,7 @@ class ElementWiseLinear(nn.Module):
 def crown_backward_elementwise_linear_jit(a: torch.Tensor, b: Optional[Union[torch.Tensor, float]], W_tilde: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     if b is None:
         b = torch.tensor(0.0, device=W_tilde.device, dtype=W_tilde.dtype)
-    elif isinstance(b, torch.Tensor):
+    elif b.dim() > 0:
         b = b.unsqueeze(-2).matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
     else:
         b = b * W_tilde.sum(dim=-1)
