@@ -95,8 +95,11 @@ class ElementWiseLinear(nn.Module):
     def __init__(self, a, b=None):
         super().__init__()
 
-        self.a = a
-        self.b = b
+        self.register_buffer('a', torch.as_tensor(a))
+
+        if b is not None:
+            b = torch.as_tensor(b)
+        self.register_buffer('b', b)
 
     def forward(self, x):
         x = self.a * x
