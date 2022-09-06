@@ -19,7 +19,7 @@ class BoundModule(nn.Module, abc.ABC):
 
         self.alpha_optimizer = kwargs.get('alpha_optimizer', Adam)
         self.alpha_iterations = kwargs.get('alpha_iterations', 20)
-        self.alpha_lr = kwargs.get('alpha_lr', 1.0)
+        self.alpha_lr = kwargs.get('alpha_lr', 1e-2)
 
     @torch.no_grad()
     def crown_relax(self, region):
