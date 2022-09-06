@@ -1098,8 +1098,8 @@ class BoundSin(BoundActivation):
         yield self.unstable_d_upper
 
     def clip_params(self):
-        self.unstable_d_lower.data.clamp(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-        self.unstable_d_upper.data.clamp(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
 
 
 class Cos(nn.Module):
