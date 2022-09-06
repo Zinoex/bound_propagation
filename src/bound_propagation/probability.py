@@ -87,17 +87,21 @@ class BoundBellCurve(BoundActivation, abc.ABC):
             alpha[mask] = a
             beta[mask] = y - a * x
 
-        ################
-        # Lower regime #
-        ################
-        # Lower bound
+        ###############
+        # Lower bound #
+        ###############
+        lower_is_closer = ((lower - self.midpoint).abs() <= (upper - self.midpoint).abs())
+        optimize_upper = (lu & lower_is_closer) | u
+        optimize_lower = (lu & (~lower_is_closer)) | l
+
+        # Fix lower input
         # - If we can take the direct slope
         direct_cond = ((lower < self.lower_infliction) & (lower_prime >= slope)) | (lower >= self.lower_infliction)
-        direct = l & direct_cond
+        direct = optimize_lower & direct_cond
         add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope[direct], x=upper[direct], y=upper_act[direct])
 
         # - Else
-        indirect = l & (~direct_cond)
+        indirect = optimize_lower & (~direct_cond)
         # - Bound right input such that the tangent lines are true upper bounds
         right = self.lower_left_tangent_point(lower[indirect], upper[indirect])
 
@@ -112,6 +116,35 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         # Save ranges to clip (aka. PGD)
         unstable_range_lower = [(lower[indirect], right)]
 
+        # Fix upper input
+        # - If we can take the direct slope
+        direct_cond = ((upper > self.upper_infliction) & (upper_prime <= slope)) | (upper <= self.upper_infliction)
+        direct = optimize_upper & direct_cond
+        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope[direct], x=lower[direct], y=lower_act[direct])
+
+        # - Else
+        indirect = optimize_upper & (~direct_cond)
+        # - Bound left input such that the tangent lines are true upper bounds
+        left = self.lower_right_tangent_point(lower[indirect], upper[indirect])
+
+        d = (left + upper[indirect]) / 2
+        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d), x=d, y=self(d))
+
+        # Allow parameterization
+        # Save mask
+        unstable_lower.append(indirect)
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        unstable_d_lower.append(d.detach().clone().requires_grad_())
+        # Save ranges to clip (aka. PGD)
+        unstable_range_lower.append((left, upper[indirect]))
+
+        self.unstable_lower = unstable_lower
+        self.unstable_d_lower = unstable_d_lower
+        self.unstable_range_lower = unstable_range_lower
+
+        ################
+        # Lower regime #
+        ################
         # Upper bound
         # - If we can take the direct slope
         direct_cond = ((upper > self.lower_infliction) & (upper_prime >= slope)) | (upper <= self.lower_infliction)
@@ -137,28 +170,6 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         ################
         # Upper regime #
         ################
-        # Lower bound
-        # - If we can take the direct slope
-        direct_cond = ((upper > self.upper_infliction) & (upper_prime <= slope)) | (upper <= self.upper_infliction)
-        direct = u & direct_cond
-        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope[direct], x=lower[direct], y=lower_act[direct])
-
-        # - Else
-        indirect = u & (~direct_cond)
-        # - Bound left input such that the tangent lines are true upper bounds
-        left = self.lower_right_tangent_point(lower[indirect], upper[indirect])
-
-        d = (left + upper[indirect]) / 2
-        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d), x=d, y=self(d))
-
-        # Allow parameterization
-        # Save mask
-        unstable_lower.append(indirect)
-        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
-        unstable_d_lower.append(d.detach().clone().requires_grad_())
-        # Save ranges to clip (aka. PGD)
-        unstable_range_lower.append((left, upper[indirect]))
-
         # Upper bound
         # - If we can take the direct slope
         direct_cond = ((lower < self.upper_infliction) & (lower_prime <= slope)) | (lower >= self.upper_infliction)
@@ -184,57 +195,6 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         #####################
         # Crossing midpoint #
         #####################
-        # Lower bound
-        lower_is_closer = ((lower - self.midpoint).abs() <= (upper - self.midpoint).abs())
-        optimize_upper = lu & lower_is_closer
-        optimize_lower = lu & (~lower_is_closer)
-
-        # - If we can take the direct slope
-        direct_cond = ((upper > self.upper_infliction) & (upper_prime <= slope)) | (upper <= self.upper_infliction)
-        direct = optimize_upper & direct_cond
-        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope[direct], x=lower[direct], y=lower_act[direct])
-
-        # - Else
-        indirect = optimize_upper & (~direct_cond)
-        # - Bound left input such that the tangent lines are true upper bounds
-        left = self.lower_right_tangent_point(lower[indirect], upper[indirect])
-
-        d = (left + upper[indirect]) / 2
-        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d), x=d, y=self(d))
-
-        # Allow parameterization
-        # Save mask
-        unstable_lower.append(indirect)
-        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
-        unstable_d_lower.append(d.detach().clone().requires_grad_())
-        # Save ranges to clip (aka. PGD)
-        unstable_range_lower.append((left, upper[indirect]))
-
-        # - If we can take the direct slope
-        direct_cond = ((lower < self.lower_infliction) & (lower_prime >= slope)) | (lower >= self.lower_infliction)
-        direct = optimize_lower & direct_cond
-        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope[direct], x=upper[direct], y=upper_act[direct])
-
-        # - Else
-        indirect = optimize_lower & (~direct_cond)
-        # - Bound right input such that the tangent lines are true upper bounds
-        right = self.lower_left_tangent_point(lower[indirect], upper[indirect])
-
-        d = (lower[indirect] + right) / 2
-        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d), x=d, y=self(d))
-
-        # Allow parameterization
-        # Save mask
-        unstable_lower.append(indirect)
-        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
-        unstable_d_lower.append(d.detach().clone().requires_grad_())
-        # Save ranges to clip (aka. PGD)
-        unstable_range_lower.append((lower[indirect], right))
-
-        self.unstable_lower = unstable_lower
-        self.unstable_d_lower = unstable_d_lower
-        self.unstable_range_lower = unstable_range_lower
-
         # Upper bound
         # - Bound left and right inputs such that the tangent lines are true upper bounds
         left = self.upper_right_tangent_point(lower[lu], upper[lu])
@@ -383,8 +343,6 @@ class BoundBellCurve(BoundActivation, abc.ABC):
 
         add_linear(alpha_lower, beta_lower, mask=self.unstable_lower[0], x=self.unstable_d_lower[0])
         add_linear(alpha_lower, beta_lower, mask=self.unstable_lower[1], x=self.unstable_d_lower[1])
-        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower[2], x=self.unstable_d_lower[2])
-        add_linear(alpha_lower, beta_lower, mask=self.unstable_lower[3], x=self.unstable_d_lower[3])
 
         add_linear(alpha_upper, beta_upper, mask=self.unstable_upper[0], x=self.unstable_d_upper[0])
         add_linear(alpha_upper, beta_upper, mask=self.unstable_upper[1], x=self.unstable_d_upper[1])
@@ -402,8 +360,6 @@ class BoundBellCurve(BoundActivation, abc.ABC):
     def clip_params(self):
         self.unstable_d_lower[0].data.clamp_(min=self.unstable_range_lower[0][0], max=self.unstable_range_lower[0][1])
         self.unstable_d_lower[1].data.clamp_(min=self.unstable_range_lower[1][0], max=self.unstable_range_lower[1][1])
-        self.unstable_d_lower[2].data.clamp_(min=self.unstable_range_lower[2][0], max=self.unstable_range_lower[2][1])
-        self.unstable_d_lower[3].data.clamp_(min=self.unstable_range_lower[3][0], max=self.unstable_range_lower[3][1])
 
         self.unstable_d_upper[0].data.clamp_(min=self.unstable_range_upper[0][0], max=self.unstable_range_upper[0][1])
         self.unstable_d_upper[1].data.clamp_(min=self.unstable_range_upper[1][0], max=self.unstable_range_upper[1][1])
