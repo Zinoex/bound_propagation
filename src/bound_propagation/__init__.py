@@ -10,5 +10,5 @@ from .bivariate import Add, BoundAdd, VectorAdd, BoundVectorAdd, Sub, BoundSub, 
 from .saturation import Clamp, BoundClamp
 from .reshape import Select, BoundSelect, Flip, BoundFlip
 from .polynomial import Pow, BoundPow, UnivariateMonomial, MultivariateMonomial
-from .probability import Erf, BoundErf, StandardNormalPDF, StandardNormalCDF, NormalPDF, NormalCDF, \
+from .probability import Erf, BoundErf, StandardNormalPDF, BoundStandardNormalPDF, StandardNormalCDF, NormalPDF, NormalCDF, \
     TruncatedGaussianTwoSidedExpectation, TruncatedGaussianLowerTailExpectation, TruncatedGaussianUpperTailExpectation
