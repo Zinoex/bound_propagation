@@ -97,10 +97,10 @@ class BoundModule(nn.Module, abc.ABC):
             if bound_lower:
                 # Use sum for aggregation because bound parameters are per sample, hence we need to scale the loss with
                 # the number of samples
-                loss += -interval_bounds.lower.sum()
+                loss = loss - interval_bounds.lower.sum()
 
             if bound_upper:
-                loss += interval_bounds.upper.sum()
+                loss = loss + interval_bounds.upper.sum()
 
             optimizer.zero_grad(set_to_none=True)  # Bound parameters
             self.zero_grad(set_to_none=True)       # Network/model parameters
