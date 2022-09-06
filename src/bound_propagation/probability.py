@@ -1,3 +1,4 @@
+import abc
 import logging
 from typing import Tuple
 
@@ -5,11 +6,12 @@ import numpy as np
 import torch
 from torch import nn
 
+from . import IntervalBounds
 from .saturation import Clamp
 from .bivariate import Div, VectorSub
 from .reshape import Flip
 from .polynomial import Pow
-from .activation import BoundSigmoid, BoundActivation, assert_bound_order, Exp
+from .activation import BoundSigmoid, BoundActivation, assert_bound_order, Exp, bisection
 from .linear import ElementWiseLinear
 
 logger = logging.getLogger(__name__)
@@ -40,20 +42,20 @@ class StandardNormalPDF(nn.Sequential):
 #         return (1 / np.sqrt(2 * np.pi)) * torch.exp(-0.5 * x.pow(2))
 
 
-def standard_normal_regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+def bell_curve_regimes(lower: torch.Tensor, upper: torch.Tensor, top_point) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     zero_width = torch.isclose(lower, upper, rtol=0.0, atol=1e-8)
-    ip = (~zero_width) & (-1 <= lower) & (upper <= 1)  # Infliction points
-    n = (~zero_width) & (upper <= -1)
-    p = (~zero_width) & (1 <= lower)
+    l = (~zero_width) & (upper <= top_point)
+    u = (~zero_width) & (top_point <= lower)
+    lu = (~zero_width) & (lower < top_point) & (top_point < upper)
 
-    nip = (~zero_width) & (lower < -1) & (upper <= 1)
-    ipp = (~zero_width) & (-1 <= lower) & (1 < upper)
-    full_width = (~zero_width) & (lower < -1) & (1 < upper)
-
-    return zero_width, n, p, ip, nip, ipp, full_width
+    return zero_width, l, u, lu
 
 
-class BoundStandardNormalPDF(BoundActivation):
+class BoundBellCurve(BoundActivation, abc.ABC):
+    midpoint = 0.0
+    lower_infliction = -1.0
+    upper_infliction = 1.0
+
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
 
@@ -65,162 +67,226 @@ class BoundStandardNormalPDF(BoundActivation):
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
+    @abc.abstractmethod
     def derivative(self, x):
-        return (1 / np.sqrt(2 * np.pi)) * (-torch.exp(-0.5 * x.pow(2)) * x)
+        raise NotImplementedError()
 
     @assert_bound_order
     def alpha_beta(self, preactivation):
         lower, upper = preactivation.lower, preactivation.upper
 
-        zero_width, n, p, ip, nip, ipp, full_width = standard_normal_regimes(lower, upper)
+        zero_width, l, u, lu = bell_curve_regimes(lower, upper, self.midpoint)
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
         self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
 
         lower_act, upper_act = self(lower), self(upper)
         lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
+        slope = (upper_act - lower_act) / (upper - lower)
 
         # Use upper and lower in the bias to account for a small numerical difference between lower and upper
         # which ought to be negligible, but may still be present due to torch.isclose.
         self.alpha_lower[zero_width], self.beta_lower[zero_width] = 0, torch.min(lower_act[zero_width], upper_act[zero_width])
         self.alpha_upper[zero_width], self.beta_upper[zero_width] = 0, torch.max(lower_act[zero_width], upper_act[zero_width])
 
-        d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
-        d_act = self(d)
-        d_prime = self.derivative(d)
+        # d = (lower + upper) * 0.5  # Let d be the midpoint of the two bounds
+        # d_act = self(d)
+        # d_prime = self.derivative(d)
 
         slope = (upper_act - lower_act) / (upper - lower)
 
-        def add_linear(alpha, beta, mask, a, x, y, a_mask=True):
-            if a_mask:
-                a = a[mask]
-
+        def add_linear(alpha, beta, mask, a, x, y):
             alpha[mask] = a
-            beta[mask] = y[mask] - a * x[mask]
+            beta[mask] = y - a * x
 
-        ###############
-        # Upper curve #
-        ###############
-        upper_curve = increasing_upper_curve | decreasing_upper_curve | crossing_peak
-
+        ################
+        # Lower regime #
+        ################
         # Lower bound
-        # - Exact slope between lower and upper
-        add_linear(self.alpha_lower, self.beta_lower, mask=upper_curve, a=slope, x=upper, y=upper_act)
 
         # Upper bound
-        # - d = (lower + upper) / 2 for midpoint
-        # - Slope is sigma'(d) and it has to cross through sigma(d)
-        add_linear(self.alpha_upper, self.beta_upper, mask=upper_curve, a=d_prime, x=d, y=d_act)
+        direct_cond = ((upper > self.lower_infliction) & (upper_prime >= slope)) | (upper <= self.lower_infliction)
+        direct = l & direct_cond
+        add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope[direct], x=upper[direct], y=upper_act[direct])
+
+        indirect = l & (~direct_cond)
+        # - Find line over curve attached to (lower, sigma(lower)
+        # - Let left be the point for which this line is the tangent
+        left = self.lower_input_upper_right_tangent_point(lower[indirect], upper[indirect])
+
+        d = (left + upper[indirect]) / 2
+        add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d), x=d, y=self(d))
 
         # Allow parameterization
         # Save mask
-        self.unstable_upper = upper_curve
+        unstable_upper = [indirect]
         # Optimization variables - detach, clone, and require grad to perform back prop and optimization
-        self.unstable_d_upper = d[upper_curve].detach().clone().requires_grad_()
+        unstable_d_upper = [d.detach().clone().requires_grad_()]
         # Save ranges to clip (aka. PGD)
-        self.unstable_range_upper = lower[upper_curve], upper[upper_curve]
+        unstable_range_upper = [(left, upper[indirect])]
 
-        # ##########################
-        # Increasing full region #
-        ##########################
-        # Upper bound #
-        # If tangent to upper is below lower, then take direct slope between lower and upper
-        direct = increasing_full_region & (slope <= upper_prime)
-        add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope, x=lower, y=lower_act)
+        ################
+        # Upper regime #
+        ################
+        # Lower bound
 
-        # Else use bisection to find upper bound on slope.
-        implicit = increasing_full_region & (slope > upper_prime)
+        # Upper bound
+        direct_cond = ((lower < self.lower_infliction) & (lower_prime <= slope)) | (lower >= self.upper_infliction)
+        direct = u & direct_cond
+        add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope[direct], x=lower[direct], y=lower_act[direct])
 
-        if torch.any(implicit):
-            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_lower_act = self(implicit_lower)
+        indirect = u & (~direct_cond)
+        # - Find line over curve attached to (lower, sigma(lower)
+        # - Let right be the point for which this line is the tangent
+        right = self.upper_input_upper_left_tangent_point(lower[indirect], upper[indirect])
 
-            def f_upper(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (self(d) - implicit_lower_act) / (d - implicit_lower)
-                a_derivative = self.derivative(d)
-                return a_slope - a_derivative
+        d = (lower[indirect] + right) / 2
+        add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d), x=d, y=self(d))
 
-            # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
-            # Derivative of left bound will over-approximate the slope - hence a true bound
-            bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
-            d_upper, _ = bisection(bisection_lower, implicit_upper, f_upper)
-            # Slope has to attach to (lower, sigma(lower))
-            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=lower, y=lower_act, a_mask=False)
+        # Allow parameterization
+        # Save mask
+        unstable_upper.append(indirect)
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        unstable_d_upper.append(d.detach().clone().requires_grad_())
+        # Save ranges to clip (aka. PGD)
+        unstable_range_upper.append((lower[indirect], right))
 
-        # Lower bound #
-        # If tangent to lower is above upper, then take direct slope between lower and upper
-        direct = increasing_full_region & (slope <= lower_prime)
-        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope, x=upper, y=upper_act)
+        #####################
+        # Crossing midpoint #
+        #####################
+        # Lower bound
 
-        # Else use bisection to find upper bound on slope.
-        implicit = increasing_full_region & (slope > lower_prime)
+        # Upper bound
+        # - Bound left and right inputs such that the tangent lines are true upper bounds
+        left = self.lower_input_upper_right_tangent_point(lower[lu], upper[lu])
+        right = self.upper_input_upper_left_tangent_point(lower[lu], upper[lu])
 
-        if torch.any(implicit):
-            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_upper_act = self(implicit_upper)
+        d = (left + right) / 2
+        add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d), x=d, y=self(d))
 
-            def f_lower(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (implicit_upper_act - self(d)) / (implicit_upper - d)
-                a_derivative = self.derivative(d)
-                return a_derivative - a_slope
+        # Allow parameterization
+        # Save mask
+        unstable_upper.append(lu)
+        # Optimization variables - detach, clone, and require grad to perform back prop and optimization
+        unstable_d_upper.append(d.detach().clone().requires_grad_())
+        # Save ranges to clip (aka. PGD)
+        unstable_range_upper.append((left, right))
 
-            # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
-            # Derivative of right bound will over-approximate the slope - hence a true bound
-            bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
-            _, d_lower = bisection(implicit_lower, bisection_upper, f_lower)
-            # Slope has to attach to (upper, sigma(upper))
-            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=upper, y=upper_act, a_mask=False)
+        self.unstable_upper = unstable_upper
+        self.unstable_d_upper = unstable_d_upper
+        self.unstable_range_upper = unstable_range_upper
 
-        ##########################
-        # Decreasing full region #
-        ##########################
-        # Upper bound #
-        # If tangent to lower is below upper, then take direct slope between lower and upper
-        direct = decreasing_full_region & (slope >= lower_prime)
-        add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope, x=lower, y=lower_act)
+    def lower_input_upper_right_tangent_point(self, lower, upper):
+        d_out = torch.zeros_like(lower)
 
-        # Else use bisection to find upper bound on slope.
-        implicit = decreasing_full_region & (slope < lower_prime)
+        over_infliction = lower >= self.lower_infliction
+        d_out[over_infliction] = lower[over_infliction]
 
-        if torch.any(implicit):
-            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_lower_act = self(implicit_lower)
+        lower, upper = lower[~over_infliction], upper[~over_infliction]
+        lower_act = self(lower)
 
-            def f_upper(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (implicit_lower_act - self(d)) / (implicit_lower - d)
-                a_derivative = self.derivative(d)
-                return a_derivative - a_slope
+        def f(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (self(d) - lower_act) / (d - lower)
+            a_derivative = self.derivative(d)
+            return a_derivative - a_slope
 
-            # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
-            # Derivative of right bound will over-approximate the slope - hence a true bound
-            bisection_upper = implicit_upper - torch.remainder(implicit_upper - self.zero_increasing, self.period / 4)
-            _, d_upper = bisection(implicit_lower, bisection_upper, f_upper)
-            # Slope has to attach to (lower, sigma(lower))
-            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper), x=upper, y=upper_act, a_mask=False)
+        # Bisection will return left and right bounds for d s.t. f(d) is zero
+        # Derivative of right bound will over-approximate the slope - hence a true bound
+        _, d = bisection(torch.full_like(lower, self.lower_infliction), torch.full_like(lower, self.midpoint), f)
+        d_out[~over_infliction] = d
 
-        # Lower bound #
-        # If tangent to upper is above lower, then take direct slope between lower and upper
-        direct = decreasing_full_region & (slope >= upper_prime)
-        add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope, x=lower, y=lower_act)
+        return d_out
 
-        # Else use bisection to find upper bound on slope.
-        implicit = decreasing_full_region & (slope < upper_prime)
+    def upper_input_upper_left_tangent_point(self, lower, upper):
+        d_out = torch.zeros_like(upper)
 
-        if torch.any(implicit):
-            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_upper_act = self(implicit_upper)
+        under_infliction = upper <= self.under_infliction
+        d_out[under_infliction] = upper[under_infliction]
 
-            def f_lower(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (self(d) - implicit_upper_act) / (d - implicit_upper)
-                a_derivative = self.derivative(d)
-                return a_slope - a_derivative
+        lower, upper = lower[~under_infliction], upper[~under_infliction]
+        upper_act = self(upper)
 
-            # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
-            # Derivative of left bound will over-approximate the slope - hence a true bound
-            bisection_lower = implicit_lower + self.period / 4 - torch.remainder(implicit_lower - self.zero_increasing, self.period / 4)
-            d_lower, _ = bisection(bisection_lower, implicit_upper, f_lower)
-            # Slope has to attach to (upper, sigma(upper))
-            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower), x=lower, y=lower_act, a_mask=False)
+        def f(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (upper_act - self(d)) / (upper - d)
+            a_derivative = self.derivative(d)
+            return a_slope - a_derivative
+
+        # Bisection will return left and right bounds for d s.t. f(d) is zero
+        # Derivative of left bound will over-approximate the slope - hence a true bound
+        d, _ = bisection(torch.full_like(upper, self.midpoint), torch.full_like(upper, self.upper_infliction), f)
+        d_out[~under_infliction] = d
+
+        return d_out
+
+    def lower_input_lower_right_tangent_point(self, lower, upper):
+        lower_act = self(lower)
+
+        def f(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (self(d) - lower_act) / (d - lower)
+            a_derivative = self.derivative(d)
+            return a_derivative - a_slope
+
+        # Bisection will return left and right bounds for d s.t. f(d) is zero
+        # Derivative of right bound will over-approximate the slope - hence a true bound
+        _, d = bisection(torch.full_like(lower, self.upper_infliction), upper, f)
+
+        return d
+
+    def lower_input_lower_left_tangent_point(self, lower, upper):
+        d_out = torch.zeros_like(lower)
+
+        under_infliction = upper <= self.lower_infliction
+        d_out[under_infliction] = upper[under_infliction]
+
+        lower, upper = lower[~under_infliction], upper[~under_infliction]
+        upper_act = self(upper)
+
+        def f(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (upper_act - self(d)) / (upper - d)
+            a_derivative = self.derivative(d)
+            return a_derivative - a_slope
+
+        # Bisection will return left and right bounds for d s.t. f(d) is zero
+        # Derivative of left bound will over-approximate the slope - hence a true bound
+        d, _ = bisection(lower, torch.full_like(lower, self.lower_infliction), f)
+        d_out[~under_infliction] = d
+
+        return d_out
+
+    def upper_input_lower_left_tangent_point(self, lower, upper):
+        upper_act = self(upper)
+
+        def f(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (upper_act - self(d)) / (upper - d)
+            a_derivative = self.derivative(d)
+            return a_derivative - a_slope
+
+        # Bisection will return left and right bounds for d s.t. f(d) is zero
+        # Derivative of left bound will over-approximate the slope - hence a true bound
+        d, _ = bisection(lower, torch.full_like(lower, self.lower), f)
+
+        return d
+
+    def upper_input_lower_right_tangent_point(self, lower, upper):
+        d_out = torch.zeros_like(lower)
+
+        over_infliction = lower >= self.upper_infliction
+        d_out[over_infliction] = upper[over_infliction]
+
+        lower, upper = lower[~over_infliction], upper[~over_infliction]
+        lower_act = self(lower)
+
+        def f(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (self(d) - lower_act) / (d - lower)
+            a_derivative = self.derivative(d)
+            return a_slope - a_derivative
+
+        # Bisection will return left and right bounds for d s.t. f(d) is zero
+        # Derivative of right bound will over-approximate the slope - hence a true bound
+        _, d = bisection(torch.full_like(lower, self.upper_infliction), upper, f)
+        d_out[~over_infliction] = d
+
+        return d_out
 
     def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
         if save_relaxation:
@@ -230,8 +296,7 @@ class BoundStandardNormalPDF(BoundActivation):
         if save_input_bounds:
             self.input_bounds = bounds
 
-        zero_width, half_period, (increasing, _), (decreasing, _), crossing_peak, crossing_trough = \
-            sine_like_regimes(bounds.lower, bounds.upper, period=self.period, zero_increasing=self.zero_increasing)
+        zero_width, l, u, lu = bell_curve_regimes(bounds.lower, bounds.upper, self.midpoint)
 
         lower = torch.zeros_like(bounds.lower)
         upper = torch.zeros_like(bounds.upper)
@@ -242,26 +307,20 @@ class BoundStandardNormalPDF(BoundActivation):
         lower[zero_width] = torch.min(lower_act[zero_width], upper_act[zero_width])
         upper[zero_width] = torch.max(lower_act[zero_width], upper_act[zero_width])
 
-        lower[half_period] = -1
-        upper[half_period] = 1
+        lower[l] = lower_act[l]
+        upper[l] = upper_act[l]
 
-        lower[increasing] = lower_act[increasing]
-        upper[increasing] = upper_act[increasing]
+        lower[u] = upper_act[u]
+        upper[u] = lower_act[u]
 
-        lower[decreasing] = upper_act[decreasing]
-        upper[decreasing] = lower_act[decreasing]
-
-        lower[crossing_peak] = torch.min(lower_act[crossing_peak], upper_act[crossing_peak])
-        upper[crossing_peak] = 1
-
-        lower[crossing_trough] = -1
-        upper[crossing_trough] = torch.max(lower_act[crossing_trough], upper_act[crossing_trough])
+        lower[lu] = torch.min(lower_act[lu], upper_act[lu])
+        upper[lu] = 1
 
         return IntervalBounds(bounds.region, lower, upper)
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
         if self.unstable_lower is None or self.unstable_upper is None:
-            logger.warning('Sin/cos bound not parameterized but expected to')
+            logger.warning('Bell curve bound not parameterized but expected to')
 
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
@@ -272,20 +331,33 @@ class BoundStandardNormalPDF(BoundActivation):
             beta[mask] = y - a * x
 
         add_linear(alpha_lower, beta_lower, mask=self.unstable_lower, x=self.unstable_d_lower)
-        add_linear(alpha_upper, beta_upper, mask=self.unstable_upper, x=self.unstable_d_upper)
+
+        add_linear(alpha_upper, beta_upper, mask=self.unstable_upper[0], x=self.unstable_d_upper[0])
+        add_linear(alpha_upper, beta_upper, mask=self.unstable_upper[1], x=self.unstable_d_upper[1])
+        add_linear(alpha_upper, beta_upper, mask=self.unstable_upper[2], x=self.unstable_d_upper[2])
 
         return alpha_lower, alpha_upper, beta_lower, beta_upper
 
     def bound_parameters(self):
         if self.unstable_lower is None or self.unstable_upper is None:
-            logger.warning('Sin/cos bound not parameterized but expected to')
+            logger.warning('Bell curve bound not parameterized but expected to')
 
-        yield self.unstable_d_lower
-        yield self.unstable_d_upper
+        yield from self.unstable_d_lower
+        yield from self.unstable_d_upper
 
     def clip_params(self):
         self.unstable_d_lower.data.clamp(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-        self.unstable_d_upper.data.clamp(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+
+        self.unstable_d_upper[0].data.clamp(min=self.unstable_range_upper[0][0], max=self.unstable_range_upper[0][1])
+        self.unstable_d_upper[1].data.clamp(min=self.unstable_range_upper[1][0], max=self.unstable_range_upper[1][1])
+        self.unstable_d_upper[2].data.clamp(min=self.unstable_range_upper[2][0], max=self.unstable_range_upper[2][1])
+
+
+class BoundStandardNormalPDF(BoundBellCurve):
+    midpoint = 0.0
+
+    def derivative(self, x):
+        return (1 / np.sqrt(2 * np.pi)) * (-torch.exp(-0.5 * x.pow(2)) * x)
 
 
 class StandardNormalCDF(nn.Sequential):
