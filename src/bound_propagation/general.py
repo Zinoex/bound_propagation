@@ -91,20 +91,11 @@ class BoundModule(nn.Module, abc.ABC):
         for iteration in range(self.alpha_iterations):
             linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
             linear_bounds = self.crown_backward(linear_bounds, True)
-            interval_bounds = linear_bounds.concretize()
-
-            loss = 0
-            if bound_lower:
-                # Use sum for aggregation because bound parameters are per sample, hence we need to scale the loss with
-                # the number of samples
-                loss = loss - interval_bounds.lower.sum()
-
-            if bound_upper:
-                loss = loss + interval_bounds.upper.sum()
 
             optimizer.zero_grad(set_to_none=True)  # Bound parameters
             self.zero_grad(set_to_none=True)       # Network/model parameters
 
+            loss = self.alpha_loss(linear_bounds, bound_lower, bound_upper)
             loss.backward()
             optimizer.step()
 
@@ -112,6 +103,23 @@ class BoundModule(nn.Module, abc.ABC):
 
         optimizer.zero_grad(set_to_none=True)
         self.zero_grad(set_to_none=True)
+
+    def alpha_loss(self, linear_bounds, bound_lower, bound_upper):
+        # Let this be a separate function to allow subclasses to specialize loss calculation.
+        # Useful if other goals (e.g. distance between bounds) are to be optimized instead.
+
+        interval_bounds = linear_bounds.concretize()
+
+        loss = 0
+        if bound_lower:
+            # Use sum for aggregation because bound parameters are per sample, hence we need to scale the loss with
+            # the number of samples
+            loss = loss - interval_bounds.lower.sum()
+
+        if bound_upper:
+            loss = loss + interval_bounds.upper.sum()
+
+        return loss
 
     @property
     @abc.abstractmethod
