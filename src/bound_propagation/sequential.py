@@ -5,7 +5,7 @@ from bound_propagation.general import BoundModule
 
 class BoundSequential(BoundModule):
     def __init__(self, sequential, factory, **kwargs):
-        super().__init__(sequential, factory)
+        super().__init__(sequential, factory, **kwargs)
         self.bound_sequential = nn.Sequential(*list(map(factory.build, sequential)))
 
     @property
