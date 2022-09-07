@@ -175,6 +175,10 @@ class BoundParallel(BoundModule):
         for network in self.subnetworks:
             network.clip_params()
 
+    def project_grads(self):
+        for network in self.subnetworks:
+            network.project_grads()
+
 
 class Cat(Parallel):
     def __init__(self, subnetwork):

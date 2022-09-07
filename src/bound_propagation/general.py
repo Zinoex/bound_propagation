@@ -17,7 +17,7 @@ class BoundModule(nn.Module, abc.ABC):
         self.module = module
 
         self.alpha_optimizer = kwargs.get('alpha_optimizer', Adam)
-        self.alpha_optimizer_params = kwargs.get('alpha_optimizer_params', {'lr': 1e-1, 'betas': (0.5, 0.9)})
+        self.alpha_optimizer_params = kwargs.get('alpha_optimizer_params', {'lr': 1e-2, 'betas': (0.5, 0.99)})
         self.alpha_iterations = kwargs.get('alpha_iterations', 20)
 
     @torch.no_grad()
@@ -96,6 +96,7 @@ class BoundModule(nn.Module, abc.ABC):
 
             loss = self.alpha_loss(linear_bounds, bound_lower, bound_upper)
             loss.backward()
+            self.project_grads()
             optimizer.step()
 
             self.clip_params()  # Projected Gradient Descent
@@ -166,4 +167,7 @@ class BoundModule(nn.Module, abc.ABC):
         return []
 
     def clip_params(self):
+        pass
+
+    def project_grads(self):
         pass

@@ -5,10 +5,10 @@ import torch
 from torch import nn
 from torch.nn import Identity
 
-from . import Reciprocal
+from .activation import Reciprocal
 from .general import BoundModule
 from .bounds import IntervalBounds, LinearBounds
-
+from .util import clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,10 @@ class BoundAdd(BoundModule):
     def clip_params(self):
         self.bound_network1.clip_params()
         self.bound_network2.clip_params()
+
+    def project_grads(self):
+        self.bound_network1.project_grads()
+        self.bound_network2.project_grads()
 
 
 class VectorAdd(nn.Module):
@@ -218,6 +222,10 @@ class BoundSub(BoundModule):
     def clip_params(self):
         self.bound_network1.clip_params()
         self.bound_network2.clip_params()
+
+    def project_grads(self):
+        self.bound_network1.project_grads()
+        self.bound_network2.project_grads()
 
 
 class VectorSub(nn.Module):
@@ -471,11 +479,18 @@ class BoundMul(BoundModule):
         yield from self.bound_network2.bound_parameters()
 
     def clip_params(self):
-        self.kappa_lower.data.clamp_(min=0.0, max=1.0)
-        self.kappa_upper.data.clamp_(min=0.0, max=1.0)
+        clip_param_to_range_(self.kappa_lower, (0.0, 1.0))
+        clip_param_to_range_(self.kappa_upper, (0.0, 1.0))
 
         self.bound_network1.clip_params()
         self.bound_network2.clip_params()
+
+    def project_grads(self):
+        proj_grad_to_range_(self.kappa_lower, (0.0, 1.0))
+        proj_grad_to_range_(self.kappa_upper, (0.0, 1.0))
+
+        self.bound_network1.project_grads()
+        self.bound_network2.project_grads()
 
 
 class Div(Mul):
@@ -643,5 +658,9 @@ class BoundVectorMul(BoundModule):
         yield self.kappa_upper
 
     def clip_params(self):
-        self.kappa_lower.data.clamp_(min=0.0, max=1.0)
-        self.kappa_upper.data.clamp_(min=0.0, max=1.0)
+        clip_param_to_range_(self.kappa_lower, (0.0, 1.0))
+        clip_param_to_range_(self.kappa_upper, (0.0, 1.0))
+
+    def project_grads(self):
+        proj_grad_to_range_(self.kappa_lower, (0.0, 1.0))
+        proj_grad_to_range_(self.kappa_upper, (0.0, 1.0))

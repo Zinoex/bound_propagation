@@ -53,3 +53,7 @@ class BoundSequential(BoundModule):
     def clip_params(self):
         for module in self.bound_sequential:
             module.clip_params()
+
+    def project_grads(self):
+        for module in self.bound_sequential:
+            module.project_grads()

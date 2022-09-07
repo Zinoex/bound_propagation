@@ -10,6 +10,7 @@ from .bivariate import Mul
 from .activation import assert_bound_order, regimes, bisection, BoundActivation
 from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
+from .util import clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)
 
@@ -252,9 +253,14 @@ class BoundPow(BoundActivation):
         yield self.unstable_d_upper
 
     def clip_params(self):
-        self.unstable_d_lower[0].data.clamp_(min=self.unstable_range_lower[0][0], max=self.unstable_range_lower[0][1])
-        self.unstable_d_lower[1].data.clamp_(min=self.unstable_range_lower[1][0], max=self.unstable_range_lower[1][1])
-        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        clip_param_to_range_(self.unstable_d_lower[0], self.unstable_range_lower[0])
+        clip_param_to_range_(self.unstable_d_lower[1], self.unstable_range_lower[1])
+        clip_param_to_range_(self.unstable_d_upper, self.unstable_range_upper)
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_d_lower[0], self.unstable_range_lower[0])
+        proj_grad_to_range_(self.unstable_d_lower[1], self.unstable_range_lower[1])
+        proj_grad_to_range_(self.unstable_d_upper, self.unstable_range_upper)
 
 
 class UnivariateMonomial(nn.Sequential):

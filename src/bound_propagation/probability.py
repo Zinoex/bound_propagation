@@ -13,6 +13,7 @@ from .reshape import Flip
 from .polynomial import Pow
 from .activation import BoundSigmoid, BoundActivation, assert_bound_order, Exp, bisection
 from .linear import ElementWiseLinear
+from .util import proj_grad_to_range_, clip_param_to_range_
 
 logger = logging.getLogger(__name__)
 
@@ -325,7 +326,7 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         upper[u] = lower_act[u]
 
         lower[lu] = torch.min(lower_act[lu], upper_act[lu])
-        upper[lu] = self(torch.as_tensor(self.midpoint))
+        upper[lu] = self(torch.as_tensor(self.midpoint, device=lower.device, dtype=upper.dtype))
 
         return IntervalBounds(bounds.region, lower, upper)
 
@@ -358,12 +359,20 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         yield from self.unstable_d_upper
 
     def clip_params(self):
-        self.unstable_d_lower[0].data.clamp_(min=self.unstable_range_lower[0][0], max=self.unstable_range_lower[0][1])
-        self.unstable_d_lower[1].data.clamp_(min=self.unstable_range_lower[1][0], max=self.unstable_range_lower[1][1])
+        clip_param_to_range_(self.unstable_d_lower[0], self.unstable_range_lower[0])
+        clip_param_to_range_(self.unstable_d_lower[1], self.unstable_range_lower[1])
 
-        self.unstable_d_upper[0].data.clamp_(min=self.unstable_range_upper[0][0], max=self.unstable_range_upper[0][1])
-        self.unstable_d_upper[1].data.clamp_(min=self.unstable_range_upper[1][0], max=self.unstable_range_upper[1][1])
-        self.unstable_d_upper[2].data.clamp_(min=self.unstable_range_upper[2][0], max=self.unstable_range_upper[2][1])
+        clip_param_to_range_(self.unstable_d_upper[0], self.unstable_range_upper[0])
+        clip_param_to_range_(self.unstable_d_upper[1], self.unstable_range_upper[1])
+        clip_param_to_range_(self.unstable_d_upper[2], self.unstable_range_upper[2])
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_d_lower[0], self.unstable_range_lower[0])
+        proj_grad_to_range_(self.unstable_d_lower[1], self.unstable_range_lower[1])
+
+        proj_grad_to_range_(self.unstable_d_upper[0], self.unstable_range_upper[0])
+        proj_grad_to_range_(self.unstable_d_upper[1], self.unstable_range_upper[1])
+        proj_grad_to_range_(self.unstable_d_upper[2], self.unstable_range_upper[2])
 
 
 class BoundStandardNormalPDF(BoundBellCurve):

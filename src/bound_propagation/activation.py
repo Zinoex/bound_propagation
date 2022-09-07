@@ -9,7 +9,7 @@ import numpy as np
 
 from .general import BoundModule
 from .bounds import LinearBounds, IntervalBounds
-from .util import TensorFunction
+from .util import TensorFunction, clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)
 
@@ -225,7 +225,10 @@ class BoundReLU(BoundActivation):
             logger.warning('ReLU bound not parameterized but expected to')
 
     def clip_params(self):
-        self.unstable_slope_lower.data.clamp_(min=0, max=1)
+        clip_param_to_range_(self.unstable_slope_lower, (0.0, 1.0))
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_slope_lower, (0.0, 1.0))
 
 
 class BoundSigmoid(BoundActivation):
@@ -407,8 +410,12 @@ class BoundSigmoid(BoundActivation):
         yield self.unstable_d_upper
 
     def clip_params(self):
-        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        clip_param_to_range_(self.unstable_d_lower, self.unstable_range_lower)
+        clip_param_to_range_(self.unstable_d_upper, self.unstable_range_upper)
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_d_lower, self.unstable_range_lower)
+        proj_grad_to_range_(self.unstable_d_upper, self.unstable_range_upper)
 
 
 def bisection(l: torch.Tensor, u: torch.Tensor, f: TensorFunction, num_iter: int = 10) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -536,7 +543,10 @@ class BoundExp(BoundActivation):
         yield self.unstable_d_lower
 
     def clip_params(self):
-        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
+        clip_param_to_range_(self.unstable_d_lower, self.unstable_range_lower)
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_d_lower, self.unstable_range_lower)
 
 
 class Log(nn.Module):
@@ -627,7 +637,10 @@ class BoundLog(BoundActivation):
         yield self.unstable_d_upper
 
     def clip_params(self):
-        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        clip_param_to_range_(self.unstable_d_upper, self.unstable_range_upper)
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_d_upper, self.unstable_range_upper)
 
 
 class Reciprocal(nn.Module):
@@ -762,8 +775,12 @@ class BoundReciprocal(BoundActivation):
         yield self.unstable_d_upper
 
     def clip_params(self):
-        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        clip_param_to_range_(self.unstable_d_lower, self.unstable_range_lower)
+        clip_param_to_range_(self.unstable_d_upper, self.unstable_range_upper)
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_d_lower, self.unstable_range_lower)
+        proj_grad_to_range_(self.unstable_d_upper, self.unstable_range_upper)
 
 
 class Sin(nn.Module):
@@ -1098,8 +1115,12 @@ class BoundSin(BoundActivation):
         yield self.unstable_d_upper
 
     def clip_params(self):
-        self.unstable_d_lower.data.clamp_(min=self.unstable_range_lower[0], max=self.unstable_range_lower[1])
-        self.unstable_d_upper.data.clamp_(min=self.unstable_range_upper[0], max=self.unstable_range_upper[1])
+        clip_param_to_range_(self.unstable_d_lower, self.unstable_range_lower)
+        clip_param_to_range_(self.unstable_d_upper, self.unstable_range_upper)
+
+    def project_grads(self):
+        proj_grad_to_range_(self.unstable_d_lower, self.unstable_range_lower)
+        proj_grad_to_range_(self.unstable_d_upper, self.unstable_range_upper)
 
 
 class Cos(nn.Module):

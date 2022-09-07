@@ -6,6 +6,7 @@ from torch import nn, Tensor
 
 from bound_propagation import BoundActivation
 from bound_propagation.activation import assert_bound_order
+from bound_propagation.util import clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)
 
@@ -192,7 +193,14 @@ class BoundClamp(BoundActivation):
 
     def clip_params(self):
         if self.unstable_lower is not None:
-            self.unstable_slope_lower.data.clamp_(min=0, max=1)
+            clip_param_to_range_(self.unstable_slope_lower, (0, 1))
 
         if self.unstable_upper is not None:
-            self.unstable_slope_upper.data.clamp_(min=0, max=1)
+            clip_param_to_range_(self.unstable_slope_upper, (0, 1))
+
+    def project_grads(self):
+        if self.unstable_lower is not None:
+            proj_grad_to_range_(self.unstable_slope_lower, (0, 1))
+
+        if self.unstable_upper is not None:
+            proj_grad_to_range_(self.unstable_slope_upper, (0, 1))
