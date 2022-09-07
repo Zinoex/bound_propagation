@@ -261,14 +261,6 @@ class BoundVectorSub(BoundModule):
         return in_size // 2
 
 
-class VectorMul(nn.Module):
-    def forward(self, x):
-        assert x.size(-1) % 2 == 0
-        half_size = x.size(-1) // 2
-
-        return x[..., :half_size] * x[..., half_size:]
-
-
 @torch.jit.script
 def crown_backward_mul_jit(W_tilde: torch.Tensor, alpha_x: Tuple[torch.Tensor, torch.Tensor], alpha_y: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     _delta = torch.where(W_tilde < 0, beta[0].unsqueeze(-2), beta[1].unsqueeze(-2))
@@ -475,14 +467,28 @@ class BoundMul(BoundModule):
         yield self.kappa_lower
         yield self.kappa_upper
 
+        yield from self.bound_network1.bound_parameters()
+        yield from self.bound_network2.bound_parameters()
+
     def clip_params(self):
         self.kappa_lower.data.clamp_(min=0.0, max=1.0)
         self.kappa_upper.data.clamp_(min=0.0, max=1.0)
+
+        self.bound_network1.clip_params()
+        self.bound_network2.clip_params()
 
 
 class Div(Mul):
     def __init__(self, network1, network2):
         super().__init__(network1, nn.Sequential(network2, Reciprocal()))
+
+
+class VectorMul(nn.Module):
+    def forward(self, x):
+        assert x.size(-1) % 2 == 0
+        half_size = x.size(-1) // 2
+
+        return x[..., :half_size] * x[..., half_size:]
 
 
 class BoundVectorMul(BoundModule):
