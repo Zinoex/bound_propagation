@@ -4,7 +4,6 @@ import logging
 import torch
 from torch import nn
 from torch.optim import Adam
-from torch.optim.lr_scheduler import ExponentialLR
 
 from .bounds import LinearBounds, IntervalBounds
 
@@ -18,8 +17,8 @@ class BoundModule(nn.Module, abc.ABC):
         self.module = module
 
         self.alpha_optimizer = kwargs.get('alpha_optimizer', Adam)
+        self.alpha_optimizer_params = kwargs.get('alpha_optimizer_params', {'lr': 1e-1, 'betas': (0.5, 0.9)})
         self.alpha_iterations = kwargs.get('alpha_iterations', 20)
-        self.alpha_lr = kwargs.get('alpha_lr', 1e-2)
 
     @torch.no_grad()
     def crown_relax(self, region):
@@ -86,7 +85,7 @@ class BoundModule(nn.Module, abc.ABC):
 
     @torch.enable_grad()
     def optimize_bounds(self, region, out_size, params, bound_lower=True, bound_upper=True):
-        optimizer = self.alpha_optimizer(params, self.alpha_lr)
+        optimizer = self.alpha_optimizer(params, **self.alpha_optimizer_params)
 
         for iteration in range(self.alpha_iterations):
             linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
