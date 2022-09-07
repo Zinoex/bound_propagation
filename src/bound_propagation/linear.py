@@ -117,6 +117,9 @@ def crown_backward_elementwise_linear_jit(a: torch.Tensor, b: Optional[Union[tor
     else:
         b = b * W_tilde.sum(dim=-1)
 
+    if a.dim() > 0:
+        a = a.unsqueeze(-2)
+
     W_tilde = W_tilde * a
 
     return W_tilde, b
