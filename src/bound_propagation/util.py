@@ -12,4 +12,4 @@ def proj_grad_to_range_(param, range):
 
 
 def clip_param_to_range_(param, range):
-    param.clamp_(min=range[0], max=range[1])
+    param.data.clamp_(min=range[0], max=range[1])
