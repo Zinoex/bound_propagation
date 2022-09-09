@@ -37,7 +37,7 @@ class StandardNormalPDF(nn.Module):
 
 
 def bell_curve_regimes(lower: torch.Tensor, upper: torch.Tensor, top_point) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    zero_width = torch.isclose(lower, upper, rtol=0.0, atol=1e-8)
+    zero_width = torch.isclose(lower, upper, rtol=0.0, atol=1e-8) & torch.full_like(top_point, True, dtype=torch.bool)
     l = (~zero_width) & (upper <= top_point)
     u = (~zero_width) & (top_point <= lower)
     lu = (~zero_width) & (lower < top_point) & (top_point < upper)
@@ -47,12 +47,12 @@ def bell_curve_regimes(lower: torch.Tensor, upper: torch.Tensor, top_point) -> T
 
 class BoundBellCurve(BoundActivation, abc.ABC):
     midpoint = 0.0
-    # - For some bell curves (non-Gaussian), the infliction points are unknown, but we do know that there are two and
-    # we may compute upper and lower bounds for each infliction point (e.g. using bisection).
-    # - Also note that infliction points may be tensors to allow data parallel computation of linear bounds for
+    # - For some bell curves (non-Gaussian), the inflection points are unknown, but we do know that there are two and
+    # we may compute upper and lower bounds for each inflection point (e.g. using bisection).
+    # - Also note that inflection points may be tensors to allow data parallel computation of linear bounds for
     # multiple different bell curves.
-    lower_infliction = (-1.0, -1.0)
-    upper_infliction = (1.0, 1.0)
+    lower_inflection = (-1.0, -1.0)
+    upper_inflection = (1.0, 1.0)
 
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
@@ -66,14 +66,19 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
 
     @abc.abstractmethod
-    def derivative(self, x):
+    def derivative(self, x, mask=None):
         raise NotImplementedError()
+
+    def func(self, x, mask=None):
+        return self(x)
 
     @assert_bound_order
     def alpha_beta(self, preactivation):
         lower, upper = preactivation.lower, preactivation.upper
 
         zero_width, l, u, lu = bell_curve_regimes(lower, upper, self.midpoint)
+        ones = torch.ones_like(zero_width, dtype=lower.dtype)
+        lower, upper = ones * lower, ones * upper
 
         self.alpha_lower, self.beta_lower = torch.zeros_like(lower), torch.zeros_like(lower)
         self.alpha_upper, self.beta_upper = torch.zeros_like(lower), torch.zeros_like(lower)
@@ -81,6 +86,9 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         lower_act, upper_act = self(lower), self(upper)
         lower_prime, upper_prime = self.derivative(lower), self.derivative(upper)
         slope = (upper_act - lower_act) / (upper - lower)
+        lower_inflection = self.lower_inflection[0] * ones, self.lower_inflection[1] * ones
+        upper_inflection = self.upper_inflection[0] * ones, self.upper_inflection[1] * ones
+        mid = self.midpoint * ones
 
         # Use upper and lower in the bias to account for a small numerical difference between lower and upper
         # which ought to be negligible, but may still be present due to torch.isclose.
@@ -100,17 +108,17 @@ class BoundBellCurve(BoundActivation, abc.ABC):
 
         # Fix lower input
         # - If we can take the direct slope
-        direct_cond = ((lower < self.lower_infliction[1]) & (lower_prime >= slope)) | (lower >= self.lower_infliction[1])
+        direct_cond = ((lower < self.lower_inflection[1]) & (lower_prime >= slope)) | (lower >= self.lower_inflection[1])
         direct = optimize_lower & direct_cond
         add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope[direct], x=upper[direct], y=upper_act[direct])
 
         # - Else
         indirect = optimize_lower & (~direct_cond)
         # - Bound right input such that the tangent lines are true upper bounds
-        right = self.lower_left_tangent_point(lower[indirect], upper[indirect])
+        right = self.lower_left_tangent_point(indirect, lower, upper, lower_inflection)
 
         d = (lower[indirect] + right) / 2
-        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d), x=d, y=self(d))
+        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d, mask=indirect), x=d, y=self.func(d, mask=indirect))
 
         # Allow parameterization
         # Save mask
@@ -122,17 +130,17 @@ class BoundBellCurve(BoundActivation, abc.ABC):
 
         # Fix upper input
         # - If we can take the direct slope
-        direct_cond = ((upper > self.upper_infliction[0]) & (upper_prime <= slope)) | (upper <= self.upper_infliction[0])
+        direct_cond = ((upper > self.upper_inflection[0]) & (upper_prime <= slope)) | (upper <= self.upper_inflection[0])
         direct = optimize_upper & direct_cond
         add_linear(self.alpha_lower, self.beta_lower, mask=direct, a=slope[direct], x=lower[direct], y=lower_act[direct])
 
         # - Else
         indirect = optimize_upper & (~direct_cond)
         # - Bound left input such that the tangent lines are true upper bounds
-        left = self.lower_right_tangent_point(lower[indirect], upper[indirect])
+        left = self.lower_right_tangent_point(indirect, lower, upper, upper_inflection)
 
         d = (left + upper[indirect]) / 2
-        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d), x=d, y=self(d))
+        add_linear(self.alpha_lower, self.beta_lower, mask=indirect, a=self.derivative(d, mask=indirect), x=d, y=self.func(d, mask=indirect))
 
         # Allow parameterization
         # Save mask
@@ -151,17 +159,17 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         ################
         # Upper bound
         # - If we can take the direct slope
-        direct_cond = ((upper > self.lower_infliction[0]) & (upper_prime >= slope)) | (upper <= self.lower_infliction[0])
+        direct_cond = ((upper > self.lower_inflection[0]) & (upper_prime >= slope)) | (upper <= self.lower_inflection[0])
         direct = l & direct_cond
         add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope[direct], x=upper[direct], y=upper_act[direct])
 
         # - Else
         indirect = l & (~direct_cond)
         # - Bound left input such that the tangent lines are true upper bounds
-        left = self.upper_right_tangent_point(lower[indirect], upper[indirect])
+        left = self.upper_right_tangent_point(indirect, lower, upper, mid, lower_inflection)
 
         d = (left + upper[indirect]) / 2
-        add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d), x=d, y=self(d))
+        add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d, mask=indirect), x=d, y=self.func(d, mask=indirect))
 
         # Allow parameterization
         # Save mask
@@ -176,17 +184,17 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         ################
         # Upper bound
         # - If we can take the direct slope
-        direct_cond = ((lower < self.upper_infliction[1]) & (lower_prime <= slope)) | (lower >= self.upper_infliction[1])
+        direct_cond = ((lower < self.upper_inflection[1]) & (lower_prime <= slope)) | (lower >= self.upper_inflection[1])
         direct = u & direct_cond
         add_linear(self.alpha_upper, self.beta_upper, mask=direct, a=slope[direct], x=lower[direct], y=lower_act[direct])
 
         # - Else
         indirect = u & (~direct_cond)
         # - Bound right input such that the tangent lines are true upper bounds
-        right = self.upper_left_tangent_point(lower[indirect], upper[indirect])
+        right = self.upper_left_tangent_point(indirect, lower, upper, mid, lower_inflection)
 
         d = (lower[indirect] + right) / 2
-        add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d), x=d, y=self(d))
+        add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d, mask=indirect), x=d, y=self.func(d, mask=indirect))
 
         # Allow parameterization
         # Save mask
@@ -201,11 +209,11 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         #####################
         # Upper bound
         # - Bound left and right inputs such that the tangent lines are true upper bounds
-        left = self.upper_right_tangent_point(lower[lu], upper[lu])
-        right = self.upper_left_tangent_point(lower[lu], upper[lu])
+        left = self.upper_right_tangent_point(lu, lower, upper, mid, lower_inflection)
+        right = self.upper_left_tangent_point(lu, lower, upper, mid, upper_inflection)
 
         d = (left + right) / 2
-        add_linear(self.alpha_upper, self.beta_upper, mask=lu, a=self.derivative(d), x=d, y=self(d))
+        add_linear(self.alpha_upper, self.beta_upper, mask=lu, a=self.derivative(d, mask=lu), x=d, y=self.func(d, mask=lu))
 
         # Allow parameterization
         # Save mask
@@ -219,95 +227,103 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         self.unstable_d_upper = unstable_d_upper
         self.unstable_range_upper = unstable_range_upper
 
-    def upper_right_tangent_point(self, lower, upper):
-        d_out = torch.zeros_like(lower)
+    def upper_right_tangent_point(self, mask, lower, upper, mid, lower_inflection):
+        over_inflection = lower >= lower_inflection[1]
+        direct, indirect = mask & over_inflection, mask & (~over_inflection)
+        over_inflection = over_inflection[mask]
 
-        over_infliction = lower >= self.lower_infliction[1]
-        d_out[over_infliction] = lower[over_infliction]
+        d_out = torch.zeros_like(lower[mask])
+        d_out[over_inflection] = lower[direct]
 
-        lower, upper = lower[~over_infliction], upper[~over_infliction]
-        lower_act = self(lower)
+        lower, upper = lower[indirect], upper[indirect]
+        lower_act = self.func(lower, mask=indirect)
 
         def f(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self(d) - lower_act) / (d - lower)
-            a_derivative = self.derivative(d)
+            a_slope = (self.func(d, mask=indirect) - lower_act) / (d - lower)
+            a_derivative = self.derivative(d, mask=indirect)
             return a_slope - a_derivative
 
         # Bisection will return left and right bounds for d s.t. f(d) is zero
         # Derivative of right bound will over-approximate the slope - hence a true bound
-        bisection_lower = torch.ones_like(lower) * self.lower_infliction[1]
-        bisection_upper = torch.ones_like(lower) * self.midpoint
+        bisection_lower = lower_inflection[1][indirect]
+        bisection_upper = mid[indirect]
         _, d = bisection(bisection_lower, bisection_upper, f)
-        d_out[~over_infliction] = d
+        d_out[~over_inflection] = d
 
         return d_out
 
-    def upper_left_tangent_point(self, lower, upper):
-        d_out = torch.zeros_like(upper)
+    def upper_left_tangent_point(self, mask, lower, upper, mid, upper_inflection):
+        under_inflection = upper <= upper_inflection[0]
+        direct, indirect = mask & under_inflection, mask & (~under_inflection)
+        under_inflection = under_inflection[mask]
 
-        under_infliction = upper <= self.upper_infliction[0]
-        d_out[under_infliction] = upper[under_infliction]
+        d_out = torch.zeros_like(lower[mask])
+        d_out[under_inflection] = upper[direct]
 
-        lower, upper = lower[~under_infliction], upper[~under_infliction]
-        upper_act = self(upper)
+        lower, upper = lower[indirect], upper[indirect]
+        upper_act = self.func(upper, mask=indirect)
 
         def f(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (upper_act - self(d)) / (upper - d)
-            a_derivative = self.derivative(d)
+            a_slope = (upper_act - self.func(d, mask=indirect)) / (upper - d)
+            a_derivative = self.derivative(d, mask=indirect)
             return a_slope - a_derivative
 
         # Bisection will return left and right bounds for d s.t. f(d) is zero
         # Derivative of left bound will over-approximate the slope - hence a true bound
-        bisection_lower = torch.ones_like(lower) * self.midpoint
-        bisection_upper = torch.ones_like(lower) * self.upper_infliction[0]
+        bisection_lower = mid[indirect]
+        bisection_upper = upper_inflection[0][indirect]
         d, _ = bisection(bisection_lower, bisection_upper, f)
-        d_out[~under_infliction] = d
+        d_out[~under_inflection] = d
 
         return d_out
 
-    def lower_left_tangent_point(self, lower, upper):
-        d_out = torch.zeros_like(lower)
+    def lower_left_tangent_point(self, mask, lower, upper, lower_inflection):
+        under_inflection = upper <= lower_inflection[0]
+        direct, indirect = mask & under_inflection, mask & (~under_inflection)
+        under_inflection = under_inflection[mask]
 
-        under_infliction = upper <= self.lower_infliction[0]
-        d_out[under_infliction] = upper[under_infliction]
+        d_out = torch.zeros_like(lower[mask])
+        d_out[under_inflection] = upper[direct]
 
-        lower, upper = lower[~under_infliction], upper[~under_infliction]
-        upper_act = self(upper)
+        lower, upper = lower[indirect], upper[indirect]
+        upper_act = self.func(upper, mask=indirect)
 
         def f(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (upper_act - self(d)) / (upper - d)
-            a_derivative = self.derivative(d)
+            a_slope = (upper_act - self.func(d, mask=indirect)) / (upper - d)
+            a_derivative = self.derivative(d, mask=indirect)
             return a_derivative - a_slope
 
         # Bisection will return left and right bounds for d s.t. f(d) is zero
         # Derivative of left bound will over-approximate the slope - hence a true bound
         bisection_lower = lower
-        bisection_upper = torch.ones_like(lower) * self.lower_infliction[0]
+        bisection_upper = lower_inflection[0][indirect]
         d, _ = bisection(bisection_lower, bisection_upper, f)
-        d_out[~under_infliction] = d
+        d_out[~under_inflection] = d
 
         return d_out
 
-    def lower_right_tangent_point(self, lower, upper):
-        d_out = torch.zeros_like(lower)
+    def lower_right_tangent_point(self, mask, lower, upper, upper_inflection):
+        over_inflection = lower >= upper_inflection[1]
+        direct, indirect = mask & over_inflection, mask & (~over_inflection)
+        over_inflection = over_inflection[mask]
 
-        over_infliction = lower >= self.upper_infliction[1]
-        d_out[over_infliction] = lower[over_infliction]
+        d_out = torch.zeros_like(lower[mask])
+        d_out[over_inflection] = lower[direct]
 
-        lower, upper = lower[~over_infliction], upper[~over_infliction]
-        lower_act = self(lower)
+        lower, upper = lower[indirect], upper[indirect]
+        lower_act = self.func(lower, mask=indirect)
 
         def f(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (self(d) - lower_act) / (d - lower)
-            a_derivative = self.derivative(d)
+            a_slope = (self.func(d, mask=indirect) - lower_act) / (d - lower)
+            a_derivative = self.derivative(d, mask=indirect)
             return a_derivative - a_slope
 
         # Bisection will return left and right bounds for d s.t. f(d) is zero
         # Derivative of right bound will over-approximate the slope - hence a true bound
-        bisection_lower = torch.ones_like(lower) * self.upper_infliction[1]
+        bisection_lower = upper_inflection[1][indirect]
         bisection_upper = upper
         _, d = bisection(bisection_lower, bisection_upper, f)
-        d_out[~over_infliction] = d
+        d_out[~over_inflection] = d
 
         return d_out
 
@@ -321,8 +337,8 @@ class BoundBellCurve(BoundActivation, abc.ABC):
 
         zero_width, l, u, lu = bell_curve_regimes(bounds.lower, bounds.upper, self.midpoint)
 
-        lower = torch.zeros_like(bounds.lower)
-        upper = torch.zeros_like(bounds.upper)
+        lower = torch.zeros_like(zero_width, dtype=bounds.lower.dtype)
+        upper = torch.zeros_like(zero_width, dtype=bounds.lower.dtype)
 
         lower_act = self(bounds.lower)
         upper_act = self(bounds.upper)
@@ -337,7 +353,7 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         upper[u] = lower_act[u]
 
         lower[lu] = torch.min(lower_act[lu], upper_act[lu])
-        upper[lu] = self(torch.as_tensor(self.midpoint, device=lower.device, dtype=upper.dtype))
+        upper[lu] = (self(torch.as_tensor(self.midpoint, device=lower.device, dtype=upper.dtype)) * torch.ones_like(lower_act))[lu]
 
         return IntervalBounds(bounds.region, lower, upper)
 
@@ -347,8 +363,8 @@ class BoundBellCurve(BoundActivation, abc.ABC):
 
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
-            a = self.derivative(x)
-            y = self(x)
+            a = self.derivative(x, mask=mask)
+            y = self.func(x, mask=mask)
 
             alpha[mask] = a
             beta[mask] = y - a * x
