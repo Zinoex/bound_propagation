@@ -191,7 +191,7 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         # - Else
         indirect = u & (~direct_cond)
         # - Bound right input such that the tangent lines are true upper bounds
-        right = self.upper_left_tangent_point(indirect, lower, upper, mid, lower_inflection)
+        right = self.upper_left_tangent_point(indirect, lower, upper, mid, upper_inflection)
 
         d = (lower[indirect] + right) / 2
         add_linear(self.alpha_upper, self.beta_upper, mask=indirect, a=self.derivative(d, mask=indirect), x=d, y=self.func(d, mask=indirect))
