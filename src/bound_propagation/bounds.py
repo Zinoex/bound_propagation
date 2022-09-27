@@ -27,6 +27,14 @@ class HyperRectangle:
             self.upper[item] if self.upper is not None else None
         )
 
+    @property
+    def device(self):
+        return self.lower.device
+
+    @property
+    def dtype(self):
+        return self.lower.dtype
+
     def to(self, *args, **kwargs):
         return HyperRectangle(
             self.lower.to(*args, **kwargs) if self.lower is not None else None,
@@ -83,6 +91,14 @@ class IntervalBounds:
     def center(self):
         return (self.upper + self.lower) / 2
 
+    @property
+    def device(self):
+        return self.region.device
+
+    @property
+    def dtype(self):
+        return self.region.device
+
     def to(self, *args, **kwargs):
         return IntervalBounds(
             self.region.to(*args, **kwargs),
@@ -122,6 +138,14 @@ class LinearBounds:
             (self.lower[0][idx], self.lower[1][bias_idx]) if self.lower is not None else None,
             (self.upper[0][idx], self.upper[1][bias_idx]) if self.upper is not None else None
         )
+
+    @property
+    def device(self):
+        return self.region.device
+
+    @property
+    def dtype(self):
+        return self.region.device
 
     def to(self, *args, **kwargs):
         return LinearBounds(

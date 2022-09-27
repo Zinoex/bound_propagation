@@ -19,7 +19,7 @@ class Select(nn.Module):
 
             indices = [i for i in r]
 
-        self.indices = indices
+        self.register_buffer('indices', torch.as_tensor(indices))
 
     def forward(self, x):
         return x[..., self.indices]
@@ -27,7 +27,7 @@ class Select(nn.Module):
 
 class BoundSelect(BoundModule):
     def __init__(self, module, factory, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
 
         self.in_size = None
 
@@ -41,10 +41,10 @@ class BoundSelect(BoundModule):
         if linear_bounds.lower is None:
             lower = None
         else:
-            lowerA = torch.zeros((*linear_bounds.lower[0].size()[:-1], self.in_size), device=linear_bounds.lower[0].device)
+            lowerA = torch.zeros((*linear_bounds.lower[0].size()[:-1], self.in_size), device=linear_bounds.device, dtype=linear_bounds.dtype)
 
             view_size = *[1 for _ in range(linear_bounds.lower[0].dim() - 1)], -1
-            indices = torch.tensor(self.module.indices, device=linear_bounds.lower[0].device).view(*view_size).expand_as(linear_bounds.lower[0])
+            indices = self.module.indices.view(*view_size).expand_as(linear_bounds.lower[0])
             lowerA.scatter_add_(-1, indices, linear_bounds.lower[0])
 
             lower = (lowerA, linear_bounds.lower[1])
@@ -52,10 +52,10 @@ class BoundSelect(BoundModule):
         if linear_bounds.upper is None:
             upper = None
         else:
-            upperA = torch.zeros((*linear_bounds.upper[0].size()[:-1], self.in_size), device=linear_bounds.upper[0].device)
+            upperA = torch.zeros((*linear_bounds.upper[0].size()[:-1], self.in_size), device=linear_bounds.device, dtype=linear_bounds.dtype)
 
             view_size = *[1 for _ in range(linear_bounds.upper[0].dim() - 1)], -1
-            indices = torch.tensor(self.module.indices, device=linear_bounds.upper[0].device).view(*view_size).expand_as(linear_bounds.upper[0])
+            indices = self.module.indices.view(*view_size).expand_as(linear_bounds.upper[0])
             upperA.scatter_add_(-1, indices, linear_bounds.upper[0])
             upper = (upperA, linear_bounds.upper[1])
 

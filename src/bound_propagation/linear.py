@@ -35,7 +35,9 @@ def ibp_forward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], c
 
     weight = weight.transpose(-1, -2).to(dtype)
 
-    w_mid = center.matmul(weight) + (bias.to(dtype).unsqueeze(-2) if bias is not None else torch.tensor(0.0, device=device, dtype=dtype))
+    w_mid = center.matmul(weight)
+    if bias is not None:
+        w_mid = w_mid + bias.to(dtype).unsqueeze(-2)
     w_diff = diff.matmul(weight.abs())
 
     lower = w_mid - w_diff

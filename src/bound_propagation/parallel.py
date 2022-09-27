@@ -89,10 +89,10 @@ class BoundParallel(BoundModule):
     def padding(self, A, index, total_size):
         size = list(A.size())
         size[-1] = index[0]
-        pre_padding = torch.zeros(size, device=A.device)
+        pre_padding = torch.zeros(size, device=A.device, dtype=A.dtype)
 
         size[-1] = total_size - index[1]
-        post_padding = torch.zeros(size, device=A.device)
+        post_padding = torch.zeros(size, device=A.device, dtype=A.dtype)
 
         return torch.cat([pre_padding, A, post_padding], dim=-1)
 

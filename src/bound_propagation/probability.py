@@ -353,7 +353,7 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         upper[u] = lower_act[u]
 
         lower[lu] = torch.min(lower_act[lu], upper_act[lu])
-        upper[lu] = (self(torch.as_tensor(self.midpoint, device=lower.device, dtype=upper.dtype)) * torch.ones_like(lower_act))[lu]
+        upper[lu] = (self(torch.as_tensor(self.midpoint, device=lower.device, dtype=lower.dtype)) * torch.ones_like(lower_act))[lu]
 
         return IntervalBounds(bounds.region, lower, upper)
 

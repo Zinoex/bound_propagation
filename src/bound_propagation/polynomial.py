@@ -22,7 +22,7 @@ class Pow(nn.Module):
         # assert power >= 1, 'Pow only supports integer powers'
         # assert all([isinstance(power, int) and power >= 2 for power in self.powers]), 'Univariate monomial only supports integer powers'
 
-        self.power = power
+        self.register_buffer('power', torch.as_tensor(power))
 
     def forward(self, x):
         return x.pow(self.power)
@@ -55,7 +55,7 @@ class BoundPow(BoundActivation):
         lower_out, upper_out = torch.zeros_like(lower), torch.zeros_like(upper)
 
         # Even powers
-        even = (torch.as_tensor(self.module.power, device=lower.device) % 2) == 0
+        even = (self.module.power % 2) == 0
         crossing = (lower < 0) & (upper > 0)
 
         crossing, not_crossing = (crossing & even), ((~crossing) & even)
@@ -73,14 +73,14 @@ class BoundPow(BoundActivation):
 
     def func(self, x, power=None):
         if power is None:
-            power = torch.as_tensor(self.module.power, device=x.device)
+            power = self.module.power
 
         x = x.pow(power)
         return x
 
     def derivative(self, x, power=None):
         if power is None:
-            power = torch.as_tensor(self.module.power, device=x.device)
+            power = self.module.power
 
         x = power * x.pow(power - 1)
         return x
@@ -89,7 +89,7 @@ class BoundPow(BoundActivation):
     def alpha_beta(self, preactivation):
         lower, upper = preactivation.lower, preactivation.upper
         zero_width, n, p, np = regimes(lower, upper)
-        power = torch.as_tensor(self.module.power, device=lower.device)
+        power = self.module.power
         even = power % 2 == 0
         odd = ~even
 
@@ -227,7 +227,7 @@ class BoundPow(BoundActivation):
         if self.unstable_lower is None or self.unstable_upper is None:
             logger.warning('Polynomial bound not parameterized but expected to')
 
-        power = torch.as_tensor(self.module.power, device=alpha_lower.device).view(*[1 for _ in range(alpha_lower.dim() - 1)], -1).expand_as(alpha_lower)
+        power = self.module.power.view(*[1 for _ in range(alpha_lower.dim() - 1)], -1).expand_as(alpha_lower)
 
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         def add_linear(alpha, beta, mask, x):
