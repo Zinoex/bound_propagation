@@ -36,11 +36,37 @@ class HyperRectangle:
     def cpu(self):
         return self.to(torch.device('cpu'))
 
+    def concretize(self, linear_bounds):
+        center, diff = self.center, self.width / 2
+        center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
 
-class IntervalBounds(HyperRectangle):
+        if linear_bounds.lower is not None:
+            slope, intercept = linear_bounds.lower
+            slope = slope.transpose(-1, -2)
+            lower = center.matmul(slope) - diff.matmul(slope.abs())
+            lower = lower.squeeze(-2) + intercept
+        else:
+            lower = None
+
+        if linear_bounds.upper is not None:
+            slope, intercept = linear_bounds.upper
+            slope = slope.transpose(-1, -2)
+            upper = center.matmul(slope) + diff.matmul(slope.abs())
+            upper = upper.squeeze(-2) + intercept
+        else:
+            upper = None
+
+        return lower, upper
+
+
+class IntervalBounds:
     def __init__(self, region, lower, upper):
         super().__init__(lower, upper)
         self.region = region
+        self.lower, self.upper = lower, upper
+
+    def __len__(self):
+        return len(self.region)
 
     def __getitem__(self, item):
         return IntervalBounds(
@@ -49,12 +75,23 @@ class IntervalBounds(HyperRectangle):
             self.upper[item] if self.upper is not None else None
         )
 
+    @property
+    def width(self):
+        return self.upper - self.lower
+
+    @property
+    def center(self):
+        return (self.upper + self.lower) / 2
+
     def to(self, *args, **kwargs):
         return IntervalBounds(
             self.region.to(*args, **kwargs),
             self.lower.to(*args, **kwargs) if self.lower is not None else None,
             self.upper.to(*args, **kwargs) if self.upper is not None else None
         )
+
+    def cpu(self):
+        return self.to(torch.device('cpu'))
 
     def concretize(self):
         return self
@@ -66,25 +103,7 @@ class LinearBounds:
         self.lower, self.upper = lower, upper
 
     def concretize(self):
-        center, diff = self.region.center, self.region.width / 2
-        center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
-
-        if self.lower is not None:
-            slope, intercept = self.lower
-            slope = slope.transpose(-1, -2)
-            lower = center.matmul(slope) - diff.matmul(slope.abs())
-            lower = lower.squeeze(-2) + intercept
-        else:
-            lower = None
-
-        if self.upper is not None:
-            slope, intercept = self.upper
-            slope = slope.transpose(-1, -2)
-            upper = center.matmul(slope) + diff.matmul(slope.abs())
-            upper = upper.squeeze(-2) + intercept
-        else:
-            upper = None
-
+        lower, upper = self.region.concretize(self)
         return IntervalBounds(self.region, lower, upper)
 
     def __len__(self):
