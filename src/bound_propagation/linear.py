@@ -9,14 +9,11 @@ from .bounds import LinearBounds, IntervalBounds
 
 
 @torch.jit.script
-def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], W_tilde: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    if bias is None:
-        bias_acc = torch.tensor(0.0, device=W_tilde.device, dtype=W_tilde.dtype)
-    else:
-        bias = bias.unsqueeze(-2).to(W_tilde.dtype)
-        bias_acc = bias.matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
+def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], bounds: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    W_tilde, bias_acc = bounds
+    if bias is not None:
+        bias_acc = bias_acc + bias.unsqueeze(-2).matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
 
-    weight = weight.to(W_tilde.dtype)
     if weight.dim() == 2:
         W_tilde = W_tilde.matmul(weight)
     else:
@@ -31,13 +28,11 @@ def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor]
 @torch.jit.script
 def ibp_forward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], center: torch.Tensor, diff: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
-    device, dtype = center.device, center.dtype
-
-    weight = weight.transpose(-1, -2).to(dtype)
+    weight = weight.transpose(-1, -2)
 
     w_mid = center.matmul(weight)
     if bias is not None:
-        w_mid = w_mid + bias.to(dtype).unsqueeze(-2)
+        w_mid = w_mid + bias.unsqueeze(-2)
     w_diff = diff.matmul(weight.abs())
 
     lower = w_mid - w_diff
@@ -59,14 +54,12 @@ class BoundLinear(BoundModule):
         if linear_bounds.lower is None:
             lower = None
         else:
-            lower = crown_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.lower[0])
-            lower = (lower[0], lower[1] + linear_bounds.lower[1])
+            lower = crown_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.lower)
 
         if linear_bounds.upper is None:
             upper = None
         else:
-            upper = crown_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.upper[0])
-            upper = (upper[0], upper[1] + linear_bounds.upper[1])
+            upper = crown_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.upper)
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
@@ -86,11 +79,11 @@ class FixedLinear(nn.Linear):
         super().__init__(weight.size(-1), weight.size(-2), bias=bias is not None)
 
         del self.weight
-        self.register_buffer('weight', weight)
+        self.register_buffer('weight', torch.as_tensor(weight))
 
         if bias is not None:
             del self.bias
-            self.register_buffer('bias', bias)
+            self.register_buffer('bias', torch.as_tensor(bias))
 
 
 class ElementWiseLinear(nn.Module):
@@ -111,24 +104,24 @@ class ElementWiseLinear(nn.Module):
         return x
 
 
-def crown_backward_elementwise_linear_jit(a: torch.Tensor, b: Optional[Union[torch.Tensor, float]], W_tilde: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-    if b is None:
-        b = torch.tensor(0.0, device=W_tilde.device, dtype=W_tilde.dtype)
-    elif b.dim() > 0:
-        b = b.unsqueeze(-2).matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
-    else:
-        b = b * W_tilde.sum(dim=-1)
+def crown_backward_elementwise_linear_jit(a: torch.Tensor, b: Optional[Union[torch.Tensor, float]], bounds: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+    W_tilde, bias_acc = bounds
+
+    if b is not None:
+        if b.dim() > 0:
+            bias_acc = bias_acc + b.unsqueeze(-2).matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
+        else:
+            bias_acc = bias_acc + b * W_tilde.sum(dim=-1)
 
     if a.dim() > 0:
         a = a.unsqueeze(-2)
 
     W_tilde = W_tilde * a
 
-    return W_tilde, b
+    return W_tilde, bias_acc
 
 
 class BoundElementWiseLinear(BoundModule):
-
     @property
     def need_relaxation(self):
         return False
@@ -137,14 +130,12 @@ class BoundElementWiseLinear(BoundModule):
         if linear_bounds.lower is None:
             lower = None
         else:
-            lower = crown_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.lower[0])
-            lower = (lower[0], lower[1] + linear_bounds.lower[1])
+            lower = crown_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.lower)
 
         if linear_bounds.upper is None:
             upper = None
         else:
-            upper = crown_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.upper[0])
-            upper = (upper[0], upper[1] + linear_bounds.upper[1])
+            upper = crown_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.upper)
 
         return LinearBounds(linear_bounds.region, lower, upper)
 

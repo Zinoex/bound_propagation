@@ -69,7 +69,6 @@ class HyperRectangle:
 
 class IntervalBounds:
     def __init__(self, region, lower, upper):
-        super().__init__(lower, upper)
         self.region = region
         self.lower, self.upper = lower, upper
 
