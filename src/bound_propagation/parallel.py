@@ -24,7 +24,7 @@ class Parallel(nn.Module):
 
 class BoundParallel(BoundModule):
     def __init__(self, module, factory, **kwargs):
-        super().__init__(module, factory)
+        super().__init__(module, factory, **kwargs)
 
         self.in_sizes = None
         self.out_sizes = None

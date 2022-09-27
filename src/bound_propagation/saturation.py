@@ -57,8 +57,8 @@ def regimes(lower: torch.Tensor, upper: torch.Tensor, min: Optional[Union[Tensor
 
 
 class BoundClamp(BoundActivation):
-    def __init__(self, module, factory, adaptive_clamp=True, **kwargs):
-        super().__init__(module, factory)
+    def __init__(self, module, factory, adaptive_clamp=False, **kwargs):
+        super().__init__(module, factory, **kwargs)
         self.adaptive_clamp = adaptive_clamp
 
         self.unstable_lower, self.unstable_slope_lower = None, None

@@ -146,7 +146,7 @@ def regimes(lower: torch.Tensor, upper: torch.Tensor) -> Tuple[torch.Tensor, tor
 
 
 class BoundReLU(BoundActivation):
-    def __init__(self, module, factory, adaptive_relu=True, **kwargs):
+    def __init__(self, module, factory, adaptive_relu=False, **kwargs):
         super().__init__(module, factory, **kwargs)
         self.adaptive_relu = adaptive_relu
 
