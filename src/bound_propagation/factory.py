@@ -7,7 +7,7 @@ from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, 
 from .linear import BoundLinear, BoundElementWiseLinear, ElementWiseLinear
 from .parallel import BoundParallel, Parallel
 from .polynomial import BoundPow, Pow
-from .probability import BoundErf, Erf, StandardNormalPDF, BoundStandardNormalPDF
+from .probability import BoundErf, Erf, StandardNormalPDF, BoundStandardNormalPDF, NormalPDF, BoundNormalPDF
 from .reshape import BoundSelect, Select, BoundFlip, Flip
 from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
@@ -46,6 +46,7 @@ class BoundModelFactory:
             (Flip, BoundFlip),
             (Pow, BoundPow),
             (Erf, BoundErf),
+            (NormalPDF, BoundNormalPDF),
             (StandardNormalPDF, BoundStandardNormalPDF)
         ]
 

@@ -46,13 +46,13 @@ def bell_curve_regimes(lower: torch.Tensor, upper: torch.Tensor, top_point) -> T
 
 
 class BoundBellCurve(BoundActivation, abc.ABC):
-    midpoint = 0.0
+    midpoint = torch.tensor(0.0)
     # - For some bell curves (non-Gaussian), the inflection points are unknown, but we do know that there are two and
     # we may compute upper and lower bounds for each inflection point (e.g. using bisection).
     # - Also note that inflection points may be tensors to allow data parallel computation of linear bounds for
     # multiple different bell curves.
-    lower_inflection = (-1.0, -1.0)
-    upper_inflection = (1.0, 1.0)
+    lower_inflection = (torch.tensor(-1.0), torch.tensor(-1.0))
+    upper_inflection = (torch.tensor(1.0), torch.tensor(1.0))
 
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
@@ -353,7 +353,7 @@ class BoundBellCurve(BoundActivation, abc.ABC):
         upper[u] = lower_act[u]
 
         lower[lu] = torch.min(lower_act[lu], upper_act[lu])
-        upper[lu] = (self(torch.as_tensor(self.midpoint, device=lower.device, dtype=lower.dtype)) * torch.ones_like(lower_act))[lu]
+        upper[lu] = (self(self.midpoint) * torch.ones_like(lower_act))[lu]
 
         return IntervalBounds(bounds.region, lower, upper)
 
@@ -403,12 +403,34 @@ class BoundBellCurve(BoundActivation, abc.ABC):
 
 
 class BoundStandardNormalPDF(BoundBellCurve):
-    midpoint = 0.0
-    lower_infliction = (-1.0, -1.0)
-    upper_infliction = (1.0, 1.0)
+    midpoint = torch.tensor(0.0)
+    lower_inflection = (torch.tensor(-1.0), torch.tensor(-1.0))
+    upper_inflection = (torch.tensor(1.0), torch.tensor(1.0))
 
-    def derivative(self, x):
+    def derivative(self, x, mask=None):
         return (1 / np.sqrt(2 * np.pi)) * (-torch.exp(-0.5 * x.pow(2)) * x)
+
+
+class NormalPDF(nn.Module):
+    def __init__(self, loc, scale):
+        super().__init__()
+        self.loc, self.scale = loc, scale
+
+    def forward(self, x):
+        return (1 / np.sqrt(2 * np.pi)) * torch.exp(-0.5 * torch.pow((x - self.loc) / self.scale, 2))
+
+
+class BoundNormalPDF(BoundBellCurve):
+    def __init__(self, module, factory, **kwargs):
+        super().__init__(module, factory, **kwargs)
+
+        self.midpoint = torch.as_tensor(self.module.loc)
+        scale = torch.as_tensor(self.module.scale)
+        self.lower_inflection = (self.midpoint - scale, self.midpoint - scale)
+        self.upper_inflection = (self.midpoint + scale, self.midpoint + scale)
+
+    def derivative(self, x, mask=None):
+        return -self(x) * (x - self.module.loc) / (self.module.scale ** 2)
 
 
 class StandardNormalCDF(nn.Sequential):
@@ -417,17 +439,6 @@ class StandardNormalCDF(nn.Sequential):
             ElementWiseLinear(1 / np.sqrt(2)),
             Erf(),
             ElementWiseLinear(0.5, 0.5)
-        )
-
-
-class NormalPDF(nn.Sequential):
-    def __init__(self, loc, scale):
-        inv_scale = 1 / scale
-
-        super().__init__(
-            ElementWiseLinear(inv_scale, -loc * inv_scale),
-            StandardNormalPDF(),
-            ElementWiseLinear(inv_scale)
         )
 
 
