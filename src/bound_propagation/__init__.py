@@ -1,6 +1,6 @@
 from .activation import BoundActivation, BoundTanh, BoundReLU, BoundSigmoid, bisection, Exp, BoundExp, Log, BoundLog, \
     Reciprocal, BoundReciprocal, Sin, BoundSin, Cos, BoundCos
-from .bounds import LinearBounds, IntervalBounds, HyperRectangle
+from .bounds import LinearBounds, IntervalBounds, HyperRectangle, LpNormSet
 from .factory import BoundModelFactory
 from .general import BoundModule
 from .linear import BoundLinear, FixedLinear, ElementWiseLinear, BoundElementWiseLinear

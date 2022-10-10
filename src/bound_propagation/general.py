@@ -24,7 +24,7 @@ class BoundModule(nn.Module, abc.ABC):
     def crown_relax(self, region):
         # Force bounds based on IBP, which may be tighter. More importantly, this also works if say there
         # is a Clamp in front of a Log which requires x > 0, and a linear relaxation may violate this
-        interval_bounds = IntervalBounds(region, region.lower, region.upper)
+        interval_bounds = region.bounding_hyperrect()
         self.ibp_forward(interval_bounds, save_input_bounds=True)
 
         # No grad for relaxations improves accuracy and stabilizes training for CROWN.
@@ -35,7 +35,7 @@ class BoundModule(nn.Module, abc.ABC):
     @torch.no_grad()
     def ibp_relax(self, region):
         # No grad for relaxations improves accuracy. CROWN-IBP is already stable in training.
-        bounds = IntervalBounds(region, region.lower, region.upper)
+        bounds = region.bounding_hyperrect()
         self.ibp_forward(bounds, save_relaxation=True)
 
     def crown(self, region, bound_lower=True, bound_upper=True, alpha=False):
@@ -45,7 +45,7 @@ class BoundModule(nn.Module, abc.ABC):
         return self.crown_with_relaxation(self.ibp_relax, region, bound_lower, bound_upper, alpha)
 
     def crown_with_relaxation(self, relax, region, bound_lower, bound_upper, alpha):
-        out_size = self.propagate_size(region.lower.size(-1))
+        out_size = self.propagate_size(region.size(-1))
 
         relax(region)
 
@@ -60,8 +60,8 @@ class BoundModule(nn.Module, abc.ABC):
 
     def initial_linear_bounds(self, region, out_size, lower=True, upper=True):
         device, dtype = region.device, region.dtype
-        W_tilde = torch.eye(out_size, device=device, dtype=dtype).unsqueeze(-3).expand(*region.lower.size()[:-1], out_size, out_size)
-        bias = torch.zeros((out_size,), device=device, dtype=dtype).unsqueeze(-2).expand(*region.lower.size()[:-1], out_size)
+        W_tilde = torch.eye(out_size, device=device, dtype=dtype).unsqueeze(-3).expand(*region.size()[:-1], out_size, out_size)
+        bias = torch.zeros((out_size,), device=device, dtype=dtype).unsqueeze(-2).expand(*region.size()[:-1], out_size)
 
         lower = (W_tilde, bias) if lower else None
         upper = (W_tilde, bias) if upper else None
@@ -140,7 +140,7 @@ class BoundModule(nn.Module, abc.ABC):
         raise NotImplementedError()
 
     def ibp(self, region):
-        bounds = IntervalBounds(region, region.lower, region.upper)
+        bounds = region.bounding_hyperrect()
         return self.ibp_forward(bounds)
 
     @abc.abstractmethod
