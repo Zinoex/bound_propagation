@@ -28,9 +28,39 @@ class Pow(nn.Module):
         return x.pow(self.power)
 
 
+class PowTangentBisectionStrategy:
+    def odd_upper_tangent(self, bound_module, lower, upper, power):
+        implicit_upper_act = bound_module.func(upper, power)
+
+        def f_upper(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (implicit_upper_act - bound_module.func(d, power)) / (upper - d)
+            a_derivative = bound_module.derivative(d, power)
+            return a_slope - a_derivative
+
+        # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
+        # Derivative of left bound will over-approximate the slope - hence a true bound
+        d_upper, _ = bisection(lower, torch.zeros_like(lower), f_upper)
+        return d_upper
+
+    def odd_lower_tangent(self, bound_module, lower, upper, power):
+        implicit_lower_act = bound_module.func(lower, power)
+
+        def f_lower(d: torch.Tensor) -> torch.Tensor:
+            a_slope = (bound_module.func(d, power) - implicit_lower_act) / (d - lower)
+            a_derivative = bound_module.derivative(d, power)
+            return a_derivative - a_slope
+
+        # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
+        # Derivative of right bound will over-approximate the slope - hence a true bound
+        _, d_lower = bisection(torch.zeros_like(upper), upper, f_lower)
+        return d_lower
+
+
 class BoundPow(BoundActivation):
     def __init__(self, module, factory, **kwargs):
         super().__init__(module, factory, **kwargs)
+
+        self.tangent_strategy = kwargs.get('pow_tangent_strategy', PowTangentBisectionStrategy())
 
         self.unstable_lower, self.unstable_d_lower, self.unstable_range_lower = None, None, None
         self.unstable_upper, self.unstable_d_upper, self.unstable_range_upper = None, None, None
@@ -185,19 +215,10 @@ class BoundPow(BoundActivation):
 
         if torch.any(implicit):
             implicit_power = power[implicit]
-            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_upper_act = self.func(implicit_upper, implicit_power)
+            d = self.tangent_strategy.odd_upper_tangent(self, lower[implicit], upper[implicit], implicit_power)
 
-            def f_upper(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (implicit_upper_act - self.func(d, implicit_power)) / (implicit_upper - d)
-                a_derivative = self.derivative(d, implicit_power)
-                return a_slope - a_derivative
-
-            # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
-            # Derivative of left bound will over-approximate the slope - hence a true bound
-            d_upper, _ = bisection(implicit_lower, torch.zeros_like(implicit_lower), f_upper)
             # Slope has to attach to (lower, sigma(lower))
-            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d_upper, implicit_power), x=upper, y=upper_act, a_mask=False)
+            add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d, implicit_power), x=upper, y=upper_act, a_mask=False)
 
         # Lower bound #
         # If tangent to upper is above lower, then take direct slope between lower and upper
@@ -209,19 +230,10 @@ class BoundPow(BoundActivation):
 
         if torch.any(implicit):
             implicit_power = power[implicit]
-            implicit_lower, implicit_upper = lower[implicit], upper[implicit]
-            implicit_lower_act = self.func(implicit_lower, implicit_power)
+            d = self.tangent_strategy.odd_lower_tangent(self, lower[implicit], upper[implicit], implicit_power)
 
-            def f_lower(d: torch.Tensor) -> torch.Tensor:
-                a_slope = (self.func(d, implicit_power) - implicit_lower_act) / (d - implicit_lower)
-                a_derivative = self.derivative(d, implicit_power)
-                return a_derivative - a_slope
-
-            # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
-            # Derivative of right bound will over-approximate the slope - hence a true bound
-            _, d_lower = bisection(torch.zeros_like(implicit_upper), implicit_upper, f_lower)
             # Slope has to attach to (upper, sigma(upper))
-            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d_lower, implicit_power), x=lower, y=lower_act, a_mask=False)
+            add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d, implicit_power), x=lower, y=lower_act, a_mask=False)
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
         if self.unstable_lower is None or self.unstable_upper is None:
