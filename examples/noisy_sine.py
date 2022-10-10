@@ -11,14 +11,12 @@ from torch.utils.data import TensorDataset
 
 from matplotlib import pyplot as plt
 
-from bound_propagation import BoundModelFactory, HyperRectangle, Parallel
+from bound_propagation import BoundModelFactory, HyperRectangle, Parallel, LpNormSet
 
 
-def bound_propagation(model, lower_x, upper_x, alpha=False):
+def bound_propagation(model, input_bounds, alpha=False):
     factory = BoundModelFactory()
     bounded_model = factory.build(model)
-
-    input_bounds = HyperRectangle(lower_x, upper_x)
 
     ibp_bounds = bounded_model.ibp(input_bounds).cpu()
     crown_bounds = bounded_model.crown(input_bounds, alpha=alpha).cpu()
@@ -33,8 +31,9 @@ def plot_bounds_1d(model, args):
 
     boundaries = torch.linspace(-2, 2, num_slices + 1, device=args.device).view(-1, 1)
     lower_x, upper_x = boundaries[:-1], boundaries[1:]
+    input_bounds = HyperRectangle(lower_x, upper_x)
 
-    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, lower_x, upper_x, alpha=True)
+    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, input_bounds, alpha=True)
 
     plt.figure(figsize=(6.4 * 2, 3.6 * 2))
     plt.ylim(-2.5, 4)
@@ -69,6 +68,7 @@ def plot_bounds_1d(model, args):
 
 
 def plot_partition(model, args, input_bounds, ibp_bounds, crown_bounds):
+    input_bounds = input_bounds.bounding_hyperrect()
     x1, x2 = input_bounds.lower, input_bounds.upper
 
     plt.clf()
@@ -129,9 +129,9 @@ def plot_bounds_2d(model, args):
     slice_centers = (x_space[:-1] + x_space[1:]) / 2
 
     cell_centers = torch.cartesian_prod(slice_centers, slice_centers)
-    lower_x, upper_x = cell_centers - cell_width, + cell_centers + cell_width
+    input_bounds = HyperRectangle.from_eps(cell_centers, cell_width)
 
-    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, lower_x, upper_x, alpha=True)
+    input_bounds, ibp_bounds, crown_bounds = bound_propagation(model, input_bounds, alpha=True)
 
     # Plot function over entire space
     plt.clf()
