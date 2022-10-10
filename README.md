@@ -194,7 +194,7 @@ factory.register(Residual, BoundResidual)
 @misc{Mathiesen2022,
   author = {Frederik Baymler Mathiesen},
   title = {Bound Propagation},
-  year = {2013},
+  year = {2022},
   publisher = {GitHub},
   journal = {GitHub repository},
   howpublished = {\url{https://github.com/Zinoex/bound_propagation}}
