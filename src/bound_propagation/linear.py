@@ -14,7 +14,9 @@ def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor]
     if bias is not None:
         bias_acc = bias_acc + bias.unsqueeze(-2).matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
 
-    if weight.dim() == 2:
+    if weight.dim() == 1:
+        W_tilde = W_tilde*weight
+    elif weight.dim() == 2:
         W_tilde = W_tilde.matmul(weight)
     else:
         if W_tilde.dim() == 3:
@@ -30,10 +32,18 @@ def ibp_forward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], c
     center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
     weight = weight.transpose(-1, -2)
 
-    w_mid = center.matmul(weight)
+    if weight.dim() == 1:
+        w_mid = center*weight
+    else:
+        w_mid = center.matmul(weight)
+    
     if bias is not None:
         w_mid = w_mid + bias.unsqueeze(-2)
-    w_diff = diff.matmul(weight.abs())
+
+    if weight.dim() == 1:
+        w_diff = diff*weight.abs()
+    else:
+        w_diff = diff.matmul(weight.abs())
 
     lower = w_mid - w_diff
     lower = lower.squeeze(-2)
