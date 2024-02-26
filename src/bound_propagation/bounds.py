@@ -32,7 +32,7 @@ class IntervalBounds:
 
     @property
     def dtype(self):
-        return self.region.device
+        return self.region.dtype
 
     def to(self, *args, **kwargs):
         return IntervalBounds(
@@ -80,7 +80,7 @@ class LinearBounds:
 
     @property
     def dtype(self):
-        return self.region.device
+        return self.region.dtype
 
     def to(self, *args, **kwargs):
         return LinearBounds(
