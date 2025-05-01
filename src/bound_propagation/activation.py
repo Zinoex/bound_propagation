@@ -586,6 +586,9 @@ class BoundLog(BoundActivation):
         lower, upper = preactivation.lower, preactivation.upper
         assert torch.all(lower > 0)
 
+        return self.alpha_beta_log_like(lower, upper)
+
+    def alpha_beta_log_like(self, lower, upper):
         zero_width, n, p, np = regimes(lower, upper)
         all = (n | p | np)
 
@@ -631,7 +634,7 @@ class BoundLog(BoundActivation):
 
     def parameterize_alpha_beta(self, alpha_lower, alpha_upper, beta_lower, beta_upper):
         if self.unstable_upper is None:
-            logger.warning('Log not parameterized but expected to')
+            logger.warning(f'{self.opname()} not parameterized but expected to')
 
         # Use implicit parameterization (i.e. store d [point where touching the curve], and not alpha)
         a = self.derivative(self.unstable_d_upper)
@@ -644,7 +647,7 @@ class BoundLog(BoundActivation):
 
     def bound_parameters(self):
         if self.unstable_upper is None:
-            logger.warning('Log bound not parameterized but expected to')
+            logger.warning(f'{self.opname()} bound not parameterized but expected to')
 
         yield self.unstable_d_upper
 
@@ -653,6 +656,46 @@ class BoundLog(BoundActivation):
 
     def project_grads(self):
         proj_grad_to_range_(self.unstable_d_upper, self.unstable_range_upper)
+
+    def opname(self):
+        return type(self).__name__.replace('Bound', '')
+
+
+class Sqrt(nn.Module):
+    def forward(self, x):
+        # Assumption: x >= 0 (as sqrt is only defined (for real outputs) for x >= 0)
+        return x.sqrt()
+
+
+class BoundSqrt(BoundLog):
+    def derivative(self, x):
+        # As we already assume x >= 0, this is well-defined
+        return 1 / (2 * torch.sqrt(x))
+
+    @assert_bound_order
+    def alpha_beta(self, preactivation):
+        lower, upper = preactivation.lower, preactivation.upper
+        assert torch.all(lower >= 0)
+
+        return self.alpha_beta_log_like(lower, upper)
+
+
+class Cbrt(nn.Module):
+    def forward(self, x):
+        return x.pow(1 / 3)
+
+
+class BoundCbrt(BoundLog):
+    def derivative(self, x):
+        # As we already assume x >= 0, this is well-defined
+        return 1 / (3 * torch.pow(x, 2 / 3))
+
+    @assert_bound_order
+    def alpha_beta(self, preactivation):
+        lower, upper = preactivation.lower, preactivation.upper
+        assert torch.all(lower >= 0)
+
+        return self.alpha_beta_log_like(lower, upper)
 
 
 class Reciprocal(nn.Module):
