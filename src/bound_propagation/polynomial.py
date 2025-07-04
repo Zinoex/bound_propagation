@@ -310,10 +310,16 @@ class MultivariateMonomial(nn.Sequential):
 
             monomial_indices.append(monomial_index)
 
-        super().__init__(
-            Parallel(Select(linear_terms), UnivariateMonomial(factors)),
-            Parallel(*[self.construct_mul(monomial_index) for monomial_index in monomial_indices])
-        )
+        if factors:
+            modules = [
+                Parallel(Select(linear_terms), UnivariateMonomial(factors)),
+            ]
+        else: 
+            modules = [
+                Parallel(*[self.construct_mul(monomial_index) for monomial_index in monomial_indices])
+            ]
+
+        super().__init__(*modules)
 
     def construct_mul(self, monomial_index):
         module = Select(monomial_index[0])
