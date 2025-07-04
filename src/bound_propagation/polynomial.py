@@ -313,6 +313,7 @@ class MultivariateMonomial(nn.Sequential):
         if factors:
             modules = [
                 Parallel(Select(linear_terms), UnivariateMonomial(factors)),
+                Parallel(*[self.construct_mul(monomial_index) for monomial_index in monomial_indices])
             ]
         else: 
             modules = [
