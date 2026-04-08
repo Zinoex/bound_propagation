@@ -8,7 +8,6 @@ from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
 
 
-@torch.jit.script
 def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], bounds: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
     W_tilde, bias_acc = bounds
     if bias is not None:
@@ -25,7 +24,6 @@ def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor]
     return W_tilde, bias_acc
 
 
-@torch.jit.script
 def ibp_forward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], center: torch.Tensor, diff: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
     center, diff = center.unsqueeze(-2), diff.unsqueeze(-2)
     weight = weight.transpose(-1, -2)

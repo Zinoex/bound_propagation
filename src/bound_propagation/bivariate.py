@@ -269,7 +269,6 @@ class BoundVectorSub(BoundModule):
         return in_size // 2
 
 
-@torch.jit.script
 def crown_backward_mul_jit(W_tilde: torch.Tensor, alpha_x: Tuple[torch.Tensor, torch.Tensor], alpha_y: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     _delta = torch.where(W_tilde < 0, beta[0].unsqueeze(-2), beta[1].unsqueeze(-2))
     bias = torch.sum(W_tilde * _delta, dim=-1)
