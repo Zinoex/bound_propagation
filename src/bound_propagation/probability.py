@@ -7,12 +7,12 @@ import torch
 from torch import nn
 
 from . import IntervalBounds
-from .saturation import Clamp
+from .activation import BoundActivation, BoundSigmoid, assert_bound_order, bisection
 from .bivariate import Div, VectorSub
-from .reshape import Flip
-from .activation import BoundSigmoid, BoundActivation, assert_bound_order, bisection
 from .linear import ElementWiseLinear
-from .util import proj_grad_to_range_, clip_param_to_range_
+from .reshape import Flip
+from .saturation import Clamp
+from .util import clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)
 

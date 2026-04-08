@@ -3,12 +3,12 @@ import logging
 from functools import wraps
 from typing import Tuple
 
+import numpy as np
 import torch
 from torch import nn
-import numpy as np
 
+from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
-from .bounds import LinearBounds, IntervalBounds
 from .util import TensorFunction, clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)

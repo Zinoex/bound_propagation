@@ -6,8 +6,8 @@ from torch import nn
 from torch.nn import Identity
 
 from .activation import Reciprocal
-from .general import BoundModule
 from .bounds import IntervalBounds, LinearBounds
+from .general import BoundModule
 from .util import clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)

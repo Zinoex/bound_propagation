@@ -1,6 +1,6 @@
 from torch import nn
 
-from bound_propagation import BoundModule, LinearBounds, IntervalBounds
+from bound_propagation import BoundModule, IntervalBounds, LinearBounds
 
 
 class Residual(nn.Module):

@@ -56,8 +56,54 @@ To add a new dependency:
 1. Edit `pyproject.toml` and add it to the appropriate section
 2. Run `uv pip install -e ".[dev]"` to install the new dependency
 
+## Code Quality
+
+### Type Checking
+
+This project uses [ty](https://github.com/astral-sh/ty) from Astral for fast, modern type checking. Run it via uvx (no installation needed):
+
+```bash
+# Type check the entire codebase
+uvx ty check src/
+
+# Type check specific files
+uvx ty check src/bound_propagation/ir/
+```
+
+Configuration is in `[tool.ty]` section of `pyproject.toml`.
+
+### Linting and Formatting
+
+This project uses [ruff](https://github.com/astral-sh/ruff) for linting and formatting:
+
+```bash
+# Check for linting issues
+uv run ruff check .
+
+# Auto-fix linting issues
+uv run ruff check --fix .
+
+# Format code
+uv run ruff format .
+
+# Check formatting without making changes
+uv run ruff format --check .
+```
+
+Configuration is in `[tool.ruff]` section of `pyproject.toml`.
+
+### Testing
+
+Run tests with pytest:
+
+```bash
+uv run pytest
+```
+
 ## Migration Notes
 
 This project has been migrated to use modern pyproject.toml configuration with uv:
 - All configuration is now in `pyproject.toml` following PEP 621 standards
 - Uses uv's native build backend for fast, efficient builds
+- Uses ty for type checking (via uvx)
+- Uses ruff for linting and formatting

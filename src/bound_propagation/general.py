@@ -5,8 +5,7 @@ import torch
 from torch import nn
 from torch.optim import Adam
 
-from .bounds import LinearBounds, IntervalBounds
-
+from .bounds import IntervalBounds, LinearBounds
 
 logger = logging.getLogger(__name__)
 

@@ -4,8 +4,8 @@ import torch
 from torch import nn
 
 from .activation import assert_bound_order
+from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
-from .bounds import LinearBounds, IntervalBounds
 
 
 @torch.jit.script

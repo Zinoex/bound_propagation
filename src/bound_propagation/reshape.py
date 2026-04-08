@@ -1,8 +1,8 @@
 import torch
 from torch import nn
 
-from .general import BoundModule
 from .bounds import IntervalBounds, LinearBounds
+from .general import BoundModule
 
 
 class Select(nn.Module):

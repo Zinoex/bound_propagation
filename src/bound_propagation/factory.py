@@ -1,14 +1,31 @@
 from torch import nn
 
-from .activation import BoundReLU, BoundTanh, BoundSigmoid, BoundIdentity, BoundExp, Exp, BoundLog, Log, \
-    BoundReciprocal, Reciprocal, BoundSin, Sin, BoundCos, Cos, BoundSqrt, Sqrt, BoundCbrt, Cbrt
-from .bivariate import BoundAdd, Add, BoundSub, Sub, VectorAdd, BoundVectorAdd, VectorSub, BoundVectorSub, VectorMul, \
-    BoundVectorMul, BoundMul, Mul
-from .linear import BoundLinear, BoundElementWiseLinear, ElementWiseLinear
+from .activation import (
+    BoundCbrt,
+    BoundCos,
+    BoundExp,
+    BoundIdentity,
+    BoundLog,
+    BoundReciprocal,
+    BoundReLU,
+    BoundSigmoid,
+    BoundSin,
+    BoundSqrt,
+    BoundTanh,
+    Cbrt,
+    Cos,
+    Exp,
+    Log,
+    Reciprocal,
+    Sin,
+    Sqrt,
+)
+from .bivariate import Add, BoundAdd, BoundMul, BoundSub, BoundVectorAdd, BoundVectorMul, BoundVectorSub, Mul, Sub, VectorAdd, VectorMul, VectorSub
+from .linear import BoundElementWiseLinear, BoundLinear, ElementWiseLinear
 from .parallel import BoundParallel, Parallel
 from .polynomial import BoundPow, Pow
-from .probability import BoundErf, Erf, StandardNormalPDF, BoundStandardNormalPDF, NormalPDF, BoundNormalPDF
-from .reshape import BoundSelect, Select, BoundFlip, Flip
+from .probability import BoundErf, BoundNormalPDF, BoundStandardNormalPDF, Erf, NormalPDF, StandardNormalPDF
+from .reshape import BoundFlip, BoundSelect, Flip, Select
 from .saturation import BoundClamp, Clamp
 from .sequential import BoundSequential
 

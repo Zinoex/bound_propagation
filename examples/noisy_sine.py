@@ -3,15 +3,13 @@ from argparse import ArgumentParser
 from math import sqrt
 
 import numpy as np
-from tqdm import trange
-
 import torch
+from matplotlib import pyplot as plt
 from torch import distributions, nn, optim
 from torch.utils.data import TensorDataset
+from tqdm import trange
 
-from matplotlib import pyplot as plt
-
-from bound_propagation import BoundModelFactory, HyperRectangle, Parallel, LpNormSet
+from bound_propagation import BoundModelFactory, HyperRectangle, LpNormSet, Parallel
 
 
 def bound_propagation(model, input_bounds, alpha=False):

@@ -1,8 +1,8 @@
 import logging
-from typing import Tuple, Optional, Union
+from typing import Optional, Tuple, Union
 
 import torch
-from torch import nn, Tensor
+from torch import Tensor, nn
 
 from bound_propagation import BoundActivation
 from bound_propagation.activation import assert_bound_order

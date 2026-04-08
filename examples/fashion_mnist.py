@@ -2,8 +2,8 @@ import timeit
 from argparse import ArgumentParser
 
 import torch
-from torch import nn
 import torch.nn.functional as F
+from torch import nn
 from torch.utils.data import DataLoader
 from torchvision import datasets
 from torchvision.transforms import transforms

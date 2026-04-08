@@ -1,15 +1,15 @@
 import logging
-from typing import Tuple, List
+from typing import List, Tuple
 
 import torch
 from torch import nn
 
-from .parallel import Parallel
-from .reshape import Select
+from .activation import BoundActivation, assert_bound_order, bisection, regimes
 from .bivariate import Mul
-from .activation import assert_bound_order, regimes, bisection, BoundActivation
 from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
+from .parallel import Parallel
+from .reshape import Select
 from .util import clip_param_to_range_, proj_grad_to_range_
 
 logger = logging.getLogger(__name__)
