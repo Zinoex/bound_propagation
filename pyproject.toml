@@ -1,6 +1,42 @@
-[build-system]
-requires = [
-    "setuptools>=42",
-    "wheel"
+[project]
+name = "bound_propagation"
+version = "0.4.6"
+description = "Bound propagation in Pytorch"
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "GPL-3.0"}
+authors = [
+    { name = "Frederik Baymler Mathiesen", email = "frederik@baymler.com" }
 ]
-build-backend = "setuptools.build_meta"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "torch",
+    "numpy",
+]
+
+[project.urls]
+Homepage = "https://github.com/zinoex/bound_propagation"
+"Bug Tracker" = "https://github.com/zinoex/bound_propagation/issues"
+
+[dependency-groups]
+dev = [
+    "sphinx==1.8.2",
+    "sphinx-gallery==0.3.1",
+    "docutils==0.16",
+    "sphinx-copybutton",
+    "sphinxcontrib-katex",
+    "tqdm",
+    "matplotlib",
+    "seaborn",
+    "torchvision",
+    "PyHamcrest",
+    "pytorch-sphinx-theme @ git+https://github.com/pytorch/pytorch_sphinx_theme.git",
+]
+
+[build-system]
+requires = ["uv_build>=0.11.4,<0.12"]
+build-backend = "uv_build"
