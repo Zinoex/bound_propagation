@@ -153,3 +153,4 @@ cython_debug/
 fashion_data/
 examples/visualization/
 src/pytorch-sphinx-theme
+uv.lock

@@ -35,6 +35,8 @@ dev = [
     "torchvision",
     "PyHamcrest",
     "pytorch-sphinx-theme @ git+https://github.com/pytorch/pytorch_sphinx_theme.git",
+    "pytest",
+    "ruff",
 ]
 
 [build-system]
