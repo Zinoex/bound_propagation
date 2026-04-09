@@ -3,16 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import ForwardLinearBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPSubStrategy(ForwardBoundingStrategy):
+class ForwardLBPSubStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for SUB operation.
 
@@ -23,30 +20,11 @@ class ForwardLBPSubStrategy(ForwardBoundingStrategy):
     This is exact (no relaxation needed for linear operations).
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute forward LBP bounds for subtraction.
-
-        Args:
-            node: The SUB node
-            input_bounds: List of two LinearBounds for the operands
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the difference
-        """
-        verify_linear_bounds(input_bounds)
-
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         if len(input_bounds) != 2:
             raise ValueError(f"SUB requires exactly 2 inputs, got {len(input_bounds)}")
 

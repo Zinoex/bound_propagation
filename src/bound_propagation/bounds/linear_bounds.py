@@ -56,6 +56,7 @@ class LinearBounds(AbstractBounds):
         """
         super().__init__(region)
 
+        # Validate shapes
         if linear_lower is not None and linear_lower.shape[0] != bias_lower.shape[0]:
             raise ValueError("linear_lower and bias_lower must have the same output dimension")
 
@@ -65,8 +66,24 @@ class LinearBounds(AbstractBounds):
         if linear_lower is not None and linear_upper is not None and linear_lower.shape[1] != linear_upper.shape[1]:
             raise ValueError("linear_lower and linear_upper must have the same input dimension")
 
+        # Validate that if one of linear_lower or linear_upper is provided, the other must also be provided
         if linear_lower is not None and linear_upper is None:
             raise ValueError("If linear_lower is provided, linear_upper must also be provided (and vice versa)")
+
+        # Validate that the gap between lower and upper bounds is valid.
+        # That is, `(linear_upper - linear_lower)x + (bias_upper - bias_lower)` should be non-negative for all inputs `x` in `self.region`.
+        if linear_lower is not None and linear_upper is not None:
+            gap_linear = linear_upper - linear_lower
+            gap_bias = bias_upper - bias_lower
+            min_gap = self.region.minimize(gap_linear) + gap_bias
+            if torch.any(min_gap < -1e-6):
+                num_violations = torch.sum(min_gap < -1e-6).item()
+                raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
+        else:
+            # If we don't have linear coefficients, just check bias terms
+            if torch.any(bias_upper < bias_lower - 1e-6):
+                num_violations = torch.sum(bias_upper < bias_lower - 1e-6).item()
+                raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
 
         self.linear_lower = linear_lower
         self.bias_lower = bias_lower

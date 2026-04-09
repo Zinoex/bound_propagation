@@ -5,16 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import ForwardLinearBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPLinearStrategy(ForwardBoundingStrategy):
+class ForwardLBPLinearStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for LINEAR operation.
 
@@ -23,30 +20,11 @@ class ForwardLBPLinearStrategy(ForwardBoundingStrategy):
     - This is exact (no approximation needed for linear operations)
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute forward LBP bounds for linear layer.
-
-        Args:
-            node: The LINEAR node
-            input_bounds: List with one LinearBounds for the input
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the output
-        """
-        verify_linear_bounds(input_bounds)
-
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         if len(input_bounds) != 1:
             raise ValueError(f"LINEAR requires exactly 1 input, got {len(input_bounds)}")
 

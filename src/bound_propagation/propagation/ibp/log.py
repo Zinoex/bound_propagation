@@ -6,7 +6,6 @@ import torch
 
 from ...bounds import IntervalBounds
 from .base import IntervalBoundingStrategy
-from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
     from ...ir import Node
@@ -20,7 +19,6 @@ class IBPLogStrategy(IntervalBoundingStrategy):
         node: Node,
         input_bounds: list[IntervalBounds],
     ) -> IntervalBounds:
-        verify_interval_bounds(input_bounds)
 
         if len(input_bounds) != 1:
             raise ValueError(f"LOG requires 1 input, got {len(input_bounds)}")

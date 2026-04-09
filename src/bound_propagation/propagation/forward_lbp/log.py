@@ -5,46 +5,24 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import ForwardLinearBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPLogStrategy(ForwardBoundingStrategy):
+class ForwardLBPLogStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for LOG operation.
 
     Logarithm is monotonic for positive inputs.
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute forward LBP bounds for log.
-
-        Args:
-            node: The LOG node
-            input_bounds: List with one LinearBounds for the input
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the output
-        """
-        verify_linear_bounds(input_bounds)
-
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         if len(input_bounds) != 1:
             raise ValueError(f"LOG requires exactly 1 input, got {len(input_bounds)}")
 

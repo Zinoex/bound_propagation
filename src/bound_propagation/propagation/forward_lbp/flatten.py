@@ -3,16 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import ForwardLinearBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPFlattenStrategy(ForwardBoundingStrategy):
+class ForwardLBPFlattenStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for FLATTEN operation.
 
@@ -20,30 +17,11 @@ class ForwardLBPFlattenStrategy(ForwardBoundingStrategy):
     Linear coefficients remain unchanged, bias terms are flattened.
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute forward LBP bounds for flatten.
-
-        Args:
-            node: The FLATTEN node
-            input_bounds: List with one LinearBounds for the input
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the flattened output
-        """
-        verify_linear_bounds(input_bounds)
-
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         if len(input_bounds) != 1:
             raise ValueError(f"FLATTEN requires exactly 1 input, got {len(input_bounds)}")
 

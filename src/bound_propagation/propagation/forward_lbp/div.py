@@ -5,16 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import ForwardLinearBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPDivStrategy(ForwardBoundingStrategy):
+class ForwardLBPDivStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for DIV operation.
 
@@ -23,30 +20,11 @@ class ForwardLBPDivStrategy(ForwardBoundingStrategy):
     - If y varies: concretize to intervals
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute forward LBP bounds for division.
-
-        Args:
-            node: The DIV node
-            input_bounds: List of two LinearBounds for the operands
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the quotient
-        """
-        verify_linear_bounds(input_bounds)
-
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         if len(input_bounds) != 2:
             raise ValueError(f"DIV requires exactly 2 inputs, got {len(input_bounds)}")
 

@@ -6,7 +6,6 @@ import torch
 
 from ...bounds import IntervalBounds
 from .base import IntervalBoundingStrategy
-from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
     from ...ir import Node
@@ -15,13 +14,11 @@ if TYPE_CHECKING:
 class IBPDivStrategy(IntervalBoundingStrategy):
     """IBP strategy for DIV operation: [a, b] / [c, d]."""
 
-    def propagate_bounds(
+    def propagate_forwards(
         self,
         node: Node,
         input_bounds: list[IntervalBounds],
     ) -> IntervalBounds:
-        verify_interval_bounds(input_bounds)
-
         if len(input_bounds) != 2:
             raise ValueError(f"DIV requires 2 inputs, got {len(input_bounds)}")
 

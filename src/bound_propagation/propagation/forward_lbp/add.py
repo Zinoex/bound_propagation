@@ -3,16 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import ForwardLinearBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPAddStrategy(ForwardBoundingStrategy):
+class ForwardLBPAddStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for ADD operation.
 
@@ -23,17 +20,11 @@ class ForwardLBPAddStrategy(ForwardBoundingStrategy):
     This is exact (no relaxation needed for linear operations).
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         """
         Compute forward LBP bounds for addition.
 
@@ -45,8 +36,6 @@ class ForwardLBPAddStrategy(ForwardBoundingStrategy):
         Returns:
             LinearBounds for the sum
         """
-        verify_linear_bounds(input_bounds)
-
         if len(input_bounds) != 2:
             raise ValueError(f"ADD requires exactly 2 inputs, got {len(input_bounds)}")
 

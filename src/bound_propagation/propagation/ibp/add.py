@@ -4,7 +4,6 @@ from typing import TYPE_CHECKING
 
 from ...bounds import IntervalBounds
 from .base import IntervalBoundingStrategy
-from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
     from ...ir import Node
@@ -13,13 +12,11 @@ if TYPE_CHECKING:
 class IBPAddStrategy(IntervalBoundingStrategy):
     """IBP strategy for ADD operation: [a, b] + [c, d] = [a + c, b + d]."""
 
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
         input_bounds: list[IntervalBounds],
     ) -> IntervalBounds:
-        verify_interval_bounds(input_bounds)
-
         if len(input_bounds) != 2:
             raise ValueError(f"ADD requires 2 inputs, got {len(input_bounds)}")
 

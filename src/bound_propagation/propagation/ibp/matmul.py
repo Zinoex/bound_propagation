@@ -6,7 +6,6 @@ import torch
 
 from ...bounds import IntervalBounds
 from .base import IntervalBoundingStrategy
-from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
     from ...ir import Node
@@ -20,8 +19,6 @@ class IBPMatmulStrategy(IntervalBoundingStrategy):
         node: Node,
         input_bounds: list[IntervalBounds],
     ) -> IntervalBounds:
-        verify_interval_bounds(input_bounds)
-
         if len(input_bounds) != 2:
             raise ValueError(f"MATMUL requires 2 inputs, got {len(input_bounds)}")
 

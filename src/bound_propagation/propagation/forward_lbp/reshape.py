@@ -3,16 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import ForwardLinearBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPReshapeStrategy(ForwardBoundingStrategy):
+class ForwardLBPReshapeStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for RESHAPE operation.
 
@@ -20,30 +17,11 @@ class ForwardLBPReshapeStrategy(ForwardBoundingStrategy):
     Linear coefficients remain unchanged, bias terms are reshaped.
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute forward LBP bounds for reshape.
-
-        Args:
-            node: The RESHAPE node
-            input_bounds: List with one LinearBounds for the input
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the reshaped output
-        """
-        verify_linear_bounds(input_bounds)
-
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         if len(input_bounds) != 1:
             raise ValueError(f"RESHAPE requires exactly 1 input, got {len(input_bounds)}")
 

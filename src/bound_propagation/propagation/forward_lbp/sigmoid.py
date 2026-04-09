@@ -3,46 +3,26 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import apply_linear_relaxation, compute_sigmoid_alpha_beta, verify_linear_bounds
+from ..linear_relaxations.sigmoid import compute_sigmoid_alpha_beta
+from .base import ForwardLinearBoundingStrategy
+from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class ForwardLBPSigmoidStrategy(ForwardBoundingStrategy):
+class ForwardLBPSigmoidStrategy(ForwardLinearBoundingStrategy):
     """
     Forward LBP strategy for SIGMOID operation.
 
     Uses adaptive linear relaxations based on the input bounds regime.
     """
 
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "forward"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute forward LBP bounds for sigmoid.
-
-        Args:
-            node: The SIGMOID node
-            input_bounds: List with one LinearBounds for the input
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the output
-        """
-        verify_linear_bounds(input_bounds)
-
+        input_bounds: list[LinearBounds],
+    ) -> LinearBounds:
         if len(input_bounds) != 1:
             raise ValueError(f"SIGMOID requires exactly 1 input, got {len(input_bounds)}")
 

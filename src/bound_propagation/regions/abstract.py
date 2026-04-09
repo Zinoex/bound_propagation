@@ -74,3 +74,27 @@ class AbstractRegion(ABC):
             Sliced region
         """
         pass
+
+    @abstractmethod
+    def maximize(self, direction: torch.Tensor) -> torch.Tensor:
+        """
+        Get the point in the region that maximizes the linear function defined by direction.
+
+        Args:
+            direction: Coefficients of the linear function to maximize
+        Returns:
+            sup_{x in region} direction^T x
+        """
+        pass
+
+    @abstractmethod
+    def minimize(self, direction: torch.Tensor) -> torch.Tensor:
+        """
+        Get the point in the region that minimizes the linear function defined by direction.
+
+        Args:
+            direction: Coefficients of the linear function to minimize
+        Returns:
+            inf_{x in region} direction^T x
+        """
+        pass
