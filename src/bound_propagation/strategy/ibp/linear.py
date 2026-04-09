@@ -5,34 +5,27 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from ..strategy import ForwardBoundingStrategy
+from .base import IntervalBoundingStrategy
 from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class IBPLinearStrategy(ForwardBoundingStrategy):
+class IBPLinearStrategy(IntervalBoundingStrategy):
     """IBP strategy for LINEAR operation: y = x @ W^T + b."""
 
-    @property
-    def method_name(self) -> str:
-        return "ibp"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
+        input_bounds: list[IntervalBounds],
+    ) -> IntervalBounds:
         verify_interval_bounds(input_bounds)
 
         if len(input_bounds) != 1:
             raise ValueError(f"LINEAR requires 1 input, got {len(input_bounds)}")
 
-        x_bounds: IntervalBounds = input_bounds[0]  # ty:ignore[invalid-assignment]
+        x_bounds: IntervalBounds = input_bounds[0]
 
         # Get weight and bias from node attributes
         weight = node.attributes.get("weight")

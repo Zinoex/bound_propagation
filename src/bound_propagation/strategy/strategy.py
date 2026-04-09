@@ -7,7 +7,7 @@ Defines the contract for all bounding strategies (IBP, forward, backward, LBP, e
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Generic, TypeVar
 
 if TYPE_CHECKING:
     from ..bounds import AbstractBounds
@@ -31,7 +31,10 @@ class BoundingStrategy(ABC):
         return f"{self.__class__.__name__}(method={self.method_name})"
 
 
-class ForwardBoundingStrategy(BoundingStrategy, ABC):
+T = TypeVar("T", bound=AbstractBounds)
+
+
+class ForwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
     """
     Abstract base class for bounding strategies.
 
@@ -40,7 +43,6 @@ class ForwardBoundingStrategy(BoundingStrategy, ABC):
     - IBP (Interval Bound Propagation): Forward interval arithmetic
     - Forward: Forward linear bound propagation with alpha-beta parameterization
     - Backward: Backward linear bound propagation (LBP-style)
-    - LBP-IBP: Hybrid method combining interval and linear bounds
 
     Each strategy is responsible for computing the output bounds of one node
     given the input bounds of its input nodes.
@@ -53,8 +55,8 @@ class ForwardBoundingStrategy(BoundingStrategy, ABC):
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-    ) -> AbstractBounds:
+        input_bounds: list[T],
+    ) -> T:
         """
         Compute output bounds for a node.
 
@@ -75,7 +77,7 @@ class ForwardBoundingStrategy(BoundingStrategy, ABC):
 
 
 
-class BackwardBoundingStrategy(BoundingStrategy, ABC):
+class BackwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
     """
     Abstract base class for backward bound propagation strategies.
 
@@ -103,8 +105,8 @@ class BackwardBoundingStrategy(BoundingStrategy, ABC):
     def propagate_backward(
         self,
         node: Node,
-        output_bounds: AbstractBounds,
-    ) -> list[AbstractBounds]:
+        output_bounds: T,
+    ) -> list[T]:
         """
         Propagate linear bounds backward through this operation to a specific input.
 

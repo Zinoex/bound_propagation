@@ -3,34 +3,27 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import IntervalBounds
-from ..strategy import ForwardBoundingStrategy
+from .base import IntervalBoundingStrategy
 from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class IBPReshapeStrategy(ForwardBoundingStrategy):
+class IBPReshapeStrategy(IntervalBoundingStrategy):
     """IBP strategy for RESHAPE operation."""
 
-    @property
-    def method_name(self) -> str:
-        return "ibp"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
+        input_bounds: list[IntervalBounds],
+    ) -> IntervalBounds:
         verify_interval_bounds(input_bounds)
 
         if len(input_bounds) != 1:
             raise ValueError(f"RESHAPE requires 1 input, got {len(input_bounds)}")
 
-        x_bounds: IntervalBounds = input_bounds[0]  # ty:ignore[invalid-assignment]
+        x_bounds: IntervalBounds = input_bounds[0]
 
         # Get target shape from node attributes
         target_shape = node.attributes.get("shape")

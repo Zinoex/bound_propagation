@@ -5,34 +5,26 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from ..strategy import ForwardBoundingStrategy
+from .base import IntervalBoundingStrategy
 from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
+class IBPReluStrategy(IntervalBoundingStrategy):
+    """IBP strategy for RELU activation: relu([a, b]) = [max(0, a), max(0, b)]."""
 
-class IBPReluStrategy(ForwardBoundingStrategy):
-    """IBP strategy for RELU activation: relu([a,b]) = [max(0,a), max(0,b)]."""
-
-    @property
-    def method_name(self) -> str:
-        return "ibp"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
+        input_bounds: list[IntervalBounds],
+    ) -> IntervalBounds:
         verify_interval_bounds(input_bounds)
 
         if len(input_bounds) != 1:
             raise ValueError(f"RELU requires 1 input, got {len(input_bounds)}")
 
-        x_bounds: IntervalBounds = input_bounds[0]  # ty:ignore[invalid-assignment]
+        x_bounds: IntervalBounds = input_bounds[0]
 
         # ReLU clamps lower bound to 0 and keeps upper as is if positive
         lower = torch.clamp(x_bounds.lower, min=0.0)

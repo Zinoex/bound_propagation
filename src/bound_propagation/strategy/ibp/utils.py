@@ -2,21 +2,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
-
 from ...bounds import IntervalBounds
 
 
-def verify_interval_bounds(input_bounds: list[AbstractBounds]) -> None:
+def verify_interval_bounds(input_bounds: list[IntervalBounds]) -> None:
     """
     Verify all inputs are IntervalBounds.
-    
+
     Args:
         input_bounds: List of bounds to verify
-        
+
     Raises:
         ValueError: If any bound is not an IntervalBounds instance
     """

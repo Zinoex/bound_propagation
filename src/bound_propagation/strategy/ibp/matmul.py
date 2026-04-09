@@ -5,35 +5,28 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from ..strategy import ForwardBoundingStrategy
+from .base import IntervalBoundingStrategy
 from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class IBPMatmulStrategy(ForwardBoundingStrategy):
+class IBPMatmulStrategy(IntervalBoundingStrategy):
     """IBP strategy for MATMUL operation: A @ B."""
 
-    @property
-    def method_name(self) -> str:
-        return "ibp"
-
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
+        input_bounds: list[IntervalBounds],
+    ) -> IntervalBounds:
         verify_interval_bounds(input_bounds)
 
         if len(input_bounds) != 2:
             raise ValueError(f"MATMUL requires 2 inputs, got {len(input_bounds)}")
 
-        a_bounds: IntervalBounds = input_bounds[0]  # ty:ignore[invalid-assignment]
-        b_bounds: IntervalBounds = input_bounds[1]  # ty:ignore[invalid-assignment]
+        a_bounds: IntervalBounds = input_bounds[0]
+        b_bounds: IntervalBounds = input_bounds[1]
 
         # For matrix multiplication A @ B, we need to handle each element separately
         # This is complex for general case, so for now we'll handle simple cases
