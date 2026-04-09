@@ -14,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownMulStrategy(BoundingStrategy):
+class ForwardLBPMulStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for MUL operation.
+    Forward LBP strategy for MUL operation.
 
     For multiplication z = x * y:
     - If y is constant: W_l^z = y * W_l^x, b_l^z = y * b_l^x (handle sign)
@@ -35,7 +35,7 @@ class ForwardCrownMulStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for multiplication.
+        Compute forward LBP bounds for multiplication.
 
         Args:
             node: The MUL node

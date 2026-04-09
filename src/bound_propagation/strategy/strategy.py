@@ -1,7 +1,7 @@
 """
 Abstract bounding strategy interface.
 
-Defines the contract for all bounding strategies (IBP, forward, backward, CROWN, etc.).
+Defines the contract for all bounding strategies (IBP, forward, backward, LBP, etc.).
 """
 
 from __future__ import annotations
@@ -23,8 +23,8 @@ class BoundingStrategy(ABC):
     Different strategies implement different propagation methods:
     - IBP (Interval Bound Propagation): Forward interval arithmetic
     - Forward: Forward linear bound propagation with alpha-beta parameterization
-    - Backward: Backward linear bound propagation (CROWN-style)
-    - CROWN-IBP: Hybrid method combining interval and linear bounds
+    - Backward: Backward linear bound propagation (LBP-style)
+    - LBP-IBP: Hybrid method combining interval and linear bounds
 
     Each strategy is responsible for computing the output bounds of one node
     given the input bounds of its input nodes.
@@ -64,7 +64,7 @@ class BoundingStrategy(ABC):
         Get the name of this bounding method.
 
         Returns:
-            Method name (e.g., "ibp", "forward", "backward", "crown")
+            Method name (e.g., "ibp", "forward", "backward", "lbp")
         """
         pass
 

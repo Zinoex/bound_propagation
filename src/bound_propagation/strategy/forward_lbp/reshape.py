@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownReshapeStrategy(BoundingStrategy):
+class ForwardLBPReshapeStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for RESHAPE operation.
+    Forward LBP strategy for RESHAPE operation.
 
     Reshape doesn't change values, only their shape.
     Linear coefficients remain unchanged, bias terms are reshaped.
@@ -32,7 +32,7 @@ class ForwardCrownReshapeStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for reshape.
+        Compute forward LBP bounds for reshape.
 
         Args:
             node: The RESHAPE node

@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from ..strategy import BoundingStrategy
-from .utils import verify_linear_bounds
+from .utils import apply_linear_relaxation, compute_tanh_alpha_beta, verify_linear_bounds
 
 if TYPE_CHECKING:
     from ...bounds import AbstractBounds
@@ -14,12 +12,11 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownTanhStrategy(BoundingStrategy):
+class ForwardLBPTanhStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for TANH operation.
+    Forward LBP strategy for TANH operation.
 
-    Concretizes input bounds, applies tanh, and returns constant bounds.
-    Could be improved with adaptive linear relaxations.
+    Uses adaptive linear relaxations based on the input bounds regime.
     """
 
     @property
@@ -34,7 +31,7 @@ class ForwardCrownTanhStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for tanh.
+        Compute forward LBP bounds for tanh.
 
         Args:
             node: The TANH node
@@ -51,15 +48,15 @@ class ForwardCrownTanhStrategy(BoundingStrategy):
 
         bounds: LinearBounds = input_bounds[0]
 
-        # Concretize and apply tanh
+        # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()
-        lower_out = torch.tanh(lower)
-        upper_out = torch.tanh(upper)
 
-        return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,
-            bias_lower=lower_out,
-            linear_upper=None,
-            bias_upper=upper_out,
+        # Compute alpha/beta parameters for tanh relaxation
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_tanh_alpha_beta(
+            lower, upper
+        )
+
+        # Apply the linear relaxation to the bounds
+        return apply_linear_relaxation(
+            bounds, alpha_lower, beta_lower, alpha_upper, beta_upper
         )

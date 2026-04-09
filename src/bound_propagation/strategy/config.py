@@ -19,7 +19,7 @@ class StrategyConfig:
 
     Attributes:
         same_slope: Whether to use the same slope for upper and lower bounds
-                   in activation relaxations (relevant for CROWN methods)
+                   in activation relaxations (relevant for LBP methods)
         custom_params: Dictionary of operation-specific custom parameters
     """
 

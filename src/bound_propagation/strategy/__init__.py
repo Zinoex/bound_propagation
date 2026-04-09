@@ -2,7 +2,7 @@
 Bounding strategy framework for bound propagation.
 
 This module provides the strategy pattern implementation for computing bounds
-through different propagation methods (IBP, forward, backward, CROWN, etc.).
+through different propagation methods (IBP, forward, backward, LBP, etc.).
 
 Key components:
 - BoundingStrategy: Abstract base class for all strategies
@@ -22,7 +22,7 @@ from .registry import (
 )
 from .strategy import BoundingStrategy
 
-from . import crown  # noqa: F401
+from . import forward_lbp  # noqa: F401
 from . import ibp  # noqa: F401
 
 __all__ = [

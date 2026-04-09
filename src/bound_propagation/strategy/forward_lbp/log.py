@@ -14,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownLogStrategy(BoundingStrategy):
+class ForwardLBPLogStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for LOG operation.
+    Forward LBP strategy for LOG operation.
 
     Logarithm is monotonic for positive inputs.
     """
@@ -33,7 +33,7 @@ class ForwardCrownLogStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for log.
+        Compute forward LBP bounds for log.
 
         Args:
             node: The LOG node

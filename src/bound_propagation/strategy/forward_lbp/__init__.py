@@ -1,7 +1,7 @@
 """
-Forward-mode ForwardCrown (Convex Relaxation Of Neural Networks) strategies.
+Forward-mode ForwardLBP (Convex Relaxation Of Neural Networks) strategies.
 
-ForwardCrown propagates linear (affine) bounds through the network, computing
+ForwardLBP propagates linear (affine) bounds through the network, computing
 tighter relaxations than IBP for non-linear operations.
 
 This module implements forward-mode bound propagation using linear relaxations.
@@ -12,62 +12,62 @@ from __future__ import annotations
 
 from ...ir import OperationType
 from ..registry import get_global_registry
-from .add import ForwardCrownAddStrategy
-from .div import ForwardCrownDivStrategy
-from .exp import ForwardCrownExpStrategy
-from .flatten import ForwardCrownFlattenStrategy
-from .linear import ForwardCrownLinearStrategy
-from .log import ForwardCrownLogStrategy
-from .matmul import ForwardCrownMatmulStrategy
-from .mul import ForwardCrownMulStrategy
-from .relu import ForwardCrownReluStrategy
-from .reshape import ForwardCrownReshapeStrategy
-from .sigmoid import ForwardCrownSigmoidStrategy
-from .sub import ForwardCrownSubStrategy
-from .tanh import ForwardCrownTanhStrategy
+from .add import ForwardLBPAddStrategy
+from .div import ForwardLBPDivStrategy
+from .exp import ForwardLBPExpStrategy
+from .flatten import ForwardLBPFlattenStrategy
+from .linear import ForwardLBPLinearStrategy
+from .log import ForwardLBPLogStrategy
+from .matmul import ForwardLBPMatmulStrategy
+from .mul import ForwardLBPMulStrategy
+from .relu import ForwardLBPReluStrategy
+from .reshape import ForwardLBPReshapeStrategy
+from .sigmoid import ForwardLBPSigmoidStrategy
+from .sub import ForwardLBPSubStrategy
+from .tanh import ForwardLBPTanhStrategy
 
 __all__ = [
-    "ForwardCrownAddStrategy",
-    "ForwardCrownSubStrategy",
-    "ForwardCrownMulStrategy",
-    "ForwardCrownDivStrategy",
-    "ForwardCrownReluStrategy",
-    "ForwardCrownSigmoidStrategy",
-    "ForwardCrownTanhStrategy",
-    "ForwardCrownExpStrategy",
-    "ForwardCrownLogStrategy",
-    "ForwardCrownLinearStrategy",
-    "ForwardCrownMatmulStrategy",
-    "ForwardCrownReshapeStrategy",
-    "ForwardCrownFlattenStrategy",
+    "ForwardLBPAddStrategy",
+    "ForwardLBPSubStrategy",
+    "ForwardLBPMulStrategy",
+    "ForwardLBPDivStrategy",
+    "ForwardLBPReluStrategy",
+    "ForwardLBPSigmoidStrategy",
+    "ForwardLBPTanhStrategy",
+    "ForwardLBPExpStrategy",
+    "ForwardLBPLogStrategy",
+    "ForwardLBPLinearStrategy",
+    "ForwardLBPMatmulStrategy",
+    "ForwardLBPReshapeStrategy",
+    "ForwardLBPFlattenStrategy",
 ]
 
 
-def _register_forward_crown_strategies():
-    """Register all ForwardCrown strategies with the global registry."""
+def _register_forward_lbp_strategies():
+    """Register all ForwardLBP strategies with the global registry."""
     registry = get_global_registry()
 
     # Arithmetic operations
-    registry.register(OperationType.ADD, "forward", ForwardCrownAddStrategy())
-    registry.register(OperationType.SUB, "forward", ForwardCrownSubStrategy())
-    registry.register(OperationType.MUL, "forward", ForwardCrownMulStrategy())
-    registry.register(OperationType.DIV, "forward", ForwardCrownDivStrategy())
+    registry.register(OperationType.ADD, "forward", ForwardLBPAddStrategy())
+    registry.register(OperationType.SUB, "forward", ForwardLBPSubStrategy())
+    registry.register(OperationType.MUL, "forward", ForwardLBPMulStrategy())
+    registry.register(OperationType.DIV, "forward", ForwardLBPDivStrategy())
 
     # Activation functions
-    registry.register(OperationType.RELU, "forward", ForwardCrownReluStrategy())
-    registry.register(OperationType.SIGMOID, "forward", ForwardCrownSigmoidStrategy())
-    registry.register(OperationType.TANH, "forward", ForwardCrownTanhStrategy())
-    registry.register(OperationType.EXP, "forward", ForwardCrownExpStrategy())
-    registry.register(OperationType.LOG, "forward", ForwardCrownLogStrategy())
+    registry.register(OperationType.RELU, "forward", ForwardLBPReluStrategy())
+    registry.register(OperationType.SIGMOID, "forward", ForwardLBPSigmoidStrategy())
+    registry.register(OperationType.TANH, "forward", ForwardLBPTanhStrategy())
+    registry.register(OperationType.EXP, "forward", ForwardLBPExpStrategy())
+    registry.register(OperationType.LOG, "forward", ForwardLBPLogStrategy())
 
     # Linear operations
-    registry.register(OperationType.LINEAR, "forward", ForwardCrownLinearStrategy())
-    registry.register(OperationType.MATMUL, "forward", ForwardCrownMatmulStrategy())
+    registry.register(OperationType.LINEAR, "forward", ForwardLBPLinearStrategy())
+    registry.register(OperationType.MATMUL, "forward", ForwardLBPMatmulStrategy())
 
     # Reshape operations
-    registry.register(OperationType.RESHAPE, "forward", ForwardCrownReshapeStrategy())
-    registry.register(OperationType.FLATTEN, "forward", ForwardCrownFlattenStrategy())
+    registry.register(OperationType.RESHAPE, "forward", ForwardLBPReshapeStrategy())
+    registry.register(OperationType.FLATTEN, "forward", ForwardLBPFlattenStrategy())
 
 
 # Auto-register strategies on module import
-_register_forward_crown_strategies()
+_register_forward_lbp_strategies()

@@ -2,11 +2,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from ..strategy import BoundingStrategy
-from .utils import verify_linear_bounds
+from .utils import apply_linear_relaxation, compute_sigmoid_alpha_beta, verify_linear_bounds
 
 if TYPE_CHECKING:
     from ...bounds import AbstractBounds
@@ -14,12 +12,11 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownSigmoidStrategy(BoundingStrategy):
+class ForwardLBPSigmoidStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for SIGMOID operation.
+    Forward LBP strategy for SIGMOID operation.
 
-    Concretizes input bounds, applies sigmoid, and returns constant bounds.
-    Could be improved with adaptive linear relaxations.
+    Uses adaptive linear relaxations based on the input bounds regime.
     """
 
     @property
@@ -34,7 +31,7 @@ class ForwardCrownSigmoidStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for sigmoid.
+        Compute forward LBP bounds for sigmoid.
 
         Args:
             node: The SIGMOID node
@@ -51,15 +48,15 @@ class ForwardCrownSigmoidStrategy(BoundingStrategy):
 
         bounds: LinearBounds = input_bounds[0]
 
-        # Concretize and apply sigmoid
+        # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()
-        lower_out = torch.sigmoid(lower)
-        upper_out = torch.sigmoid(upper)
 
-        return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,
-            bias_lower=lower_out,
-            linear_upper=None,
-            bias_upper=upper_out,
+        # Compute alpha/beta parameters for sigmoid relaxation
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(
+            lower, upper
+        )
+
+        # Apply the linear relaxation to the bounds
+        return apply_linear_relaxation(
+            bounds, alpha_lower, beta_lower, alpha_upper, beta_upper
         )

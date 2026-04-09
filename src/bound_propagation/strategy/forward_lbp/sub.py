@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownSubStrategy(BoundingStrategy):
+class ForwardLBPSubStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for SUB operation.
+    Forward LBP strategy for SUB operation.
 
     For subtraction z = x - y:
     - Lower: W_l^z = W_l^x - W_u^y, b_l^z = b_l^x - b_u^y
@@ -35,7 +35,7 @@ class ForwardCrownSubStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for subtraction.
+        Compute forward LBP bounds for subtraction.
 
         Args:
             node: The SUB node

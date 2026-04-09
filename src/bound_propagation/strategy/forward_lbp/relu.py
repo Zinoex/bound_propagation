@@ -1,12 +1,10 @@
-    from __future__ import annotations
+from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from ..strategy import BoundingStrategy
-from .utils import verify_linear_bounds
+from .utils import apply_linear_relaxation, compute_relu_alpha_beta, verify_linear_bounds
 
 if TYPE_CHECKING:
     from ...bounds import AbstractBounds
@@ -14,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownReluStrategy(BoundingStrategy):
+class ForwardLBPReluStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for RELU operation.
+    Forward LBP strategy for RELU operation.
 
     For ReLU y = max(0, x), we use adaptive linear relaxations:
     - If x >= 0 (active): y = x (identity)
@@ -38,7 +36,7 @@ class ForwardCrownReluStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for ReLU.
+        Compute forward LBP bounds for ReLU.
 
         Args:
             node: The RELU node
@@ -58,36 +56,15 @@ class ForwardCrownReluStrategy(BoundingStrategy):
         # Concretize to get interval bounds for determining ReLU behavior
         lower, upper = bounds.concretize()
 
-        # Determine ReLU cases element-wise
-        active = lower >= 0  # Always positive - ReLU is identity
-        inactive = upper <= 0  # Always negative - ReLU is zero
-        crossing = ~active & ~inactive  # Can be positive or negative
-
-        # Initialize output bounds
-        output_shape = lower.shape
-        device = lower.device
-        dtype = lower.dtype
-
-        # For lower bound:
-        # - Active: keep original
-        # - Inactive:zero
-        # - Crossing: zero (tightest linear lower bound)
-        if bounds.linear_lower is not None:
-            linear_lower = torch.where(
-                active.unsqueeze(-1),
-                bounds.linear_lower,
-                torch.zeros_like(bounds.linear_lower),
-            )
-        else:
-            linear_lower = None
-
-        bias_lower = torch.where(
-            active,
-            bounds.bias_lower,
-            torch.zeros_like(bounds.bias_lower),
+        # Compute alpha/beta parameters for ReLU relaxation
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_relu_alpha_beta(
+            lower, upper, adaptive=False
         )
 
-        # For upper bound:
+        # Apply the linear relaxation to the bounds
+        return apply_linear_relaxation(
+            bounds, alpha_lower, beta_lower, alpha_upper, beta_upper
+        )
         # - Active: keep original
         # - Inactive: zero
         # - Crossing: linear relaxation y <= slope * (x - l)

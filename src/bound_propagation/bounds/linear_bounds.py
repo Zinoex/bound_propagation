@@ -2,7 +2,7 @@
 Linear bounds representation with affine relaxations.
 
 Linear bounds represent regions as affine functions of input variables,
-enabling tighter bounds through linear relaxations (used in CROWN methods).
+enabling tighter bounds through linear relaxations (used in LBP methods).
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ class LinearBounds(AbstractBounds):
     Represents bounds as affine functions: lower = W_l @ x + b_l, upper = W_u @ x + b_u
     This allows for tighter bounds through linear relaxations of non-linear operations.
 
-    Used in CROWN-style bound propagation methods.
+    Used in LBP-style bound propagation methods.
 
     Attributes:
         region: Input region defining the domain

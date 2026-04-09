@@ -14,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownLinearStrategy(BoundingStrategy):
+class ForwardLBPLinearStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for LINEAR operation.
+    Forward LBP strategy for LINEAR operation.
 
     For linear layer y = x @ W^T + b:
     - If x has bounds: W_l^y @ x0 + b_l^y = W @ W_l^x @ x0 + W @ b_l^x + b
@@ -35,7 +35,7 @@ class ForwardCrownLinearStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for linear layer.
+        Compute forward LBP bounds for linear layer.
 
         Args:
             node: The LINEAR node

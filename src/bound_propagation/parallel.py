@@ -96,10 +96,10 @@ class BoundParallel(BoundModule):
 
         return torch.cat([pre_padding, A, post_padding], dim=-1)
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         assert self.out_sizes is not None
         split_bounds = self.split(linear_bounds, self.out_sizes)
-        residual_bounds = [network.crown_backward(split_linear_bound, optimize) for network, split_linear_bound in zip(self.subnetworks, split_bounds)]
+        residual_bounds = [network.lbp_backward(split_linear_bound, optimize) for network, split_linear_bound in zip(self.subnetworks, split_bounds)]
 
         if linear_bounds.lower is None:
             lower = None

@@ -30,7 +30,7 @@ def assert_bound_order(func, position=0, keyword='preactivation'):
     return wrapper
 
 
-def crown_backward_act_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+def lbp_backward_act_jit(W_tilde: torch.Tensor, alpha: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
     _lambda = torch.where(W_tilde < 0, alpha[0].unsqueeze(-2), alpha[1].unsqueeze(-2))
     _delta = torch.where(W_tilde < 0, beta[0].unsqueeze(-2), beta[1].unsqueeze(-2))
 
@@ -85,7 +85,7 @@ class BoundActivation(BoundModule, abc.ABC):
 
         self.bounded = False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         assert self.bounded
 
         alpha_lower, alpha_upper = self.alpha_lower.detach().clone(), self.alpha_upper.detach().clone()
@@ -102,7 +102,7 @@ class BoundActivation(BoundModule, abc.ABC):
             alpha = alpha_upper, alpha_lower
             beta = beta_upper, beta_lower
 
-            lower = crown_backward_act_jit(linear_bounds.lower[0], alpha, beta)
+            lower = lbp_backward_act_jit(linear_bounds.lower[0], alpha, beta)
             lower = (lower[0], lower[1] + linear_bounds.lower[1])
 
         if linear_bounds.upper is None:
@@ -110,7 +110,7 @@ class BoundActivation(BoundModule, abc.ABC):
         else:
             alpha = alpha_lower, alpha_upper
             beta = beta_lower, beta_upper
-            upper = crown_backward_act_jit(linear_bounds.upper[0], alpha, beta)
+            upper = lbp_backward_act_jit(linear_bounds.upper[0], alpha, beta)
             upper = (upper[0], upper[1] + linear_bounds.upper[1])
 
         return LinearBounds(linear_bounds.region, lower, upper)
@@ -459,7 +459,7 @@ class BoundIdentity(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         return linear_bounds
 
     @assert_bound_order

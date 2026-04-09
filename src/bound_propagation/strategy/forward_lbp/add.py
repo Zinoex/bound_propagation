@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownAddStrategy(BoundingStrategy):
+class ForwardLBPAddStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for ADD operation.
+    Forward LBP strategy for ADD operation.
 
     For addition z = x + y:
     - Lower: W_l^z @ x0 + b_l^z = W_l^x @ x0 + b_l^x + W_l^y @ x0 + b_l^y
@@ -35,7 +35,7 @@ class ForwardCrownAddStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for addition.
+        Compute forward LBP bounds for addition.
 
         Args:
             node: The ADD node

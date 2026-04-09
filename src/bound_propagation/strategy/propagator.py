@@ -155,8 +155,8 @@ class BoundPropagator:
         if node.is_input:
             return self._create_input_bounds(node, input_region)
 
-        # Handle constant nodes: create point bounds
-        if node.is_constant:
+        # Handle constant and parameter nodes: create point bounds
+        if node.is_constant or node.is_parameter:
             return self._create_constant_bounds(node)
 
         # Get input bounds for this node
@@ -192,7 +192,7 @@ class BoundPropagator:
         Create bounds for an input node from the input region.
 
         For IBP, this creates IntervalBounds from the hyperrectangle.
-        For CROWN, this creates LinearBounds with identity mapping.
+        For LBP, this creates LinearBounds with identity mapping.
 
         Args:
             node: The input node
@@ -208,8 +208,8 @@ class BoundPropagator:
                 lower=input_region.lower,
                 upper=input_region.upper,
             )
-        elif self.method == "crown":
-            # CROWN: create linear bounds with identity mapping
+        elif self.method in ("lbp", "forward"):
+            # LBP/Forward: create linear bounds with identity mapping
             # This represents: lower = I @ x + 0, upper = I @ x + 0
             input_flat = input_region.lower.flatten()
             input_size = input_flat.numel()
@@ -237,7 +237,7 @@ class BoundPropagator:
         Create bounds for a constant node.
 
         Constants have zero-width bounds (point bounds).
-        For CROWN, creates constant LinearBounds (no linear dependency).
+        For LBP, creates constant LinearBounds (no linear dependency).
 
         Args:
             node: The constant node
@@ -258,8 +258,8 @@ class BoundPropagator:
 
         region = HyperRectangle(tensor_value, tensor_value)
 
-        if self.method == "crown":
-            # CROWN: create constant LinearBounds (no linear dependency on input)
+        if self.method in ("lbp", "forward"):
+            # LBP/Forward: create constant LinearBounds (no linear dependency on input)
             # This represents: lower = 0 @ x + value, upper = 0 @ x + value
             return LinearBounds(
                 region=region,

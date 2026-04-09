@@ -14,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownDivStrategy(BoundingStrategy):
+class ForwardLBPDivStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for DIV operation.
+    Forward LBP strategy for DIV operation.
 
     For division z = x / y:
     - If y is constant: W_l^z = W_l^x / y, b_l^z = b_l^x / y (handle sign)
@@ -35,7 +35,7 @@ class ForwardCrownDivStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for division.
+        Compute forward LBP bounds for division.
 
         Args:
             node: The DIV node

@@ -14,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownMatmulStrategy(BoundingStrategy):
+class ForwardLBPMatmulStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for MATMUL operation.
+    Forward LBP strategy for MATMUL operation.
 
     For matrix multiplication z = x @ y:
     - If y is constant: exact linear transformation
@@ -35,7 +35,7 @@ class ForwardCrownMatmulStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for matmul.
+        Compute forward LBP bounds for matmul.
 
         Args:
             node: The MATMUL node
@@ -63,7 +63,7 @@ class ForwardCrownMatmulStrategy(BoundingStrategy):
         else:
             # Both vary - need to concretize
             raise NotImplementedError(
-                "CROWN matmul with two varying operands not yet supported. "
+                "LBP matmul with two varying operands not yet supported. "
                 "Use constant weights or switch to IBP method."
             )
 

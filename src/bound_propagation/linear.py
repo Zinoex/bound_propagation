@@ -8,7 +8,7 @@ from .bounds import IntervalBounds, LinearBounds
 from .general import BoundModule
 
 
-def crown_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], bounds: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+def lbp_backward_linear_jit(weight: torch.Tensor, bias: Optional[torch.Tensor], bounds: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
     W_tilde, bias_acc = bounds
     if bias is not None:
         bias_acc = bias_acc + bias.unsqueeze(-2).matmul(W_tilde.transpose(-1, -2)).squeeze(-2)
@@ -48,16 +48,16 @@ class BoundLinear(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         if linear_bounds.lower is None:
             lower = None
         else:
-            lower = crown_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.lower)
+            lower = lbp_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.lower)
 
         if linear_bounds.upper is None:
             upper = None
         else:
-            upper = crown_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.upper)
+            upper = lbp_backward_linear_jit(self.module.weight, self.module.bias, linear_bounds.upper)
 
         return LinearBounds(linear_bounds.region, lower, upper)
 
@@ -102,7 +102,7 @@ class ElementWiseLinear(nn.Module):
         return x
 
 
-def crown_backward_elementwise_linear_jit(a: torch.Tensor, b: Optional[Union[torch.Tensor, float]], bounds: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+def lbp_backward_elementwise_linear_jit(a: torch.Tensor, b: Optional[Union[torch.Tensor, float]], bounds: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
     W_tilde, bias_acc = bounds
 
     if b is not None:
@@ -124,16 +124,16 @@ class BoundElementWiseLinear(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         if linear_bounds.lower is None:
             lower = None
         else:
-            lower = crown_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.lower)
+            lower = lbp_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.lower)
 
         if linear_bounds.upper is None:
             upper = None
         else:
-            upper = crown_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.upper)
+            upper = lbp_backward_elementwise_linear_jit(self.module.a, self.module.b, linear_bounds.upper)
 
         return LinearBounds(linear_bounds.region, lower, upper)
 

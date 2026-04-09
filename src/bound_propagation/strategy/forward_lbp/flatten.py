@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownFlattenStrategy(BoundingStrategy):
+class ForwardLBPFlattenStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for FLATTEN operation.
+    Forward LBP strategy for FLATTEN operation.
 
     Flatten converts to 1D shape without changing values.
     Linear coefficients remain unchanged, bias terms are flattened.
@@ -32,7 +32,7 @@ class ForwardCrownFlattenStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for flatten.
+        Compute forward LBP bounds for flatten.
 
         Args:
             node: The FLATTEN node

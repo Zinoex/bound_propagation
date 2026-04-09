@@ -45,9 +45,9 @@ class BoundAdd(BoundModule):
             assert self.bound_network2.need_relaxation
             return self.bound_network2.backward_relaxation(region)
 
-    def crown_backward(self, linear_bounds, optimize):
-        linear_bounds1 = self.bound_network1.crown_backward(linear_bounds, optimize)
-        linear_bounds2 = self.bound_network2.crown_backward(linear_bounds, optimize)
+    def lbp_backward(self, linear_bounds, optimize):
+        linear_bounds1 = self.bound_network1.lbp_backward(linear_bounds, optimize)
+        linear_bounds2 = self.bound_network2.lbp_backward(linear_bounds, optimize)
 
         if linear_bounds.lower is None:
             lower = None
@@ -105,7 +105,7 @@ class BoundVectorAdd(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         if linear_bounds.lower is None:
             lower = None
         else:
@@ -170,20 +170,20 @@ class BoundSub(BoundModule):
             assert self.bound_network2.need_relaxation
             return self.bound_network2.backward_relaxation(region)
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         input_bounds = LinearBounds(
             linear_bounds.region,
             (linear_bounds.lower[0], torch.zeros_like(linear_bounds.lower[1])) if linear_bounds.lower is not None else None,
             (linear_bounds.upper[0], torch.zeros_like(linear_bounds.upper[1])) if linear_bounds.upper is not None else None,
         )
-        linear_bounds1 = self.bound_network1.crown_backward(input_bounds, optimize)
+        linear_bounds1 = self.bound_network1.lbp_backward(input_bounds, optimize)
 
         input_bounds = LinearBounds(
             linear_bounds.region,
             (-linear_bounds.lower[0], torch.zeros_like(linear_bounds.lower[1])) if linear_bounds.lower is not None else None,
             (-linear_bounds.upper[0], torch.zeros_like(linear_bounds.upper[1])) if linear_bounds.upper is not None else None,
         )
-        linear_bounds2 = self.bound_network2.crown_backward(input_bounds, optimize)
+        linear_bounds2 = self.bound_network2.lbp_backward(input_bounds, optimize)
 
         if linear_bounds.lower is None:
             lower = None
@@ -241,7 +241,7 @@ class BoundVectorSub(BoundModule):
     def need_relaxation(self):
         return False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         if linear_bounds.lower is None:
             lower = None
         else:
@@ -269,7 +269,7 @@ class BoundVectorSub(BoundModule):
         return in_size // 2
 
 
-def crown_backward_mul_jit(W_tilde: torch.Tensor, alpha_x: Tuple[torch.Tensor, torch.Tensor], alpha_y: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+def lbp_backward_mul_jit(W_tilde: torch.Tensor, alpha_x: Tuple[torch.Tensor, torch.Tensor], alpha_y: Tuple[torch.Tensor, torch.Tensor], beta: Tuple[torch.Tensor, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     _delta = torch.where(W_tilde < 0, beta[0].unsqueeze(-2), beta[1].unsqueeze(-2))
     bias = torch.sum(W_tilde * _delta, dim=-1)
 
@@ -373,8 +373,8 @@ class BoundMul(BoundModule):
             assert self.size is not None
 
             linear_bounds = self.initial_linear_bounds(region, self.size)
-            linear_bounds1 = self.bound_network1.crown_backward(linear_bounds, False)
-            linear_bounds2 = self.bound_network2.crown_backward(linear_bounds, False)
+            linear_bounds1 = self.bound_network1.lbp_backward(linear_bounds, False)
+            linear_bounds2 = self.bound_network2.lbp_backward(linear_bounds, False)
 
             lower = (torch.cat([linear_bounds1.lower[0], linear_bounds2.lower[0]], dim=-2), torch.cat([linear_bounds1.lower[1], linear_bounds2.lower[1]], dim=-1))
             upper = (torch.cat([linear_bounds1.upper[0], linear_bounds2.upper[0]], dim=-2), torch.cat([linear_bounds1.upper[1], linear_bounds2.upper[1]], dim=-1))
@@ -387,7 +387,7 @@ class BoundMul(BoundModule):
 
         self.bounded = False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         assert self.bounded
 
         (alpha_x_lower, alpha_x_upper), (alpha_y_lower, alpha_y_upper), (beta_lower, beta_upper) = self.alpha_beta(optimize)
@@ -400,7 +400,7 @@ class BoundMul(BoundModule):
             alpha_y = alpha_y_upper, alpha_y_lower
             beta = beta_upper, beta_lower
 
-            lower = crown_backward_mul_jit(linear_bounds.lower[0], alpha_x, alpha_y, beta)
+            lower = lbp_backward_mul_jit(linear_bounds.lower[0], alpha_x, alpha_y, beta)
 
         if linear_bounds.upper is None:
             upper = None
@@ -409,7 +409,7 @@ class BoundMul(BoundModule):
             alpha_y = alpha_y_lower, alpha_y_upper
             beta = beta_lower, beta_upper
 
-            upper = crown_backward_mul_jit(linear_bounds.upper[0], alpha_x, alpha_y, beta)
+            upper = lbp_backward_mul_jit(linear_bounds.upper[0], alpha_x, alpha_y, beta)
 
         input_bounds1 = LinearBounds(linear_bounds.region,
                                      (lower[0], torch.zeros_like(lower[2])) if lower is not None else None,
@@ -418,8 +418,8 @@ class BoundMul(BoundModule):
                                      (lower[1], torch.zeros_like(lower[2])) if lower is not None else None,
                                      (upper[1], torch.zeros_like(upper[2])) if upper is not None else None)
 
-        linear_bounds1 = self.bound_network1.crown_backward(input_bounds1, optimize)
-        linear_bounds2 = self.bound_network2.crown_backward(input_bounds2, optimize)
+        linear_bounds1 = self.bound_network1.lbp_backward(input_bounds1, optimize)
+        linear_bounds2 = self.bound_network2.lbp_backward(input_bounds2, optimize)
 
         if lower is None:
             lower = None
@@ -588,7 +588,7 @@ class BoundVectorMul(BoundModule):
 
         self.bounded = False
 
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         assert self.bounded
 
         (alpha_x_lower, alpha_x_upper), (alpha_y_lower, alpha_y_upper), (beta_lower, beta_upper) = self.alpha_beta(optimize)
@@ -601,7 +601,7 @@ class BoundVectorMul(BoundModule):
             alpha_y = alpha_y_upper, alpha_y_lower
             beta = beta_upper, beta_lower
 
-            lower = crown_backward_mul_jit(linear_bounds.lower[0], alpha_x, alpha_y, beta)
+            lower = lbp_backward_mul_jit(linear_bounds.lower[0], alpha_x, alpha_y, beta)
             lower = (torch.cat(lower[:2], dim=-1), lower[2] + linear_bounds.lower[1])
 
         if linear_bounds.upper is None:
@@ -611,7 +611,7 @@ class BoundVectorMul(BoundModule):
             alpha_y = alpha_y_lower, alpha_y_upper
             beta = beta_lower, beta_upper
 
-            upper = crown_backward_mul_jit(linear_bounds.upper[0], alpha_x, alpha_y, beta)
+            upper = lbp_backward_mul_jit(linear_bounds.upper[0], alpha_x, alpha_y, beta)
             upper = (torch.cat(upper[:2], dim=-1), upper[2] + linear_bounds.upper[1])
 
         return LinearBounds(linear_bounds.region, lower, upper)

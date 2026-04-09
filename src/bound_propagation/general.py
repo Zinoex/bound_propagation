@@ -20,39 +20,39 @@ class BoundModule(nn.Module, abc.ABC):
         self.alpha_iterations = kwargs.get('alpha_iterations', 20)
 
     @torch.no_grad()
-    def crown_relax(self, region):
+    def lbp_relax(self, region):
         # Force bounds based on IBP, which may be tighter. More importantly, this also works if say there
         # is a Clamp in front of a Log which requires x > 0, and a linear relaxation may violate this
         interval_bounds = region.bounding_hyperrect()
         self.ibp_forward(interval_bounds, save_input_bounds=True)
 
-        # No grad for relaxations improves accuracy and stabilizes training for CROWN.
+        # No grad for relaxations improves accuracy and stabilizes training for LBP.
         while self.need_relaxation:
             linear_bounds, module, *extra = self.backward_relaxation(region)
             module.set_relaxation(linear_bounds, *extra)
 
     @torch.no_grad()
     def ibp_relax(self, region):
-        # No grad for relaxations improves accuracy. CROWN-IBP is already stable in training.
+        # No grad for relaxations improves accuracy. LBP-IBP is already stable in training.
         bounds = region.bounding_hyperrect()
         self.ibp_forward(bounds, save_relaxation=True)
 
-    def crown(self, region, bound_lower=True, bound_upper=True, alpha=False):
-        return self.crown_with_relaxation(self.crown_relax, region, bound_lower, bound_upper, alpha)
+    def lbp(self, region, bound_lower=True, bound_upper=True, alpha=False):
+        return self.lbp_with_relaxation(self.lbp_relax, region, bound_lower, bound_upper, alpha)
 
-    def crown_ibp(self, region, bound_lower=True, bound_upper=True, alpha=False):
-        return self.crown_with_relaxation(self.ibp_relax, region, bound_lower, bound_upper, alpha)
+    def lbp_ibp(self, region, bound_lower=True, bound_upper=True, alpha=False):
+        return self.lbp_with_relaxation(self.ibp_relax, region, bound_lower, bound_upper, alpha)
 
-    def crown_with_relaxation(self, relax, region, bound_lower, bound_upper, alpha):
+    def lbp_with_relaxation(self, relax, region, bound_lower, bound_upper, alpha):
         out_size = self.propagate_size(region.size(-1))
 
         relax(region)
 
         if alpha:
-            linear_bounds = self.alpha_crown(region, out_size, bound_lower, bound_upper)
+            linear_bounds = self.alpha_lbp(region, out_size, bound_lower, bound_upper)
         else:
             linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
-            linear_bounds = self.crown_backward(linear_bounds, False)
+            linear_bounds = self.lbp_backward(linear_bounds, False)
 
         self.clear_relaxation()
         return linear_bounds
@@ -68,19 +68,19 @@ class BoundModule(nn.Module, abc.ABC):
         linear_bounds = LinearBounds(region, lower, upper)
         return linear_bounds
 
-    def alpha_crown(self, region, out_size, bound_lower, bound_upper):
+    def alpha_lbp(self, region, out_size, bound_lower, bound_upper):
         params = list(self.bound_parameters())
 
         if all([param.numel() == 0 for param in params]):
-            logger.warning('No parameters available for alpha-CROWN. Check architecture of network.')
+            logger.warning('No parameters available for alpha-LBP. Check architecture of network.')
 
             linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
-            return self.crown_backward(linear_bounds, False)
+            return self.lbp_backward(linear_bounds, False)
 
         self.optimize_bounds(region, out_size, params, bound_lower=bound_lower, bound_upper=bound_upper)
 
         linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
-        return self.crown_backward(linear_bounds, True)
+        return self.lbp_backward(linear_bounds, True)
 
     @torch.enable_grad()
     def optimize_bounds(self, region, out_size, params, bound_lower=True, bound_upper=True):
@@ -88,7 +88,7 @@ class BoundModule(nn.Module, abc.ABC):
 
         for iteration in range(self.alpha_iterations):
             linear_bounds = self.initial_linear_bounds(region, out_size, lower=bound_lower, upper=bound_upper)
-            linear_bounds = self.crown_backward(linear_bounds, True)
+            linear_bounds = self.lbp_backward(linear_bounds, True)
 
             optimizer.zero_grad(set_to_none=True)  # Bound parameters
             self.zero_grad(set_to_none=True)       # Network/model parameters
@@ -135,7 +135,7 @@ class BoundModule(nn.Module, abc.ABC):
         pass
 
     @abc.abstractmethod
-    def crown_backward(self, linear_bounds, optimize):
+    def lbp_backward(self, linear_bounds, optimize):
         raise NotImplementedError()
 
     def ibp(self, region):

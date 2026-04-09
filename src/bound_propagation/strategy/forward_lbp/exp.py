@@ -14,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardCrownExpStrategy(BoundingStrategy):
+class ForwardLBPExpStrategy(BoundingStrategy):
     """
-    Forward CROWN strategy for EXP operation.
+    Forward LBP strategy for EXP operation.
 
     Exponential is monotonic, so we apply it to concretized bounds.
     """
@@ -33,7 +33,7 @@ class ForwardCrownExpStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward CROWN bounds for exp.
+        Compute forward LBP bounds for exp.
 
         Args:
             node: The EXP node

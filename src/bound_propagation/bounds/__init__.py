@@ -6,7 +6,7 @@ through computation graphs:
 
 - AbstractBounds: Base interface for all bound types
 - IntervalBounds: Simple interval arithmetic bounds [lower, upper]
-- LinearBounds: Affine bounds with linear relaxations (for CROWN-style methods)
+- LinearBounds: Affine bounds with linear relaxations (for LBP-style methods)
 """
 
 from .abstract_bounds import AbstractBounds
