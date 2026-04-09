@@ -153,6 +153,7 @@ class GraphConverter:
             output_metadata=metadata,
             node_type=NodeType.PARAMETER,
             name=str(fx_node.target),
+            attributes={"value": param},
         )
         return ir_node
 

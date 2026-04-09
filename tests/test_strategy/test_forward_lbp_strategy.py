@@ -15,7 +15,7 @@ from bound_propagation.tracer import GraphConverter, trace_function
 class TestForwardLBPBasic:
     """Test basic Forward LBP functionality."""
 
-    def test_LBP_linear_propagation(self):
+    def test_lbp_linear_propagation(self):
         """Test forward LBP propagation through a simple linear network."""
 
         # Build a simple linear network: y = ReLU(x @ W + b)
@@ -53,7 +53,7 @@ class TestForwardLBPBasic:
         assert upper_out.shape == (2,)
         assert torch.all(lower_out <= upper_out)
 
-    def test_LBP_identity(self):
+    def test_lbp_identity(self):
         """Test LBP on identity function."""
 
         def model(x):
@@ -80,7 +80,7 @@ class TestForwardLBPBasic:
         assert torch.allclose(lower_out, lower)
         assert torch.allclose(upper_out, upper)
 
-    def test_LBP_addition(self):
+    def test_lbp_addition(self):
         """Test LBP on addition operation."""
 
         def model(x):
@@ -106,7 +106,7 @@ class TestForwardLBPBasic:
         assert torch.allclose(lower_out, 2 * lower)
         assert torch.allclose(upper_out, 2 * upper)
 
-    def test_LBP_relu_active(self):
+    def test_lbp_relu_active(self):
         """Test LBP ReLU when always active."""
 
         def model(x):
@@ -133,7 +133,7 @@ class TestForwardLBPBasic:
         assert torch.allclose(lower_out, lower)
         assert torch.allclose(upper_out, upper)
 
-    def test_LBP_relu_inactive(self):
+    def test_lbp_relu_inactive(self):
         """Test LBP ReLU when always inactive."""
 
         def model(x):
