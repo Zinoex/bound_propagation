@@ -1,14 +1,21 @@
 """
 Tests for LBP (forward-mode) bound propagation strategies.
 
+DEPRECATED: Old strategy architecture replaced with method-based propagators.
+See tests/test_method_propagators.py for new tests.
+
 Tests basic functionality of LBP linear bound propagation.
 """
+
+import pytest
+
+pytestmark = pytest.mark.skip(reason="Old strategy architecture deprecated")
 
 import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.regions import HyperRectangle
-from bound_propagation.strategy import BoundPropagator
+# from bound_propagation.strategy import BoundPropagator
 from bound_propagation.tracer import GraphConverter, trace_function
 
 

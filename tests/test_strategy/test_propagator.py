@@ -1,18 +1,24 @@
 """
 Tests for bound propagation orchestrator.
+
+DEPRECATED: Old strategy architecture replaced with method-based propagators.
+See tests/test_method_propagators.py for new tests.
 """
 
 import pytest
+
+pytestmark = pytest.mark.skip(reason="Old strategy architecture deprecated")
+
 import torch
 
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.ir import Graph, Node, NodeType, OperationType, TensorMetadata
 from bound_propagation.regions import HyperRectangle
-from bound_propagation.strategy import (
-    BoundPropagator,
-    StrategyRegistry,
-    get_global_registry,
-)
+# from bound_propagation.strategy import (
+#     BoundPropagator,
+#     StrategyRegistry,
+#     get_global_registry,
+# )
 
 
 def create_simple_graph() -> Graph:

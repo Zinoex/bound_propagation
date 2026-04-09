@@ -1,14 +1,8 @@
-from .backward_propagator import BackwardBoundPropagator  # noqa: I001
-from .forward_propagator import ForwardBoundPropagator
-from .strategy import ForwardBoundingStrategy, BackwardBoundingStrategy
+"""Propagation package exports."""
 
-from . import backward_lbp  # noqa: F401
-from . import forward_lbp  # noqa: F401
-from . import ibp  # noqa: F401
+from .methods import ForwardLBPPropagator, MethodPropagator
 
 __all__ = [
-    "ForwardBoundingStrategy",
-    "BackwardBoundingStrategy",
-    "ForwardBoundPropagator",
-    "BackwardBoundPropagator",
+    "MethodPropagator",
+    "ForwardLBPPropagator",
 ]

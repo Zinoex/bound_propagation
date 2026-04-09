@@ -134,3 +134,15 @@ class IntervalBounds(AbstractBounds):
         """
         return (self._lower + self._upper) / 2
 
+    def clone(self) -> IntervalBounds:
+        """
+        Create a copy of these bounds.
+
+        Returns:
+            New IntervalBounds with cloned tensors
+        """
+        return IntervalBounds(
+            lower=self._lower.clone(),
+            upper=self._upper.clone(),
+        )
+

@@ -1,17 +1,23 @@
 """
 Tests for backward-mode Linear Bound Propagation (Backward LBP).
 
+DEPRECATED: Old strategy architecture replaced with method-based propagators.
+See tests/test_backward_and_ibp.py for new tests.
+
 Tests the new backward propagation algorithm (Algorithm 2 from auto_LiRPA paper)
 which traverses the graph in reverse topological order and accumulates bounds.
 """
 
 import pytest
+
+pytestmark = pytest.mark.skip(reason="Old strategy architecture deprecated")
+
 import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.ir import Graph, Node, NodeType, OperationType, TensorMetadata
 from bound_propagation.regions import HyperRectangle
-from bound_propagation.strategy import BackwardLBPPropagator
+# from bound_propagation.strategy import BackwardLBPPropagator
 
 
 def create_add_constant_graph() -> Graph:

@@ -29,6 +29,8 @@ class LinearBounds(AbstractBounds):
         bias_lower: Bias term for lower bound (b_l)
         linear_upper: Linear coefficients for upper bound (W_u)
         bias_upper: Bias term for upper bound (b_u)
+        input_ids: Optional list of input node IDs that contribute to these bounds.
+                   Used for tracking dependencies in multi-input scenarios.
     """
 
     def __init__(
@@ -38,6 +40,7 @@ class LinearBounds(AbstractBounds):
         bias_lower: torch.Tensor,
         linear_upper: torch.Tensor | None,
         bias_upper: torch.Tensor,
+        input_ids: list[int] | None = None,
     ) -> None:
         """
         Initialize linear bounds.
@@ -84,6 +87,7 @@ class LinearBounds(AbstractBounds):
         self.bias_lower = bias_lower
         self.linear_upper = linear_upper
         self.bias_upper = bias_upper
+        self.input_ids = input_ids if input_ids is not None else []
 
     @property
     def lower(self) -> torch.Tensor:
@@ -173,6 +177,7 @@ class LinearBounds(AbstractBounds):
             bias_lower=self.bias_lower.clone(),
             linear_upper=self.linear_upper.clone() if self.linear_upper is not None else None,
             bias_upper=self.bias_upper.clone(),
+            input_ids=self.input_ids.copy() if self.input_ids else None,
         )
 
     def forward_compose(self, other: LinearBounds) -> LinearBounds:

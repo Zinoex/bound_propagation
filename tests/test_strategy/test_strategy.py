@@ -1,22 +1,38 @@
 """
 Tests for bounding strategy framework.
+
+DEPRECATED: Old strategy architecture replaced with method-based propagators.
+See tests/test_linear_relaxation.py and tests/test_relaxation_strategies.py for new tests.
 """
 
 import pytest
+
+pytestmark = pytest.mark.skip(reason="Old strategy architecture deprecated")
+
 import torch
 
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.ir import OperationType
 from bound_propagation.regions import HyperRectangle
-from bound_propagation.strategy import (
-    BoundingStrategy,
-    StrategyConfig,
-    StrategyRegistry,
-    get_global_registry,
-    get_strategy,
-    register_fallback,
-    register_strategy,
-)
+# from bound_propagation.strategy import (
+#     BoundingStrategy,
+#     StrategyConfig,
+#     StrategyRegistry,
+#     get_global_registry,
+#     get_strategy,
+#     register_fallback,
+#     register_strategy,
+# )
+
+# Stub classes to prevent import errors (file is skipped anyway)
+class BoundingStrategy:
+    pass
+
+class StrategyConfig:
+    pass
+
+class StrategyRegistry:
+    pass
 
 
 class MockBoundingStrategy(BoundingStrategy):
