@@ -188,8 +188,10 @@ class Graph:
 
             # Find all nodes that use this node as input
             for dependent_node in self._nodes.values():
-                if node in dependent_node.inputs:
-                    in_degree[dependent_node.id] -= 1
+                # Count how many times this node appears in dependent's inputs
+                count = dependent_node.inputs.count(node)
+                if count > 0:
+                    in_degree[dependent_node.id] -= count
                     if in_degree[dependent_node.id] == 0:
                         queue.append(dependent_node)
 
