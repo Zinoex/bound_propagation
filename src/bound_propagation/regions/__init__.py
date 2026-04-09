@@ -1,4 +1,4 @@
-from .abstract import AbstractInputRegion
+from .abstract import AbstractRegion
 from .hyperrectangle import HyperRectangle
 
 __all__ = [

@@ -10,11 +10,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+from plum import dispatch
 
+from ..regions import AbstractRegion, HyperRectangle
 from .abstract_bounds import AbstractBounds
 
 if TYPE_CHECKING:
-    from ..regions import AbstractInputRegion
     from .interval_bounds import IntervalBounds
 
 
@@ -37,7 +38,7 @@ class LinearBounds(AbstractBounds):
 
     def __init__(
         self,
-        region: AbstractInputRegion,
+        region: AbstractRegion,
         linear_lower: torch.Tensor | None,
         bias_lower: torch.Tensor,
         linear_upper: torch.Tensor | None,
@@ -54,6 +55,7 @@ class LinearBounds(AbstractBounds):
             bias_upper: Bias for upper bound
         """
         super().__init__(region)
+
         self.linear_lower = linear_lower
         self.bias_lower = bias_lower
         self.linear_upper = linear_upper
@@ -109,6 +111,12 @@ class LinearBounds(AbstractBounds):
             bias_upper=self.bias_upper.clone(),
         )
 
+    def forward_compose(self, bounds: LinearBounds) -> LinearBounds:
+        ...
+
+    def backward_compose(self, bounds: LinearBounds) -> LinearBounds:
+        ...
+
     @staticmethod
     def from_interval_bounds(bounds: IntervalBounds) -> LinearBounds:
         """
@@ -130,3 +138,55 @@ class LinearBounds(AbstractBounds):
             linear_upper=None,  # No linear dependence
             bias_upper=bounds.upper,
         )
+
+
+
+
+@dispatch
+def concretize(region: HyperRectangle, bounds: LinearBounds) -> tuple[torch.Tensor, torch.Tensor]:  # noqa: F811
+    """
+    Concretize linear bounds given a hyperrectangle region.
+
+    For linear bounds, evaluates the affine functions at the box extremes:
+    - Lower bound: minimize W_l @ x + b_l over x in [lower, upper]
+    - Upper bound: maximize W_u @ x + b_u over x in [lower, upper]
+
+    For each weight coefficient:
+    - Use region.lower if coefficient > 0 (for minimization)
+    - Use region.upper if coefficient < 0 (for minimization)
+    - Vice versa for maximization
+
+    Args:
+        region: The hyperrectangle input region
+        bounds: The linear bounds to concretize
+
+    Returns:
+        Tuple of (lower, upper) concrete bounds
+    """
+    # Flatten the hyperrectangle bounds for easier computation
+    input_lower = region.lower.flatten()
+    input_upper = region.upper.flatten()
+
+    # Lower bound computation: minimize W_l @ x + b_l
+    lower_result = bounds.bias_lower.clone()
+    if bounds.linear_lower is not None:
+        positive_mask = bounds.linear_lower > 0
+        contributions = torch.where(
+            positive_mask,
+            bounds.linear_lower * input_lower,
+            bounds.linear_lower * input_upper,
+        )
+        lower_result = lower_result + contributions.sum(dim=-1)
+
+    # Upper bound computation: maximize W_u @ x + b_u
+    upper_result = bounds.bias_upper.clone()
+    if bounds.linear_upper is not None:
+        positive_mask = bounds.linear_upper > 0
+        contributions = torch.where(
+            positive_mask,
+            bounds.linear_upper * input_upper,
+            bounds.linear_upper * input_lower,
+        )
+        upper_result = upper_result + contributions.sum(dim=-1)
+
+    return lower_result, upper_result

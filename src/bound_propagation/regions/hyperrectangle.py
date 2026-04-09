@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import torch
 
-from .abstract import AbstractInputRegion
+from .abstract import AbstractRegion
 
 
-class HyperRectangle(AbstractInputRegion):
+class HyperRectangle(AbstractRegion):
     """
     Hyperrectangle input region.
 

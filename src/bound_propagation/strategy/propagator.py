@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from ..bounds import AbstractBounds, IntervalBounds
+from ..bounds import AbstractBounds, IntervalBounds, LinearBounds
 from ..regions import HyperRectangle
 from .config import StrategyConfig
 from .registry import get_global_registry
@@ -192,7 +192,7 @@ class BoundPropagator:
         Create bounds for an input node from the input region.
 
         For IBP, this creates IntervalBounds from the hyperrectangle.
-        For other methods, this might create LinearBounds with identity.
+        For CROWN, this creates LinearBounds with identity mapping.
 
         Args:
             node: The input node
@@ -201,16 +201,31 @@ class BoundPropagator:
         Returns:
             Bounds for the input
         """
-        # For IBP, create interval bounds from region
         if self.method == "ibp":
+            # IBP: create interval bounds from region
             return IntervalBounds(
                 region=input_region,
                 lower=input_region.lower,
                 upper=input_region.upper,
             )
+        elif self.method == "crown":
+            # CROWN: create linear bounds with identity mapping
+            # This represents: lower = I @ x + 0, upper = I @ x + 0
+            input_flat = input_region.lower.flatten()
+            input_size = input_flat.numel()
+
+            identity = torch.eye(input_size, dtype=input_region.dtype, device=input_region.device)
+            bias = torch.zeros(input_size, dtype=input_region.dtype, device=input_region.device)
+
+            return LinearBounds(
+                region=input_region,
+                linear_lower=identity,
+                bias_lower=bias,
+                linear_upper=identity,
+                bias_upper=bias,
+            )
         else:
-            # For other methods (forward, backward), we'd create LinearBounds
-            # with identity mapping. For now, default to IntervalBounds.
+            # For other methods, default to IntervalBounds
             return IntervalBounds(
                 region=input_region,
                 lower=input_region.lower,
@@ -222,6 +237,7 @@ class BoundPropagator:
         Create bounds for a constant node.
 
         Constants have zero-width bounds (point bounds).
+        For CROWN, creates constant LinearBounds (no linear dependency).
 
         Args:
             node: The constant node
@@ -241,7 +257,20 @@ class BoundPropagator:
             tensor_value = torch.tensor(value)
 
         region = HyperRectangle(tensor_value, tensor_value)
-        return IntervalBounds(region, tensor_value, tensor_value)
+
+        if self.method == "crown":
+            # CROWN: create constant LinearBounds (no linear dependency on input)
+            # This represents: lower = 0 @ x + value, upper = 0 @ x + value
+            return LinearBounds(
+                region=region,
+                linear_lower=None,  # No linear dependency
+                bias_lower=tensor_value,
+                linear_upper=None,  # No linear dependency
+                bias_upper=tensor_value,
+            )
+        else:
+            # IBP and other methods: use IntervalBounds
+            return IntervalBounds(region, tensor_value, tensor_value)
 
     def _get_input_bounds(self, node: Node) -> list[AbstractBounds]:
         """

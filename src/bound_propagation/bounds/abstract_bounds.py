@@ -7,14 +7,16 @@ Defines the interface that all bound types must implement.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING
 
 import torch
+from plum import dispatch
 
-from ..concretize import concretize
+from ..regions import AbstractRegion
 
-if TYPE_CHECKING:
-    from ..regions import AbstractInputRegion
+
+@dispatch.abstract
+def concretize(region: AbstractRegion, bounds: AbstractBounds) -> tuple[torch.Tensor, torch.Tensor]:
+    raise NotImplementedError("Abstract method for concretize")
 
 
 class AbstractBounds(ABC):
@@ -31,43 +33,10 @@ class AbstractBounds(ABC):
     The key operations are:
     - Propagation through operations (add, mul, matmul, etc.)
     - Combination of bounds from different sources
-    - Concretization to intervals for final analysis
-
-    Attributes:
-        region: The input region (HyperRectangle, LpNormBall, etc.) that defines
-                the domain of input variables
+    - Concretization to intervals for local analysis
     """
-
-    def __init__(self, region: AbstractInputRegion) -> None:
-        """
-        Initialize bounds with an input region.
-
-        Args:
-            region: Input region defining the domain
-        """
+    def __init__(self, region: AbstractRegion):
         self.region = region
-
-    @property
-    @abstractmethod
-    def lower(self) -> torch.Tensor:
-        """
-        Get concrete lower bound.
-
-        Returns:
-            Tensor of lower bounds for each element
-        """
-        pass
-
-    @property
-    @abstractmethod
-    def upper(self) -> torch.Tensor:
-        """
-        Get concrete upper bound.
-
-        Returns:
-            Tensor of upper bounds for each element
-        """
-        pass
 
     @property
     @abstractmethod

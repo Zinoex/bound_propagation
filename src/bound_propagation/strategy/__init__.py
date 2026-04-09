@@ -22,6 +22,7 @@ from .registry import (
 )
 from .strategy import BoundingStrategy
 
+from . import crown  # noqa: F401
 from . import ibp  # noqa: F401
 
 __all__ = [

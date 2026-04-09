@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     import torch
 
 
-class AbstractInputRegion(ABC):
+class AbstractRegion(ABC):
     """
     Abstract base class for input regions.
 
@@ -50,7 +50,7 @@ class AbstractInputRegion(ABC):
         pass
 
     @abstractmethod
-    def to(self, device: str | torch.device) -> AbstractInputRegion:
+    def to(self, device: str | torch.device) -> AbstractRegion:
         """
         Move region to a device.
 
@@ -63,7 +63,7 @@ class AbstractInputRegion(ABC):
         pass
 
     @abstractmethod
-    def __getitem__(self, item) -> AbstractInputRegion:
+    def __getitem__(self, item) -> AbstractRegion:
         """
         Slice/index the input region.
 

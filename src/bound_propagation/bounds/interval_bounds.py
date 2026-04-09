@@ -6,14 +6,11 @@ Simple lower and upper bound tensors for interval arithmetic.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import torch
+from plum import dispatch
 
+from ..regions import AbstractRegion, HyperRectangle
 from .abstract_bounds import AbstractBounds
-
-if TYPE_CHECKING:
-    from ..regions import AbstractInputRegion
 
 
 class IntervalBounds(AbstractBounds):
@@ -29,7 +26,7 @@ class IntervalBounds(AbstractBounds):
         upper: Upper bound tensor
     """
 
-    def __init__(self, region: AbstractInputRegion, lower: torch.Tensor, upper: torch.Tensor) -> None:
+    def __init__(self, region: AbstractRegion, lower: torch.Tensor, upper: torch.Tensor) -> None:
         """
         Initialize interval bounds.
 
@@ -234,3 +231,19 @@ class IntervalBounds(AbstractBounds):
             lower=lower,
             upper=upper,
         )
+
+
+@dispatch
+def concretize(region: HyperRectangle, bounds: IntervalBounds) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Concretize interval bounds given a hyperrectangle region.
+
+    For interval bounds, simply returns the bounds as they are already concrete.
+
+    Args:
+        region: The hyperrectangle input region
+        bounds: The interval bounds to concretize
+    Returns:
+        Tuple of (lower, upper) concrete bounds
+    """
+    return bounds.lower, bounds.upper

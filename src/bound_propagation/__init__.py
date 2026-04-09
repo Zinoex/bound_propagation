@@ -20,7 +20,7 @@ from .activation import (
     bisection,
 )
 from .bivariate import Add, BoundAdd, BoundMul, BoundSub, BoundVectorAdd, BoundVectorMul, BoundVectorSub, Div, Mul, Residual, Sub, VectorAdd, VectorMul, VectorSub
-from .bounds import HyperRectangle, IntervalBounds, LinearBounds, LpNormSet
+from .bounds import IntervalBounds, LinearBounds
 from .factory import BoundModelFactory
 from .general import BoundModule
 from .linear import BoundElementWiseLinear, BoundLinear, ElementWiseLinear, FixedLinear
@@ -45,7 +45,7 @@ from .sequential import BoundSequential
 __all__ = [
     'BoundActivation', 'BoundTanh', 'BoundReLU', 'BoundSigmoid', 'bisection', 'Exp', 'BoundExp', 'Log', 'BoundLog',
     'Reciprocal', 'BoundReciprocal', 'Sin', 'BoundSin', 'Cos', 'BoundCos', 'Sqrt', 'BoundSqrt', 'Cbrt', 'BoundCbrt',
-    'LinearBounds', 'IntervalBounds', 'HyperRectangle', 'LpNormSet',
+    'LinearBounds', 'IntervalBounds',
     'BoundModelFactory',
     'BoundModule',
     'BoundLinear', 'FixedLinear', 'ElementWiseLinear', 'BoundElementWiseLinear',
