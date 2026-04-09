@@ -1,9 +1,3 @@
-"""
-CROWN strategy for addition operation.
-
-Addition is a linear operation, so CROWN bounds are exact.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -18,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNAddStrategy(BoundingStrategy):
+class ForwardCrownAddStrategy(BoundingStrategy):
     """
-    CROWN strategy for ADD operation.
+    Forward CROWN strategy for ADD operation.
 
     For addition z = x + y:
     - Lower: W_l^z @ x0 + b_l^z = W_l^x @ x0 + b_l^x + W_l^y @ x0 + b_l^y
@@ -32,7 +26,7 @@ class CROWNAddStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -41,7 +35,7 @@ class CROWNAddStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for addition.
+        Compute forward CROWN bounds for addition.
 
         Args:
             node: The ADD node

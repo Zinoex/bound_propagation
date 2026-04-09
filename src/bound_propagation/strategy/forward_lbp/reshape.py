@@ -1,9 +1,3 @@
-"""
-CROWN strategy for reshape operation.
-
-Reshape doesn't change values, only their organization.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -18,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNReshapeStrategy(BoundingStrategy):
+class ForwardCrownReshapeStrategy(BoundingStrategy):
     """
-    CROWN strategy for RESHAPE operation.
+    Forward CROWN strategy for RESHAPE operation.
 
     Reshape doesn't change values, only their shape.
     Linear coefficients remain unchanged, bias terms are reshaped.
@@ -29,7 +23,7 @@ class CROWNReshapeStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -38,7 +32,7 @@ class CROWNReshapeStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for reshape.
+        Compute forward CROWN bounds for reshape.
 
         Args:
             node: The RESHAPE node

@@ -1,10 +1,3 @@
-"""
-CROWN strategy for division operation.
-
-Division is only linear when divisor is constant.
-For general case, we concretize to intervals.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -21,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNDivStrategy(BoundingStrategy):
+class ForwardCrownDivStrategy(BoundingStrategy):
     """
-    CROWN strategy for DIV operation.
+    Forward CROWN strategy for DIV operation.
 
     For division z = x / y:
     - If y is constant: W_l^z = W_l^x / y, b_l^z = b_l^x / y (handle sign)
@@ -33,7 +26,7 @@ class CROWNDivStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -42,7 +35,7 @@ class CROWNDivStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for division.
+        Compute forward CROWN bounds for division.
 
         Args:
             node: The DIV node

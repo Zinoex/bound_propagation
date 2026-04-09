@@ -1,5 +1,3 @@
-"""IBP strategy for RELU activation."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

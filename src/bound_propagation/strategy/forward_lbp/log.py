@@ -1,9 +1,3 @@
-"""
-CROWN strategy for log operation.
-
-Logarithm is monotonic for positive inputs.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -20,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNLogStrategy(BoundingStrategy):
+class ForwardCrownLogStrategy(BoundingStrategy):
     """
-    CROWN strategy for LOG operation.
+    Forward CROWN strategy for LOG operation.
 
     Logarithm is monotonic for positive inputs.
     """
@@ -30,7 +24,7 @@ class CROWNLogStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -39,7 +33,7 @@ class CROWNLogStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for log.
+        Compute forward CROWN bounds for log.
 
         Args:
             node: The LOG node

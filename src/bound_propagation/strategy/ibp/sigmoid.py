@@ -1,5 +1,3 @@
-"""IBP strategy for SIGMOID activation."""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING

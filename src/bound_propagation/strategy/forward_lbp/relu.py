@@ -1,10 +1,4 @@
-"""
-CROWN strategy for ReLU activation.
-
-ReLU requires linear relaxation for the crossing case where the input can be both positive and negative.
-"""
-
-from __future__ import annotations
+    from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
@@ -20,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNReluStrategy(BoundingStrategy):
+class ForwardCrownReluStrategy(BoundingStrategy):
     """
-    CROWN strategy for RELU operation.
+    Forward CROWN strategy for RELU operation.
 
     For ReLU y = max(0, x), we use adaptive linear relaxations:
     - If x >= 0 (active): y = x (identity)
@@ -35,7 +29,7 @@ class CROWNReluStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -44,7 +38,7 @@ class CROWNReluStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for ReLU.
+        Compute forward CROWN bounds for ReLU.
 
         Args:
             node: The RELU node

@@ -1,9 +1,3 @@
-"""
-CROWN strategy for subtraction operation.
-
-Subtraction is a linear operation, so CROWN bounds are exact.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -18,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNSubStrategy(BoundingStrategy):
+class ForwardCrownSubStrategy(BoundingStrategy):
     """
-    CROWN strategy for SUB operation.
+    Forward CROWN strategy for SUB operation.
 
     For subtraction z = x - y:
     - Lower: W_l^z = W_l^x - W_u^y, b_l^z = b_l^x - b_u^y
@@ -32,7 +26,7 @@ class CROWNSubStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -41,7 +35,7 @@ class CROWNSubStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for subtraction.
+        Compute forward CROWN bounds for subtraction.
 
         Args:
             node: The SUB node

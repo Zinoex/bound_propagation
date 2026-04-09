@@ -1,9 +1,3 @@
-"""
-CROWN strategy for flatten operation.
-
-Flatten is a special case of reshape that converts to 1D.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -18,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNFlattenStrategy(BoundingStrategy):
+class ForwardCrownFlattenStrategy(BoundingStrategy):
     """
-    CROWN strategy for FLATTEN operation.
+    Forward CROWN strategy for FLATTEN operation.
 
     Flatten converts to 1D shape without changing values.
     Linear coefficients remain unchanged, bias terms are flattened.
@@ -29,7 +23,7 @@ class CROWNFlattenStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -38,7 +32,7 @@ class CROWNFlattenStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for flatten.
+        Compute forward CROWN bounds for flatten.
 
         Args:
             node: The FLATTEN node

@@ -1,9 +1,3 @@
-"""
-CROWN strategy for matrix multiplication.
-
-Matmul is linear when one operand is constant.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -20,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNMatmulStrategy(BoundingStrategy):
+class ForwardCrownMatmulStrategy(BoundingStrategy):
     """
-    CROWN strategy for MATMUL operation.
+    Forward CROWN strategy for MATMUL operation.
 
     For matrix multiplication z = x @ y:
     - If y is constant: exact linear transformation
@@ -32,7 +26,7 @@ class CROWNMatmulStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -41,7 +35,7 @@ class CROWNMatmulStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for matmul.
+        Compute forward CROWN bounds for matmul.
 
         Args:
             node: The MATMUL node

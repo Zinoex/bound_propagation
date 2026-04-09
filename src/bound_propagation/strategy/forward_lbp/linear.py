@@ -1,9 +1,3 @@
-"""
-CROWN strategy for linear (fully-connected) layer.
-
-Linear layers are affine transformations, so bounds are exact.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -20,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNLinearStrategy(BoundingStrategy):
+class ForwardCrownLinearStrategy(BoundingStrategy):
     """
-    CROWN strategy for LINEAR operation.
+    Forward CROWN strategy for LINEAR operation.
 
     For linear layer y = x @ W^T + b:
     - If x has bounds: W_l^y @ x0 + b_l^y = W @ W_l^x @ x0 + W @ b_l^x + b
@@ -32,7 +26,7 @@ class CROWNLinearStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -41,7 +35,7 @@ class CROWNLinearStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for linear layer.
+        Compute forward CROWN bounds for linear layer.
 
         Args:
             node: The LINEAR node

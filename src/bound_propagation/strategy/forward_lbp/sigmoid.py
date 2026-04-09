@@ -1,9 +1,3 @@
-"""
-CROWN strategy for sigmoid activation.
-
-For now, uses concretization. Could be improved with better linear relaxations.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -20,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNSigmoidStrategy(BoundingStrategy):
+class ForwardCrownSigmoidStrategy(BoundingStrategy):
     """
-    CROWN strategy for SIGMOID operation.
+    Forward CROWN strategy for SIGMOID operation.
 
     Concretizes input bounds, applies sigmoid, and returns constant bounds.
     Could be improved with adaptive linear relaxations.
@@ -31,7 +25,7 @@ class CROWNSigmoidStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -40,7 +34,7 @@ class CROWNSigmoidStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for sigmoid.
+        Compute forward CROWN bounds for sigmoid.
 
         Args:
             node: The SIGMOID node

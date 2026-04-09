@@ -1,5 +1,5 @@
 """
-Utility functions for CROWN strategies.
+Utility functions for forward CROWN strategies.
 
 Helper functions for working with linear bounds in CROWN-style propagation.
 """

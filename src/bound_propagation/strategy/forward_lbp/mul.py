@@ -1,12 +1,4 @@
-"""
-CROWN strategy for multiplication operation.
-
-Multiplication is only linear when one operand is constant.
-For general case, we concretize to intervals and convert back.
-"""
-
 from __future__ import annotations
-from six import b
 
 from typing import TYPE_CHECKING
 
@@ -22,9 +14,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNMulStrategy(BoundingStrategy):
+class ForwardCrownMulStrategy(BoundingStrategy):
     """
-    CROWN strategy for MUL operation.
+    Forward CROWN strategy for MUL operation.
 
     For multiplication z = x * y:
     - If y is constant: W_l^z = y * W_l^x, b_l^z = y * b_l^x (handle sign)
@@ -34,7 +26,7 @@ class CROWNMulStrategy(BoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -43,7 +35,7 @@ class CROWNMulStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for multiplication.
+        Compute forward CROWN bounds for multiplication.
 
         Args:
             node: The MUL node

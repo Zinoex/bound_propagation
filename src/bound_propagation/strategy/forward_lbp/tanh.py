@@ -1,9 +1,3 @@
-"""
-CROWN strategy for exp operation.
-
-Exponential is monotonic, so we apply it to concretized bounds.
-"""
-
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
@@ -20,17 +14,18 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class CROWNExpStrategy(BoundingStrategy):
+class ForwardCrownTanhStrategy(BoundingStrategy):
     """
-    CROWN strategy for EXP operation.
+    Forward CROWN strategy for TANH operation.
 
-    Exponential is monotonic, so we apply it to concretized bounds.
+    Concretizes input bounds, applies tanh, and returns constant bounds.
+    Could be improved with adaptive linear relaxations.
     """
 
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "crown"
+        return "forward"
 
     def compute_bounds(
         self,
@@ -39,10 +34,10 @@ class CROWNExpStrategy(BoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute CROWN bounds for exp.
+        Compute forward CROWN bounds for tanh.
 
         Args:
-            node: The EXP node
+            node: The TANH node
             input_bounds: List with one LinearBounds for the input
             config: Strategy configuration
 
@@ -52,14 +47,14 @@ class CROWNExpStrategy(BoundingStrategy):
         verify_linear_bounds(input_bounds)
 
         if len(input_bounds) != 1:
-            raise ValueError(f"EXP requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"TANH requires exactly 1 input, got {len(input_bounds)}")
 
         bounds: LinearBounds = input_bounds[0]
 
-        # Concretize and apply exp (monotonic function)
+        # Concretize and apply tanh
         lower, upper = bounds.concretize()
-        lower_out = torch.exp(lower)
-        upper_out = torch.exp(upper)
+        lower_out = torch.tanh(lower)
+        upper_out = torch.tanh(upper)
 
         return LinearBounds(
             region=bounds.region,
