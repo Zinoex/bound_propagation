@@ -88,7 +88,7 @@ def compute_sigmoid_alpha_beta(
         beta_upper[crossing] = lower_act[crossing] - lower_prime[crossing] * lower[crossing]
 
         # Lower: secant line
-        alpha_lower[crossing] = slope[crossing]
-        beta_lower[crossing] = lower_act[crossing] - slope[crossing] * lower[crossing]
+        alpha_lower[crossing] = upper_prime[crossing]
+        beta_lower[crossing] = lower_act[crossing] - upper_prime[crossing] * lower[crossing]
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper

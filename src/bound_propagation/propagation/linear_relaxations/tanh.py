@@ -82,7 +82,7 @@ def compute_tanh_alpha_beta(
         alpha_upper[crossing] = lower_prime[crossing]
         beta_upper[crossing] = lower_act[crossing] - lower_prime[crossing] * lower[crossing]
 
-        alpha_lower[crossing] = slope[crossing]
-        beta_lower[crossing] = lower_act[crossing] - slope[crossing] * lower[crossing]
+        alpha_lower[crossing] = upper_prime[crossing]
+        beta_lower[crossing] = lower_act[crossing] - upper_prime[crossing] * lower[crossing]
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper
