@@ -9,14 +9,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 
 import torch
-from plum import dispatch
 
 from ..regions import AbstractRegion
-
-
-@dispatch.abstract
-def concretize(region: AbstractRegion, bounds: AbstractBounds) -> tuple[torch.Tensor, torch.Tensor]:
-    raise NotImplementedError("Abstract method for concretize")
 
 
 class AbstractBounds(ABC):
@@ -73,6 +67,19 @@ class AbstractBounds(ABC):
         """
         pass
 
+    @abstractmethod
+    def __getitem__(self, item) -> AbstractBounds:
+        """
+        Slice/index the bounds.
+
+        Args:
+            item: Slice/index specification (e.g., for batch slicing)
+        Returns:
+            New bounds corresponding to the slice/index
+        """
+        raise NotImplementedError("Bounds slicing not implemented for this bound type")
+
+    @abstractmethod
     def concretize(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Concretize bounds to interval bounds.
@@ -87,7 +94,7 @@ class AbstractBounds(ABC):
         Returns:
             IntervalBounds representing the concretized bounds
         """
-        return concretize(self.region, self)  # ty:ignore[invalid-return-type]
+        raise NotImplementedError("Concretize method must be implemented by subclasses")
 
     @abstractmethod
     def clone(self) -> AbstractBounds:

@@ -7,16 +7,11 @@ enabling tighter bounds through linear relaxations (used in LBP methods).
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
 import torch
 from plum import dispatch
 
 from ..regions import AbstractRegion, HyperRectangle
 from .abstract_bounds import AbstractBounds
-
-if TYPE_CHECKING:
-    from .interval_bounds import IntervalBounds
 
 
 class LinearBounds(AbstractBounds):
@@ -54,7 +49,7 @@ class LinearBounds(AbstractBounds):
             linear_upper: Linear coefficients for upper bound (can be None for constant bounds)
             bias_upper: Bias for upper bound
         """
-        super().__init__(region)
+        self.region = region
 
         # Validate shapes
         if linear_lower is not None and linear_lower.shape[0] != bias_lower.shape[0]:
@@ -116,6 +111,14 @@ class LinearBounds(AbstractBounds):
         return tuple(self.bias_lower.shape)
 
     @property
+    def input_dim(self) -> int:
+        """Get input dimensions of linear bounds."""
+        if self.linear_lower is not None:
+            return len(self.linear_lower.shape) - len(self.bias_lower.shape)
+        else:
+            return 0
+
+    @property
     def device(self) -> torch.device:
         """Get device of bounds."""
         return self.bias_lower.device
@@ -129,6 +132,38 @@ class LinearBounds(AbstractBounds):
             linear_upper=self.linear_upper.to(device) if self.linear_upper is not None else None,
             bias_upper=self.bias_upper.to(device),
         )
+
+    def __getitem__(self, item) -> LinearBounds:
+        """Slice/index the bounds."""
+        if isinstance(item, tuple) and Ellipsis in item:
+            linear_item = item + [slice(None)] * self.input_dim
+        else:
+            linear_item = item
+
+        return LinearBounds(
+            region=self.region[item],
+            linear_lower=self.linear_lower[linear_item] if self.linear_lower is not None else None,
+            bias_lower=self.bias_lower[item],
+            linear_upper=self.linear_upper[linear_item] if self.linear_upper is not None else None,
+            bias_upper=self.bias_upper[item],
+        )
+
+
+    def concretize(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Concretize bounds to interval bounds.
+
+        This method uses the input region to convert symbolic/affine bounds
+        into concrete interval bounds. The default implementation assumes that
+        the bounds are already concrete intervals and simply returns them.
+
+        Subclasses with more complex bound types (e.g., linear bounds) should
+        override this method to perform the necessary concretization logic.
+
+        Returns:
+            IntervalBounds representing the concretized bounds
+        """
+        return concretize(self.region, self)  # ty:ignore[invalid-return-type, invalid-argument-type]
 
     def clone(self) -> LinearBounds:
         """Create a deep copy."""
@@ -265,29 +300,10 @@ class LinearBounds(AbstractBounds):
             bias_upper=bias_upper,
         )
 
-    @staticmethod
-    def from_interval_bounds(bounds: IntervalBounds) -> LinearBounds:
-        """
-        Create linear bounds from interval bounds.
 
-        Creates constant linear bounds: lower = 0*x + bounds.lower, upper = 0*x + bounds.upper
-
-        Args:
-            bounds: Interval bounds to convert
-
-        Returns:
-            Linear bounds with zero coefficients
-        """
-        # Linear bounds with no dependence on inputs (constant bounds)
-        return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,  # No linear dependence
-            bias_lower=bounds.lower,
-            linear_upper=None,  # No linear dependence
-            bias_upper=bounds.upper,
-        )
-
-
+@dispatch.abstract
+def concretize(region: AbstractRegion, bounds: LinearBounds) -> tuple[torch.Tensor, torch.Tensor]:
+    raise NotImplementedError("Abstract method for concretize")
 
 
 @dispatch
