@@ -16,8 +16,14 @@ import torch
 import torch.nn as nn
 
 from bound_propagation.ir import Graph, NodeType, OperationType, TensorMetadata
-from bound_propagation.tracer import GraphConverter, trace_function
+from bound_propagation.tracer import BoundPropagationTracer, GraphConverter
 from bound_propagation.tracer.fx_tracer import ControlFlowError, TraceError
+
+
+def _trace_graph_module(fn_or_module, concrete_args=None):
+    tracer = BoundPropagationTracer()
+    graph = tracer.trace(fn_or_module, concrete_args=concrete_args)
+    return torch.fx.GraphModule(tracer.root, graph)
 
 
 class TestPhase1Verification:
@@ -43,7 +49,7 @@ class TestPhase1Verification:
 
         # Trace the network
         model = TwoLayerNet()
-        fx_module = trace_function(model)
+        fx_module = _trace_graph_module(model)
 
         # Convert to IR
         x = torch.randn(3, 10)
@@ -88,7 +94,7 @@ class TestPhase1Verification:
 
         # Trace with different batch sizes
         for batch_size in [1, 4, 16]:
-            fx_module = trace_function(network_fn)
+            fx_module = _trace_graph_module(network_fn)
             x = torch.randn(batch_size, 64)
 
             converter = GraphConverter(fx_module)
@@ -144,8 +150,8 @@ class TestPhase1Verification:
 
         # All should raise ControlFlowError or TraceError
         # (TraceError is raised when torch.fx detects control flow)
-        with pytest.raises((ControlFlowError, TraceError)):
-            trace_function(fn_with_if)
+        with pytest.raises((ControlFlowError, TraceError, torch.fx.proxy.TraceError)):
+            _trace_graph_module(fn_with_if)
 
         # Note: while and for loops might not be traceable by torch.fx,
         # but we still test them to document the behavior
@@ -165,7 +171,7 @@ class TestPhase1Verification:
             return z
 
         # Trace the function
-        fx_module = trace_function(original_fn)
+        fx_module = _trace_graph_module(original_fn)
 
         # Test with multiple inputs
         for _ in range(5):
@@ -197,7 +203,7 @@ class TestPhase1Verification:
             return x
 
         # Trace and convert
-        fx_module = trace_function(residual_fn)
+        fx_module = _trace_graph_module(residual_fn)
         x = torch.randn(3, 10)
         converter = GraphConverter(fx_module)
         ir_graph = converter.convert(example_inputs=(x,))
@@ -220,7 +226,7 @@ class TestPhase1Verification:
             return a, b
 
         # Trace and convert
-        fx_module = trace_function(multi_output_fn)
+        fx_module = _trace_graph_module(multi_output_fn)
         x = torch.randn(3, 5)
         converter = GraphConverter(fx_module)
         ir_graph = converter.convert(example_inputs=(x,))
@@ -258,7 +264,7 @@ class TestPhase1Verification:
             return e
 
         # Trace and convert
-        fx_module = trace_function(complex_fn)
+        fx_module = _trace_graph_module(complex_fn)
         x = torch.randn(4, 8)
         converter = GraphConverter(fx_module)
         ir_graph = converter.convert(example_inputs=(x,))

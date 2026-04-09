@@ -16,7 +16,13 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.regions import HyperRectangle
 # from bound_propagation.strategy import BoundPropagator
-from bound_propagation.tracer import GraphConverter, trace_function
+from bound_propagation.tracer import BoundPropagationTracer, GraphConverter
+
+
+def _trace_graph_module(fn_or_module, concrete_args=None):
+    tracer = BoundPropagationTracer()
+    graph = tracer.trace(fn_or_module, concrete_args=concrete_args)
+    return torch.fx.GraphModule(tracer.root, graph)
 
 
 class TestForwardLBPBasic:
@@ -31,7 +37,7 @@ class TestForwardLBPBasic:
             bias = torch.tensor([0.5, -0.5])
             return torch.relu(x @ weight + bias)
 
-        fx_module = trace_function(model)
+        fx_module = _trace_graph_module(model)
         x = torch.zeros(2)
         converter = GraphConverter(fx_module)
         graph = converter.convert(example_inputs=(x,))
@@ -66,7 +72,7 @@ class TestForwardLBPBasic:
         def model(x):
             return x
 
-        fx_module = trace_function(model)
+        fx_module = _trace_graph_module(model)
         x = torch.zeros(3)
         converter = GraphConverter(fx_module)
         graph = converter.convert(example_inputs=(x,))
@@ -93,7 +99,7 @@ class TestForwardLBPBasic:
         def model(x):
             return x + x
 
-        fx_module = trace_function(model)
+        fx_module = _trace_graph_module(model)
         x = torch.zeros(2)
         converter = GraphConverter(fx_module)
         graph = converter.convert(example_inputs=(x,))
@@ -119,7 +125,7 @@ class TestForwardLBPBasic:
         def model(x):
             return torch.relu(x)
 
-        fx_module = trace_function(model)
+        fx_module = _trace_graph_module(model)
         x = torch.zeros(2)
         converter = GraphConverter(fx_module)
         graph = converter.convert(example_inputs=(x,))
@@ -146,7 +152,7 @@ class TestForwardLBPBasic:
         def model(x):
             return torch.relu(x)
 
-        fx_module = trace_function(model)
+        fx_module = _trace_graph_module(model)
         x = torch.zeros(2)
         converter = GraphConverter(fx_module)
         graph = converter.convert(example_inputs=(x,))

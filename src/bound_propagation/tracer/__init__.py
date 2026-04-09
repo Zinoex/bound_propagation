@@ -6,9 +6,9 @@ and convert them to the internal IR representation.
 """
 
 from .converter import GraphConverter
-from .fx_tracer import trace_function
+from .fx_tracer import BoundPropagationTracer
 
 __all__ = [
-    "trace_function",
+    "BoundPropagationTracer",
     "GraphConverter",
 ]

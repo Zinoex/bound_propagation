@@ -2,12 +2,19 @@
 Tests for graph tracing and conversion.
 """
 
+import pytest
 import torch
 import torch.nn as nn
 
 from bound_propagation.ir import Graph, NodeType, OperationType, TensorMetadata
-from bound_propagation.tracer import GraphConverter, trace_function
-from bound_propagation.tracer.fx_tracer import ControlFlowError, TraceError
+from bound_propagation.tracer import BoundPropagationTracer, GraphConverter
+from bound_propagation.tracer.fx_tracer import TraceError, UnsupportedOperationError
+
+
+def _trace_graph_module(fn_or_module, concrete_args=None):
+    tracer = BoundPropagationTracer()
+    graph = tracer.trace(fn_or_module, concrete_args=concrete_args)
+    return torch.fx.GraphModule(tracer.root, graph)
 
 
 class TestTraceFunction:
@@ -19,7 +26,7 @@ class TestTraceFunction:
         def simple_fn(x):
             return torch.relu(x)
 
-        traced = trace_function(simple_fn)
+        traced = _trace_graph_module(simple_fn)
         assert traced is not None
         assert isinstance(traced, torch.fx.GraphModule)
 
@@ -30,7 +37,7 @@ class TestTraceFunction:
             z = x + y
             return torch.relu(z)
 
-        traced = trace_function(multi_op_fn)
+        traced = _trace_graph_module(multi_op_fn)
         assert traced is not None
 
         # Count operations in graph
@@ -44,7 +51,7 @@ class TestTraceFunction:
             return x * 2 + 1
 
         x = torch.randn(3, 4)
-        traced = trace_function(fn, example_inputs=(x,))
+        traced = _trace_graph_module(fn)
 
         # Verify outputs match
         original_out = fn(x)
@@ -63,7 +70,7 @@ class TestTraceFunction:
                 return torch.relu(self.linear(x))
 
         module = SimpleModule()
-        traced = trace_function(module)
+        traced = _trace_graph_module(module)
         assert traced is not None
 
         # Test with example input
@@ -80,7 +87,7 @@ class TestTraceFunction:
             x = torch.relu(x)
             return x + identity
 
-        traced = trace_function(residual_fn)
+        traced = _trace_graph_module(residual_fn)
         assert traced is not None
 
         x = torch.randn(3, 4)
@@ -88,24 +95,25 @@ class TestTraceFunction:
         traced_out = traced(x)
         assert torch.allclose(original_out, traced_out)
 
-    def test_trace_control_flow_rejected(self):
-        """Test that control flow is detected and rejected."""
+    def test_trace_control_flow_fails(self):
+        """Test that dynamic control flow fails under torch.fx tracing."""
 
         def fn_with_if(x):
             if x.sum() > 0:
                 return torch.relu(x)
             return x
 
-        # Note: torch.fx may or may not catch this depending on implementation
-        # This test documents expected behavior
-        try:
-            traced = trace_function(fn_with_if)
-            # If tracing succeeds, it means torch.fx specialized the branch
-            # Our converter should still work
-            assert traced is not None
-        except (TraceError, ControlFlowError, RuntimeError):
-            # Expected: control flow detected
-            pass
+        with pytest.raises((TraceError, RuntimeError, torch.fx.proxy.TraceError)):
+            _trace_graph_module(fn_with_if)
+
+    def test_trace_unsupported_operation_rejected(self):
+        """Test that tracing rejects operations not present in the mapping."""
+
+        def unsupported_fn(x):
+            return torch.erf(x)
+
+        with pytest.raises(UnsupportedOperationError):
+            _trace_graph_module(unsupported_fn)
 
 
 class TestGraphConverter:
@@ -118,7 +126,7 @@ class TestGraphConverter:
             return torch.relu(x)
 
         # Trace and convert
-        fx_module = trace_function(simple_fn)
+        fx_module = _trace_graph_module(simple_fn)
         x = torch.randn(3, 4)
 
         converter = GraphConverter(fx_module)
@@ -136,7 +144,7 @@ class TestGraphConverter:
             z = x + y
             return torch.relu(z)
 
-        fx_module = trace_function(fn)
+        fx_module = _trace_graph_module(fn)
         x, y = torch.randn(3, 4), torch.randn(3, 4)
 
         converter = GraphConverter(fx_module)
@@ -161,7 +169,7 @@ class TestGraphConverter:
             return x * 2
 
         x = torch.randn(3, 4, dtype=torch.float32)
-        fx_module = trace_function(fn)
+        fx_module = _trace_graph_module(fn)
 
         converter = GraphConverter(fx_module)
         ir_graph = converter.convert(example_inputs=(x,))
@@ -187,7 +195,7 @@ class TestGraphConverter:
                 return self.linear(x)
 
         module = LinearModule()
-        fx_module = trace_function(module)
+        fx_module = _trace_graph_module(module)
         x = torch.randn(2, 10)
 
         converter = GraphConverter(fx_module)
@@ -205,7 +213,7 @@ class TestGraphConverter:
 
         x = torch.randn(3, 4)
         y = torch.randn(4, 5)
-        fx_module = trace_function(fn)
+        fx_module = _trace_graph_module(fn)
 
         converter = GraphConverter(fx_module)
         ir_graph = converter.convert(example_inputs=(x, y))
@@ -223,7 +231,7 @@ class TestGraphConverter:
         def fn(x):
             return torch.relu(x)
 
-        fx_module = trace_function(fn)
+        fx_module = _trace_graph_module(fn)
         x = torch.randn(3, 4)
 
         converter = GraphConverter(fx_module)
@@ -241,7 +249,7 @@ class TestGraphConverter:
             c = b * 2
             return c
 
-        fx_module = trace_function(fn)
+        fx_module = _trace_graph_module(fn)
         x = torch.randn(3, 4)
 
         converter = GraphConverter(fx_module)
@@ -272,7 +280,7 @@ class TestEndToEnd:
             return torch.relu(x + 1)
 
         # Trace
-        fx_module = trace_function(fn)
+        fx_module = _trace_graph_module(fn)
 
         # Convert
         x = torch.randn(3, 4)
@@ -294,7 +302,7 @@ class TestEndToEnd:
             return torch.tanh(z3)
 
         # Trace
-        fx_module = trace_function(complex_fn)
+        fx_module = _trace_graph_module(complex_fn)
 
         # Convert
         x = torch.randn(4, 5)

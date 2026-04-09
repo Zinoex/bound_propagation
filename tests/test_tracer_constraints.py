@@ -6,11 +6,20 @@ This intentionally includes piecewise, discrete-indexing, and non-smooth ops
 that still participate in PyTorch autograd.
 """
 
+import pytest
 import torch
+import torch.nn as nn
 
 from bound_propagation.ir.operations import OperationType
-from bound_propagation.tracer import trace_function
+from bound_propagation.tracer import BoundPropagationTracer
+from bound_propagation.tracer.fx_tracer import UnsupportedOperationError
 from bound_propagation.tracer.op_mapping import get_operation_type
+
+
+def _trace_graph_module(fn_or_module, concrete_args=None):
+    tracer = BoundPropagationTracer()
+    graph = tracer.trace(fn_or_module, concrete_args=concrete_args)
+    return torch.fx.GraphModule(tracer.root, graph)
 
 
 class TestOperationProperties:
@@ -53,7 +62,7 @@ class TestTracerConstraints:
         def model(x):
             return torch.relu(x * 2.0 + 1.0)
 
-        traced = trace_function(model)
+        traced = _trace_graph_module(model)
         assert traced is not None
 
     def test_trace_complex_function(self):
@@ -65,7 +74,7 @@ class TestTracerConstraints:
             h3 = torch.tanh(h2)
             return h3 * 2.0 - 1.0
 
-        traced = trace_function(model)
+        traced = _trace_graph_module(model)
         assert traced is not None
 
     def test_max_is_allowed(self):
@@ -75,7 +84,7 @@ class TestTracerConstraints:
             values, _ = torch.max(x, dim=1)
             return values
 
-        traced = trace_function(model)
+        traced = _trace_graph_module(model)
         assert traced is not None
 
     def test_min_is_allowed(self):
@@ -85,7 +94,7 @@ class TestTracerConstraints:
             values, _ = torch.min(x, dim=1)
             return values
 
-        traced = trace_function(model)
+        traced = _trace_graph_module(model)
         assert traced is not None
 
     def test_discrete_indexing_is_allowed(self):
@@ -94,7 +103,7 @@ class TestTracerConstraints:
         def model(x):
             return x[:, 0]
 
-        traced = trace_function(model)
+        traced = _trace_graph_module(model)
         assert traced is not None
 
     def test_gather_is_allowed(self):
@@ -103,7 +112,7 @@ class TestTracerConstraints:
         def model(x, idx):
             return torch.gather(x, dim=1, index=idx)
 
-        traced = trace_function(model)
+        traced = _trace_graph_module(model)
         assert traced is not None
 
     def test_heaviside_is_allowed(self):
@@ -112,8 +121,31 @@ class TestTracerConstraints:
         def model(x):
             return torch.heaviside(x, values=torch.tensor(0.0))
 
-        traced = trace_function(model)
+        traced = _trace_graph_module(model)
         assert traced is not None
+
+    def test_unmapped_function_rejected(self):
+        """Test that unmapped torch functions are rejected at trace time."""
+
+        def model(x):
+            return torch.erf(x)
+
+        with pytest.raises(UnsupportedOperationError):
+            _trace_graph_module(model)
+
+    def test_nested_unmapped_module_rejected(self):
+        """Test that nested unmapped modules are traced into then rejected."""
+
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.gelu = nn.GELU()
+
+            def forward(self, x):
+                return self.gelu(x)
+
+        with pytest.raises(UnsupportedOperationError):
+            _trace_graph_module(Model())
 
 
 class TestOperationMapping:
