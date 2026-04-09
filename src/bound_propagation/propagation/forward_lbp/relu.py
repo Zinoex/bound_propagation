@@ -4,14 +4,14 @@ from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
 from ..linear_relaxations.relu import compute_relu_alpha_beta
-from .base import ForwardLinearBoundingStrategy
+from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPReluStrategy(ForwardLinearBoundingStrategy):
+class ForwardLBPReluStrategy(ForwardLBPStrategy):
     """
     Forward LBP strategy for RELU operation.
 

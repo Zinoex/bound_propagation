@@ -2,30 +2,29 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from ...ir import OperationType
-
 if TYPE_CHECKING:
-    from .base import IntervalBoundingStrategy
+    from ...ir import OperationType
+    from .base import ForwardIBPStrategy
 
-class IBPStrategyRegistry:
+class ForwardIBPStrategyRegistry:
     """Registry for IBP strategies."""
 
     def __init__(self):
-        self._registry: dict[OperationType, IntervalBoundingStrategy] = {}
+        self._registry: dict[OperationType, ForwardIBPStrategy] = {}
 
-    def register(self, operation_type: OperationType, strategy: IntervalBoundingStrategy):
+    def register(self, operation_type: OperationType, strategy: ForwardIBPStrategy):
         if operation_type in self._registry:
             raise ValueError(f"Strategy for operation type '{operation_type}' is already registered.")
         self._registry[operation_type] = strategy
 
-    def get_strategy(self, operation_type: OperationType) -> IntervalBoundingStrategy:
+    def get_strategy(self, operation_type: OperationType) -> ForwardIBPStrategy:
         if operation_type not in self._registry:
             raise ValueError(f"No strategy registered for operation type '{operation_type}'.")
         return self._registry[operation_type]
 
 
     @classmethod
-    def default_registry(cls) -> IBPStrategyRegistry:
+    def default_registry(cls) -> ForwardIBPStrategyRegistry:
         """
         Singleton registry instance with default strategies registered.
         """
@@ -34,7 +33,7 @@ class IBPStrategyRegistry:
         return cls._default_instance
 
     @classmethod
-    def register_default(cls, operation_type: OperationType, strategy: IntervalBoundingStrategy):
+    def register_default(cls, operation_type: OperationType, strategy: ForwardIBPStrategy):
         """Helper to register a default strategy for an operation type."""
         registry = cls.default_registry()
         registry.register(operation_type, strategy)

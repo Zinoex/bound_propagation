@@ -5,12 +5,12 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
-class IBPReluStrategy(IntervalBoundingStrategy):
+class IBPReluStrategy(ForwardIBPStrategy):
     """IBP strategy for RELU activation: relu([a, b]) = [max(0, a), max(0, b)]."""
 
     def propagate_forwards(

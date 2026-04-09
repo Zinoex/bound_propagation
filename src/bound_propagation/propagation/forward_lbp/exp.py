@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
-from .base import ForwardLinearBoundingStrategy
+from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPExpStrategy(ForwardLinearBoundingStrategy):
+class ForwardLBPExpStrategy(ForwardLBPStrategy):
     """
     Forward LBP strategy for EXP operation.
 

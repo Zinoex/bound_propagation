@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPSubStrategy(IntervalBoundingStrategy):
+class IBPSubStrategy(ForwardIBPStrategy):
     """IBP strategy for SUB operation: [a, b] - [c, d] = [a - d, b - c]."""
 
     def propagate_forwards(

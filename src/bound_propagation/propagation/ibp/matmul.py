@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPMatmulStrategy(IntervalBoundingStrategy):
+class IBPMatmulStrategy(ForwardIBPStrategy):
     """IBP strategy for MATMUL operation: A @ B."""
 
     def propagate_forwards(

@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPLogStrategy(IntervalBoundingStrategy):
+class IBPLogStrategy(ForwardIBPStrategy):
     """IBP strategy for LOG operation: log([a, b]) = [log(a), log(b)] for a, b > 0."""
 
     def propagate_forwards(

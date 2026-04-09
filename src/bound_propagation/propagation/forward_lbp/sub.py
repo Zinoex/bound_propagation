@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
-from .base import ForwardLinearBoundingStrategy
+from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPSubStrategy(ForwardLinearBoundingStrategy):
+class ForwardLBPSubStrategy(ForwardLBPStrategy):
     """
     Forward LBP strategy for SUB operation.
 

@@ -3,13 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPFlattenStrategy(IntervalBoundingStrategy):
+class IBPFlattenStrategy(ForwardIBPStrategy):
     """IBP strategy for FLATTEN operation."""
 
     def propagate_forwards(

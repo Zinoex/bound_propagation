@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPMulStrategy(IntervalBoundingStrategy):
+class IBPMulStrategy(ForwardIBPStrategy):
     """IBP strategy for MUL operation: [a, b] * [c, d] = [min(a * c, a * d, b * c, b * d), max(a * c, a * d, b * c, b * d)]."""
 
     def propagate_forwards(

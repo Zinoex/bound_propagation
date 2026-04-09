@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPLinearStrategy(IntervalBoundingStrategy):
+class IBPLinearStrategy(ForwardIBPStrategy):
     """IBP strategy for LINEAR operation: y = x @ W^T + b."""
 
     def propagate_forwards(

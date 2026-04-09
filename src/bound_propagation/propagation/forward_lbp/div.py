@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
-from .base import ForwardLinearBoundingStrategy
+from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPDivStrategy(ForwardLinearBoundingStrategy):
+class ForwardLBPDivStrategy(ForwardLBPStrategy):
     """
     Forward LBP strategy for DIV operation.
 

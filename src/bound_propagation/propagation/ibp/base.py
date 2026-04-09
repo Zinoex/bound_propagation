@@ -2,7 +2,7 @@ from ...bounds import IntervalBounds
 from ..strategy import ForwardBoundingStrategy
 
 
-class IntervalBoundingStrategy(ForwardBoundingStrategy[IntervalBounds]):
+class ForwardIBPStrategy(ForwardBoundingStrategy[IntervalBounds]):
 
     @property
     def method_name(self) -> str:

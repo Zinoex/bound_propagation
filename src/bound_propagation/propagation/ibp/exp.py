@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPExpStrategy(IntervalBoundingStrategy):
+class IBPExpStrategy(ForwardIBPStrategy):
     """IBP strategy for EXP operation: exp([a, b]) = [exp(a), exp(b)]."""
 
     def propagate_forwards(

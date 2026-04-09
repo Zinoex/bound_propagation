@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPSigmoidStrategy(IntervalBoundingStrategy):
+class IBPSigmoidStrategy(ForwardIBPStrategy):
     """IBP strategy for SIGMOID activation: sigmoid([a, b]) = [sigmoid(a), sigmoid(b)]."""
 
     def propagate_forwards(

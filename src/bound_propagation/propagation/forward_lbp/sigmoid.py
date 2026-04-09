@@ -4,14 +4,14 @@ from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
 from ..linear_relaxations.sigmoid import compute_sigmoid_alpha_beta
-from .base import ForwardLinearBoundingStrategy
+from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPSigmoidStrategy(ForwardLinearBoundingStrategy):
+class ForwardLBPSigmoidStrategy(ForwardLBPStrategy):
     """
     Forward LBP strategy for SIGMOID operation.
 

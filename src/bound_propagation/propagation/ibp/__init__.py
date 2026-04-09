@@ -7,7 +7,7 @@ from .linear import IBPLinearStrategy
 from .log import IBPLogStrategy
 from .matmul import IBPMatmulStrategy
 from .mul import IBPMulStrategy
-from .registry import IBPStrategyRegistry
+from .registry import ForwardIBPStrategyRegistry
 from .relu import IBPReluStrategy
 from .reshape import IBPReshapeStrategy
 from .sigmoid import IBPSigmoidStrategy
@@ -35,25 +35,25 @@ def _register_ibp_strategies() -> None:
     """Register all IBP strategies with the default IBP strategy registry."""
 
     # Arithmetic operations
-    IBPStrategyRegistry.register_default(OperationType.ADD, IBPAddStrategy())
-    IBPStrategyRegistry.register_default(OperationType.SUB, IBPSubStrategy())
-    IBPStrategyRegistry.register_default(OperationType.MUL, IBPMulStrategy())
-    IBPStrategyRegistry.register_default(OperationType.DIV, IBPDivStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.ADD, IBPAddStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.SUB, IBPSubStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.MUL, IBPMulStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.DIV, IBPDivStrategy())
 
     # Activation functions
-    IBPStrategyRegistry.register_default(OperationType.RELU, IBPReluStrategy())
-    IBPStrategyRegistry.register_default(OperationType.SIGMOID, IBPSigmoidStrategy())
-    IBPStrategyRegistry.register_default(OperationType.TANH, IBPTanhStrategy())
-    IBPStrategyRegistry.register_default(OperationType.EXP, IBPExpStrategy())
-    IBPStrategyRegistry.register_default(OperationType.LOG, IBPLogStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.RELU, IBPReluStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.SIGMOID, IBPSigmoidStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.TANH, IBPTanhStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.EXP, IBPExpStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.LOG, IBPLogStrategy())
 
     # Linear operations
-    IBPStrategyRegistry.register_default(OperationType.LINEAR, IBPLinearStrategy())
-    IBPStrategyRegistry.register_default(OperationType.MATMUL, IBPMatmulStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.LINEAR, IBPLinearStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.MATMUL, IBPMatmulStrategy())
 
     # Reshaping operations
-    IBPStrategyRegistry.register_default(OperationType.RESHAPE, IBPReshapeStrategy())
-    IBPStrategyRegistry.register_default(OperationType.FLATTEN, IBPFlattenStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.RESHAPE, IBPReshapeStrategy())
+    ForwardIBPStrategyRegistry.register_default(OperationType.FLATTEN, IBPFlattenStrategy())
 
 
 # Register strategies on module import

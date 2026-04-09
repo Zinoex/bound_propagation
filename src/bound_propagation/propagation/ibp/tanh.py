@@ -5,13 +5,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from .base import IntervalBoundingStrategy
+from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPTanhStrategy(IntervalBoundingStrategy):
+class IBPTanhStrategy(ForwardIBPStrategy):
     """IBP strategy for TANH activation: tanh([a, b]) = [tanh(a), tanh(b)]."""
 
     def propagate_forwards(

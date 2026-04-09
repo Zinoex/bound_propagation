@@ -2,7 +2,7 @@ from ...bounds import LinearBounds
 from ..strategy import ForwardBoundingStrategy
 
 
-class ForwardLinearBoundingStrategy(ForwardBoundingStrategy[LinearBounds]):
+class ForwardLBPStrategy(ForwardBoundingStrategy[LinearBounds]):
 
     @property
     def method_name(self) -> str:
