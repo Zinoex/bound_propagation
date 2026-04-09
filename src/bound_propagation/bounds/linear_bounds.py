@@ -111,10 +111,35 @@ class LinearBounds(AbstractBounds):
             bias_upper=self.bias_upper.clone(),
         )
 
-    def forward_compose(self, bounds: LinearBounds) -> LinearBounds:
+    def forward_compose(self, other: LinearBounds) -> LinearBounds:
+        """
+        Forward compose these bounds with another set of linear bounds.
+
+        This is used to propagate bounds through relaxed non-linear operations: 
+        if we have linear bounds `other` on an operation (input/output relation),
+        we can compose them with linear bounds on the input to get linear bounds
+        of the composition of `self` and this non-linear operation wrt. the input.
+
+        Mathematically, if we call `self` $f$ and `other` $g$, then this represents $g \\circ f$.
+        The input region of `self` correspond to the global input region while `other`'s input region
+        is local to its node; we should check whether the bounds are compatible before composing.
+        """
         ...
 
     def backward_compose(self, bounds: LinearBounds) -> LinearBounds:
+        """
+        Backwas compose these bounds with another set of linear bounds.
+
+        This is used to propagate bounds backwards through relaxed non-linear operations: 
+        if we have linear bounds `other` on an operation (input/output relation),
+        we can compose them with linear bounds on the output to get linear bounds
+        of the composition of this non-linear operation and `self` wrt. the output.
+
+        Mathematically, if we call `self` $f$ and `other` $g$, then this represents $f \\circ g$.
+        The input region of `self` correspond to input region over which the relaxation of $f$ is valid,
+        while `other`'s input region is local to its node; we should check whether
+        the bounds are compatible before composing.
+        """
         ...
 
     @staticmethod
