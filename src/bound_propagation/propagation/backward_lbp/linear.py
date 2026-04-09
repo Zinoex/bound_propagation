@@ -5,50 +5,24 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
-from ..strategy import ForwardBoundingStrategy
-from .utils import verify_linear_bounds
+from .base import BackwardLBPBoundingStrategy
 
 if TYPE_CHECKING:
-    from ...bounds import AbstractBounds
     from ...ir import Node
-    from ..config import StrategyConfig
 
 
-class BackwardLBPLinearStrategy(ForwardBoundingStrategy):
+class BackwardLBPLinearStrategy(BackwardLBPBoundingStrategy):
     """
     Backward LBP strategy for LINEAR operation.
 
     For linear layer y = x @ W^T + b, in backward mode the computation
     is the same as forward mode since it's an exact linear operation.
     """
-
-    @property
-    def method_name(self) -> str:
-        """Return the method name for this strategy."""
-        return "backward"
-
-    def compute_bounds(
+    def propagate_backwards(
         self,
         node: Node,
-        input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
-    ) -> AbstractBounds:
-        """
-        Compute backward LBP bounds for linear layer.
-
-        Args:
-            node: The LINEAR node
-            input_bounds: List with one LinearBounds for the input
-            config: Strategy configuration
-
-        Returns:
-            LinearBounds for the output
-        """
-        verify_linear_bounds(input_bounds)
-
-        if len(input_bounds) != 1:
-            raise ValueError(f"LINEAR requires exactly 1 input, got {len(input_bounds)}")
-
+        output_bounds: LinearBounds,
+    ) -> list[LinearBounds]:
         bounds: LinearBounds = input_bounds[0]
 
         # Get weight and bias from node attributes
@@ -98,10 +72,10 @@ class BackwardLBPLinearStrategy(ForwardBoundingStrategy):
         if bias is not None:
             bias_upper = bias_upper + bias
 
-        return LinearBounds(
+        return [LinearBounds(
             region=bounds.region,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
-        )
+        )]

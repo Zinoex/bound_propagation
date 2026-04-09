@@ -102,7 +102,7 @@ class BackwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
     """
 
     @abstractmethod
-    def propagate_backward(
+    def propagate_backwards(
         self,
         node: Node,
         output_bounds: T,

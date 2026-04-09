@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
 from ..strategy import ForwardBoundingStrategy
-from .utils import apply_linear_relaxation_backward, compute_tanh_alpha_beta, verify_linear_bounds
+from .utils import apply_linear_relaxation_backward
 
 if TYPE_CHECKING:
     from ...bounds import AbstractBounds
