@@ -14,19 +14,18 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardLBPMatmulStrategy(ForwardBoundingStrategy):
+class BackwardLBPMatmulStrategy(ForwardBoundingStrategy):
     """
-    Forward LBP strategy for MATMUL operation.
+    Backward LBP strategy for MATMUL operation.
 
-    For matrix multiplication z = x @ y:
-    - If y is constant: exact linear transformation
-    - If both vary: concretize to intervals(?)
+    For matrix multiplication z = x @ y, in backward mode the computation
+    is the same as forward mode for constant weight matrices.
     """
 
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "forward"
+        return "backward"
 
     def compute_bounds(
         self,
@@ -35,7 +34,7 @@ class ForwardLBPMatmulStrategy(ForwardBoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward LBP bounds for matmul.
+        Compute backward LBP bounds for matmul.
 
         Args:
             node: The MATMUL node
@@ -63,7 +62,7 @@ class ForwardLBPMatmulStrategy(ForwardBoundingStrategy):
         else:
             # Both vary - need to concretize
             raise NotImplementedError(
-                "LBP matmul with two varying operands not yet supported. "
+                "Backward LBP matmul with two varying operands not yet supported. "
                 "Use constant weights or switch to IBP method."
             )
 

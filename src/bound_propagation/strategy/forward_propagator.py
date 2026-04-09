@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from .registry import StrategyRegistry
 
 
-class BoundPropagator:
+class ForwardBoundPropagator:
     """
     Orchestrates bound propagation through a computation graph.
 
@@ -170,12 +170,9 @@ class BoundPropagator:
                 f"with method {self.method}"
             )
 
-        # Get config for this node (use per-node config if available, else default)
-        config = node_configs.get(node.id, self.config)
-
         # Compute bounds using strategy
         try:
-            bounds = strategy.compute_bounds(node, input_bounds, config)
+            bounds = strategy.propagate_forwards(node, input_bounds)
         except Exception as e:
             raise RuntimeError(
                 f"Failed to compute bounds for node {node.id} ({node.op_type}): {e}"
@@ -208,8 +205,8 @@ class BoundPropagator:
                 lower=input_region.lower,
                 upper=input_region.upper,
             )
-        elif self.method in ("lbp", "forward"):
-            # LBP/Forward: create linear bounds with identity mapping
+        elif self.method in ("lbp", "forward", "backward"):
+            # LBP/Forward/Backward: create linear bounds with identity mapping
             # This represents: lower = I @ x + 0, upper = I @ x + 0
             input_flat = input_region.lower.flatten()
             input_size = input_flat.numel()
@@ -258,8 +255,8 @@ class BoundPropagator:
 
         region = HyperRectangle(tensor_value, tensor_value)
 
-        if self.method in ("lbp", "forward"):
-            # LBP/Forward: create constant LinearBounds (no linear dependency on input)
+        if self.method in ("lbp", "forward", "backward"):
+            # LBP/Forward/Backward: create constant LinearBounds (no linear dependency on input)
             # This represents: lower = 0 @ x + value, upper = 0 @ x + value
             return LinearBounds(
                 region=region,

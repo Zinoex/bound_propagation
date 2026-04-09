@@ -12,13 +12,12 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardLBPSubStrategy(ForwardBoundingStrategy):
+class BackwardLBPSubStrategy(ForwardBoundingStrategy):
     """
-    Forward LBP strategy for SUB operation.
+    Backward LBP strategy for SUB operation.
 
-    For subtraction z = x - y:
-    - Lower: W_l^z = W_l^x - W_u^y, b_l^z = b_l^x - b_u^y
-    - Upper: W_u^z = W_u^x - W_l^y, b_u^z = b_u^x - b_l^y
+    For subtraction z = x - y, in backward mode we have bounds on z
+    and need to propagate them back to x and y.
 
     This is exact (no relaxation needed for linear operations).
     """
@@ -26,7 +25,7 @@ class ForwardLBPSubStrategy(ForwardBoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "forward"
+        return "backward"
 
     def compute_bounds(
         self,
@@ -35,7 +34,7 @@ class ForwardLBPSubStrategy(ForwardBoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward LBP bounds for subtraction.
+        Compute backward LBP bounds for subtraction.
 
         Args:
             node: The SUB node

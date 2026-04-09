@@ -14,19 +14,18 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardLBPLinearStrategy(ForwardBoundingStrategy):
+class BackwardLBPLinearStrategy(ForwardBoundingStrategy):
     """
-    Forward LBP strategy for LINEAR operation.
+    Backward LBP strategy for LINEAR operation.
 
-    For linear layer y = x @ W^T + b:
-    - If x has bounds: W_l^y @ x0 + b_l^y = W @ W_l^x @ x0 + W @ b_l^x + b
-    - This is exact (no approximation needed for linear operations)
+    For linear layer y = x @ W^T + b, in backward mode the computation
+    is the same as forward mode since it's an exact linear operation.
     """
 
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "forward"
+        return "backward"
 
     def compute_bounds(
         self,
@@ -35,7 +34,7 @@ class ForwardLBPLinearStrategy(ForwardBoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward LBP bounds for linear layer.
+        Compute backward LBP bounds for linear layer.
 
         Args:
             node: The LINEAR node

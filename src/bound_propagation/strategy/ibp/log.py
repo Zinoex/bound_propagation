@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from ..strategy import BoundingStrategy
+from ..strategy import ForwardBoundingStrategy
 from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class IBPLogStrategy(BoundingStrategy):
+class IBPLogStrategy(ForwardBoundingStrategy):
     """IBP strategy for LOG operation: log([a,b]) = [log(a), log(b)] for a,b > 0."""
 
     @property

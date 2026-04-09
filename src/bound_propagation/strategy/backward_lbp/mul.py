@@ -14,19 +14,18 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardLBPMulStrategy(ForwardBoundingStrategy):
+class BackwardLBPMulStrategy(ForwardBoundingStrategy):
     """
-    Forward LBP strategy for MUL operation.
+    Backward LBP strategy for MUL operation.
 
-    For multiplication z = x * y:
-    - If y is constant: W_l^z = y * W_l^x, b_l^z = y * b_l^x (handle sign)
-    - If both vary: concretize to intervals(?)
+    For multiplication z = x * y, in backward mode the bounds are computed
+    the same way as forward mode since multiplication is a linear/bilinear operation.
     """
 
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "forward"
+        return "backward"
 
     def compute_bounds(
         self,
@@ -35,7 +34,7 @@ class ForwardLBPMulStrategy(ForwardBoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward LBP bounds for multiplication.
+        Compute backward LBP bounds for multiplication.
 
         Args:
             node: The MUL node

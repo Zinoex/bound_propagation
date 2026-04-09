@@ -12,13 +12,12 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardLBPSubStrategy(ForwardBoundingStrategy):
+class BackwardLBPAddStrategy(ForwardBoundingStrategy):
     """
-    Forward LBP strategy for SUB operation.
+    Backward LBP strategy for ADD operation.
 
-    For subtraction z = x - y:
-    - Lower: W_l^z = W_l^x - W_u^y, b_l^z = b_l^x - b_u^y
-    - Upper: W_u^z = W_u^x - W_l^y, b_u^z = b_u^x - b_l^y
+    For addition z = x + y, in backward mode we have bounds on z
+    and need to propagate them back to x and y.
 
     This is exact (no relaxation needed for linear operations).
     """
@@ -26,7 +25,7 @@ class ForwardLBPSubStrategy(ForwardBoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "forward"
+        return "backward"
 
     def compute_bounds(
         self,
@@ -35,46 +34,49 @@ class ForwardLBPSubStrategy(ForwardBoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward LBP bounds for subtraction.
+        Compute backward LBP bounds for addition.
+
+        In backward mode, for z = x + y, the bounds are the same as forward mode.
+        The operation is linear and exact.
 
         Args:
-            node: The SUB node
+            node: The ADD node
             input_bounds: List of two LinearBounds for the operands
             config: Strategy configuration
 
         Returns:
-            LinearBounds for the difference
+            LinearBounds for the sum
         """
         verify_linear_bounds(input_bounds)
 
         if len(input_bounds) != 2:
-            raise ValueError(f"SUB requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"ADD requires exactly 2 inputs, got {len(input_bounds)}")
 
         bounds_a: LinearBounds = input_bounds[0]
         bounds_b: LinearBounds = input_bounds[1]
 
-        # Subtract linear coefficients (lower - upper for lower bound)
-        if bounds_a.linear_lower is not None and bounds_b.linear_upper is not None:
-            linear_lower = bounds_a.linear_lower - bounds_b.linear_upper
+        # Add linear coefficients
+        if bounds_a.linear_lower is not None and bounds_b.linear_lower is not None:
+            linear_lower = bounds_a.linear_lower + bounds_b.linear_lower
         elif bounds_a.linear_lower is not None:
             linear_lower = bounds_a.linear_lower
-        elif bounds_b.linear_upper is not None:
-            linear_lower = -bounds_b.linear_upper
+        elif bounds_b.linear_lower is not None:
+            linear_lower = bounds_b.linear_lower
         else:
             linear_lower = None
 
-        if bounds_a.linear_upper is not None and bounds_b.linear_lower is not None:
-            linear_upper = bounds_a.linear_upper - bounds_b.linear_lower
+        if bounds_a.linear_upper is not None and bounds_b.linear_upper is not None:
+            linear_upper = bounds_a.linear_upper + bounds_b.linear_upper
         elif bounds_a.linear_upper is not None:
             linear_upper = bounds_a.linear_upper
-        elif bounds_b.linear_lower is not None:
-            linear_upper = -bounds_b.linear_lower
+        elif bounds_b.linear_upper is not None:
+            linear_upper = bounds_b.linear_upper
         else:
             linear_upper = None
 
-        # Subtract bias terms
-        bias_lower = bounds_a.bias_lower - bounds_b.bias_upper
-        bias_upper = bounds_a.bias_upper - bounds_b.bias_lower
+        # Add bias terms
+        bias_lower = bounds_a.bias_lower + bounds_b.bias_lower
+        bias_upper = bounds_a.bias_upper + bounds_b.bias_upper
 
         return LinearBounds(
             region=bounds_a.region,

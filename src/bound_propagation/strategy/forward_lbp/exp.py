@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
-from ..strategy import BoundingStrategy
+from ..strategy import ForwardBoundingStrategy
 from .utils import verify_linear_bounds
 
 if TYPE_CHECKING:
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardLBPExpStrategy(BoundingStrategy):
+class ForwardLBPExpStrategy(ForwardBoundingStrategy):
     """
     Forward LBP strategy for EXP operation.
 

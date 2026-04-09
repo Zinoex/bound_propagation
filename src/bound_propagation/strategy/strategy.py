@@ -12,10 +12,26 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..bounds import AbstractBounds
     from ..ir import Node
-    from .config import StrategyConfig
 
 
 class BoundingStrategy(ABC):
+    @property
+    @abstractmethod
+    def method_name(self) -> str:
+        """
+        Get the name of this bounding method.
+
+        Returns:
+            Method name (e.g., "ibp", "forward", "backward")
+        """
+        pass
+
+    def __repr__(self) -> str:
+        """String representation."""
+        return f"{self.__class__.__name__}(method={self.method_name})"
+
+
+class ForwardBoundingStrategy(BoundingStrategy, ABC):
     """
     Abstract base class for bounding strategies.
 
@@ -34,11 +50,10 @@ class BoundingStrategy(ABC):
     """
 
     @abstractmethod
-    def compute_bounds(
+    def propagate_forwards(
         self,
         node: Node,
         input_bounds: list[AbstractBounds],
-        config: StrategyConfig,
     ) -> AbstractBounds:
         """
         Compute output bounds for a node.
@@ -57,17 +72,57 @@ class BoundingStrategy(ABC):
         """
         pass
 
-    @property
+
+
+
+class BackwardBoundingStrategy(BoundingStrategy, ABC):
+    """
+    Abstract base class for backward bound propagation strategies.
+
+    Backward propagation works differently from forward propagation:
+    - Forward: Given bounds on inputs, compute bounds on output
+    - Backward: Given linear bounds on output, propagate backward to compute
+                contribution to linear bounds on inputs
+
+    For an operation z = f(x, y, ...):
+    - We have linear bounds A_z, Ā_z representing how the final output depends on z
+    - We have concrete bounds for x, y (from forward pass)
+    - We compute how A_z, Ā_z translate to dependencies on each input
+
+    Example: z = x + y
+        If A_z represents "output_lower = A_z @ z + b_z"
+        Then A_x gets the same contribution: A_x += A_z
+        And A_y gets the same contribution: A_y += A_z
+
+    Example: z = relu(x)
+        Use concrete bounds on x to compute linear relaxation [α, β]
+        Propagate: A_x += α * A_z
+    """
+
     @abstractmethod
-    def method_name(self) -> str:
+    def propagate_backward(
+        self,
+        node: Node,
+        output_bounds: AbstractBounds,
+    ) -> list[AbstractBounds]:
         """
-        Get the name of this bounding method.
+        Propagate linear bounds backward through this operation to a specific input.
+
+        Args:
+            node: The operation node (z = f(x, y, ...))
+            input_idx: Index of the input we're propagating to (0 for x, 1 for y, etc.)
+            output_bounds: Linear bounds for the operation output (A_z, Ā_z)
+                          Represents how the final output depends on this operation's output
+            concrete_input_bounds: Concrete bounds for all inputs (from forward pass)
+                                   Used for computing relaxations of non-linear operations
+            config: Strategy configuration
 
         Returns:
-            Method name (e.g., "ibp", "forward", "backward", "lbp")
+            Linear bounds representing the contribution to the specified input
+            This contribution will be accumulated: A_input += returned_bounds
+
+        Raises:
+            ValueError: If the operation is not supported or input_idx is invalid
+            RuntimeError: If propagation fails
         """
         pass
-
-    def __repr__(self) -> str:
-        """String representation."""
-        return f"{self.__class__.__name__}(method={self.method_name})"

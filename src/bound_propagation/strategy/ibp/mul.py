@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import IntervalBounds
-from ..strategy import BoundingStrategy
+from ..strategy import ForwardBoundingStrategy
 from .utils import verify_interval_bounds
 
 if TYPE_CHECKING:
@@ -14,7 +14,7 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class IBPMulStrategy(BoundingStrategy):
+class IBPMulStrategy(ForwardBoundingStrategy):
     """IBP strategy for MUL operation: [a,b] * [c,d] = [min(ac,ad,bc,bd), max(ac,ad,bc,bd)]."""
 
     @property

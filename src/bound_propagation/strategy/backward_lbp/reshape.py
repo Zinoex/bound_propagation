@@ -12,9 +12,9 @@ if TYPE_CHECKING:
     from ..config import StrategyConfig
 
 
-class ForwardLBPReshapeStrategy(ForwardBoundingStrategy):
+class BackwardLBPReshapeStrategy(ForwardBoundingStrategy):
     """
-    Forward LBP strategy for RESHAPE operation.
+    Backward LBP strategy for RESHAPE operation.
 
     Reshape doesn't change values, only their shape.
     Linear coefficients remain unchanged, bias terms are reshaped.
@@ -23,7 +23,7 @@ class ForwardLBPReshapeStrategy(ForwardBoundingStrategy):
     @property
     def method_name(self) -> str:
         """Return the method name for this strategy."""
-        return "forward"
+        return "backward"
 
     def compute_bounds(
         self,
@@ -32,7 +32,7 @@ class ForwardLBPReshapeStrategy(ForwardBoundingStrategy):
         config: StrategyConfig,
     ) -> AbstractBounds:
         """
-        Compute forward LBP bounds for reshape.
+        Compute backward LBP bounds for reshape.
 
         Args:
             node: The RESHAPE node
