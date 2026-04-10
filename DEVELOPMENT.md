@@ -78,16 +78,16 @@ This project uses [ruff](https://github.com/astral-sh/ruff) for linting and form
 
 ```bash
 # Check for linting issues
-uv run ruff check .
+uvx ruff check .
 
 # Auto-fix linting issues
-uv run ruff check --fix .
+uvx ruff check --fix .
 
 # Format code
-uv run ruff format .
+uvx ruff format .
 
 # Check formatting without making changes
-uv run ruff format --check .
+uvx ruff format --check .
 ```
 
 Configuration is in `[tool.ruff]` section of `pyproject.toml`.
@@ -105,5 +105,5 @@ uv run pytest
 This project has been migrated to use modern pyproject.toml configuration with uv:
 - All configuration is now in `pyproject.toml` following PEP 621 standards
 - Uses uv's native build backend for fast, efficient builds
-- Uses ty for type checking (via uvx)
-- Uses ruff for linting and formatting
+- Uses ty for type checking (via `uvx`)
+- Uses ruff for linting and formatting (via `uvx`)
