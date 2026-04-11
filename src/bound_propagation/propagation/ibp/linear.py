@@ -56,4 +56,4 @@ class IBPLinearStrategy(ForwardIBPStrategy):
             lower_out = lower_out + bias
             upper_out = upper_out + bias
 
-        return IntervalBounds(x_bounds.region, lower_out, upper_out)
+        return IntervalBounds(lower_out, upper_out)

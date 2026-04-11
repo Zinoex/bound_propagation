@@ -28,4 +28,4 @@ class IBPExpStrategy(ForwardIBPStrategy):
         lower = torch.exp(x_bounds.lower)
         upper = torch.exp(x_bounds.upper)
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

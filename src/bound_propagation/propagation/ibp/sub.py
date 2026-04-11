@@ -27,4 +27,4 @@ class IBPSubStrategy(ForwardIBPStrategy):
         lower = x_bounds.lower - y_bounds.upper
         upper = x_bounds.upper - y_bounds.lower
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

@@ -28,4 +28,4 @@ class IBPSigmoidStrategy(ForwardIBPStrategy):
         lower = torch.sigmoid(x_bounds.lower)
         upper = torch.sigmoid(x_bounds.upper)
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

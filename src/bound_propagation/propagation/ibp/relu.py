@@ -27,4 +27,4 @@ class IBPReluStrategy(ForwardIBPStrategy):
         lower = torch.clamp(x_bounds.lower, min=0.0)
         upper = torch.clamp(x_bounds.upper, min=0.0)
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

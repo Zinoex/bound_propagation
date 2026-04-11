@@ -33,4 +33,4 @@ class IBPLogStrategy(ForwardIBPStrategy):
         lower = torch.log(x_bounds.lower)
         upper = torch.log(x_bounds.upper)
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

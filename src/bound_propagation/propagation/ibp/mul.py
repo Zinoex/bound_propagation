@@ -35,4 +35,4 @@ class IBPMulStrategy(ForwardIBPStrategy):
         lower = torch.min(torch.min(ll, lu), torch.min(ul, uu))
         upper = torch.max(torch.max(ll, lu), torch.max(ul, uu))
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

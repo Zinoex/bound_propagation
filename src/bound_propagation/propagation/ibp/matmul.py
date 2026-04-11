@@ -67,4 +67,4 @@ class IBPMatmulStrategy(ForwardIBPStrategy):
             lower_out[i] = torch.sum(w_row[pos_mask] * bounds.lower[pos_mask]) + torch.sum(w_row[neg_mask] * bounds.upper[neg_mask])
             upper_out[i] = torch.sum(w_row[pos_mask] * bounds.upper[pos_mask]) + torch.sum(w_row[neg_mask] * bounds.lower[neg_mask])
 
-        return IntervalBounds(bounds.region, lower_out, upper_out)
+        return IntervalBounds(lower_out, upper_out)

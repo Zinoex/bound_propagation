@@ -31,4 +31,4 @@ class IBPReshapeStrategy(ForwardIBPStrategy):
         lower = x_bounds.lower.reshape(target_shape)
         upper = x_bounds.upper.reshape(target_shape)
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

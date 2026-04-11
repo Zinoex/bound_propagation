@@ -26,4 +26,4 @@ class IBPFlattenStrategy(ForwardIBPStrategy):
         lower = x_bounds.lower.flatten()
         upper = x_bounds.upper.flatten()
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)

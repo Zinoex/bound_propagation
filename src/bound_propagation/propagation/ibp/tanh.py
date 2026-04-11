@@ -28,4 +28,4 @@ class IBPTanhStrategy(ForwardIBPStrategy):
         lower = torch.tanh(x_bounds.lower)
         upper = torch.tanh(x_bounds.upper)
 
-        return IntervalBounds(x_bounds.region, lower, upper)
+        return IntervalBounds(lower, upper)
