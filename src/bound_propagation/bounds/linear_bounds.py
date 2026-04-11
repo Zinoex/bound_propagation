@@ -1,10 +1,3 @@
-"""
-Linear bounds representation with affine relaxations.
-
-Linear bounds represent regions as affine functions of input variables,
-enabling tighter bounds through linear relaxations (used in LBP methods).
-"""
-
 from __future__ import annotations
 
 import torch

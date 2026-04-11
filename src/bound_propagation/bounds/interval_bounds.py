@@ -1,12 +1,7 @@
-"""
-Interval bounds representation.
-
-Simple lower and upper bound tensors for interval arithmetic.
-"""
-
 from __future__ import annotations
 
 import torch
+from plum import dispatch
 
 from .abstract_bounds import AbstractBounds
 
@@ -133,6 +128,38 @@ class IntervalBounds(AbstractBounds):
             Tensor of interval centers
         """
         return (self._lower + self._upper) / 2
+
+    @staticmethod
+    @dispatch
+    def unbounded_like(x: torch.Tensor) -> IntervalBounds:
+        """
+        Create unbounded interval bounds ([-inf, inf]).
+
+        Args:
+            x: Tensor to match shape, device, and dtype
+
+        Returns:
+            Unbounded IntervalBounds
+        """
+        lower = torch.full_like(x, float("-inf"))
+        upper = torch.full_like(x, float("inf"))
+        return IntervalBounds(lower, upper)
+
+    @staticmethod
+    @dispatch
+    def unbounded_like(x: IntervalBounds) -> IntervalBounds:  # noqa: F811
+        """
+        Create unbounded interval bounds ([-inf, inf]) matching another IntervalBounds.
+
+        Args:
+            x: IntervalBounds to match shape, device, and dtype
+
+        Returns:
+            Unbounded IntervalBounds
+        """
+        lower = torch.full_like(x.lower, float("-inf"))
+        upper = torch.full_like(x.upper, float("inf"))
+        return IntervalBounds(lower, upper)
 
     def clone(self) -> IntervalBounds:
         """

@@ -28,7 +28,7 @@ class IBPDivStrategy(ForwardIBPStrategy):
         # Check if divisor can be zero
         if torch.any((y_bounds.lower <= 0) & (y_bounds.upper >= 0)):
             # Division by interval containing zero - return unbounded
-            return IntervalBounds.unbounded(x_bounds.shape)
+            return IntervalBounds.unbounded_like(x_bounds)
 
         # Compute all four quotients
         ll = x_bounds.lower / y_bounds.lower

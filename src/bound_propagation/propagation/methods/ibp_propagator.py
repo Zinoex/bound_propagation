@@ -10,7 +10,7 @@ from collections.abc import Callable
 import torch
 
 from ...bounds import AbstractBounds, IntervalBounds
-from ...ir import Graph, Node, NodeType, OperationType
+from ...ir import Graph, Node, NodeType
 from ...regions import AbstractRegion, MultiInputRegion
 from .base import (
     InputBoundKind,
@@ -105,30 +105,3 @@ class IBPPropagator(MethodPropagator):
                 lower=region.lower.clone(),
                 upper=region.upper.clone(),
             )
-
-    def _create_constant_bounds(self, node: Node) -> IntervalBounds:
-        """Create point bounds for a constant node."""
-        value = node.attributes.get("value")
-        if value is None:
-            shape = node.output_metadata.shape
-            value = torch.zeros(shape)
-
-        if not isinstance(value, torch.Tensor):
-            value = torch.tensor(value)
-
-        return IntervalBounds(lower=value.clone(), upper=value.clone())
-
-    def _compute_operation_bounds(
-        self,
-        node: Node,
-        input_bounds: list[IntervalBounds],
-    ) -> IntervalBounds:
-        """Compute interval bounds for an operation."""
-        signature = classify_input_signature(input_bounds)
-        strategy = self._operation_strategies.get((node.op_type, signature))
-        if strategy is None:
-            raise NotImplementedError(
-                f"IBP not implemented for {node.op_type} with input signature {signature}"
-            )
-
-        return strategy(node, input_bounds)
