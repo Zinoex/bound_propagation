@@ -6,7 +6,7 @@ from typing import cast
 import torch
 
 from ...bounds import AbstractBounds, IntervalBounds
-from ...ir import Graph, Node, NodeType
+from ...ir import Graph, NodeType
 from ...regions import SimpleRegion
 from ..ibp import ForwardIBPStrategy, ForwardIBPStrategyRegistry
 from .base import (
@@ -25,15 +25,38 @@ class IBPPropagator(MethodPropagator):
     def __init__(self, graph: Graph, registry: ForwardIBPStrategyRegistry | None = None):
         super().__init__(graph)
         self._registry = registry or ForwardIBPStrategyRegistry.default_registry()
+        self._ensure_node_kind_annotations()
 
-        self._bound_strategies = self._build_strategy_cache()
+        self._bound_strategies = self._build_strategies()
 
-    def _build_strategy_cache(self) -> dict[int, ForwardIBPStrategy]:
+    def _ensure_node_kind_annotations(self) -> None:
+        """Ensure node-level input/output kind annotations exist for dispatch."""
+        missing_operation_annotation = any(
+            node.is_operation
+            and node.input_signature is None
+            for node in self.graph.nodes
+        )
+        if missing_operation_annotation:
+            raise ValueError(
+                "All OPERATION and OUTPUT nodes must have input_signature annotations for IBP dispatch"
+            )
+
+
+    def _build_strategies(self) -> dict[int, ForwardIBPStrategy]:
         """Build a cache of strategies for each node in the graph."""
         strategy_cache: dict[int, ForwardIBPStrategy] = {}
         for node in self.graph.nodes:
-            if node.node_type == NodeType.OPERATION:
-                strategy_cache[node.id] = self._registry.get_strategy(node.op_type)
+            if node.is_operation:
+                signature = node.input_signature
+                if signature is None:
+                    raise ValueError(
+                        f"Node {node.id} is missing input_signature annotation required for IBP dispatch"
+                    )
+                strategy_cache[node.id] = self._registry.get_strategy(
+                    node.op_type,
+                    signature,
+                )
+
         return strategy_cache
 
     @property
@@ -55,6 +78,11 @@ class IBPPropagator(MethodPropagator):
         Returns:
             List of computed interval bounds, one for each output.
         """
+        if len(input_regions) != len(self.graph.input_nodes):
+            raise ValueError(
+                f"Expected {len(self.graph.input_nodes)} input regions, got {len(input_regions)}"
+            )
+
         # Get nodes in topological order
         nodes = self.graph.topological_order()
 
@@ -63,7 +91,7 @@ class IBPPropagator(MethodPropagator):
 
         # Initialize input bounds from input regions
         for node, region in zip(self.graph.input_nodes, input_regions, strict=True):
-            bounds[node.id] = self._create_input_bounds(node, region)
+            bounds[node.id] = self._create_input_bounds(region)
 
         # Propagate through each node
         for node in nodes:
@@ -74,7 +102,7 @@ class IBPPropagator(MethodPropagator):
                 case NodeType.CONSTANT | NodeType.PARAMETER:
                     bounds[node.id] = node.value
                 case NodeType.OPERATION | NodeType.OUTPUT:
-                    input_bounds = [bounds[inp.id] for inp in node.inputs]
+                    input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number] = [bounds[inp.id] for inp in node.inputs]
                     strategy = self._bound_strategies[node.id]
                     bounds[node.id] = strategy.propagate_forwards(node, input_bounds)
                 case _:
@@ -93,14 +121,12 @@ class IBPPropagator(MethodPropagator):
 
     def _create_input_bounds(
         self,
-        node: Node,
         region: SimpleRegion,
     ) -> IntervalBounds:
         """
         Create interval bounds for an input node from the region.
 
         Args:
-            node: The input node
             region: Input region. Can be HyperRectangle (single input)
                    or MultiInputRegion (multiple inputs).
 

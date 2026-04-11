@@ -6,6 +6,7 @@ computing relaxations for non-linear operations.
 """
 
 from collections.abc import Callable
+from typing import Dict, List
 
 import torch
 

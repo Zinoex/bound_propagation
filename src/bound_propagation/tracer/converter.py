@@ -93,10 +93,44 @@ class GraphConverter:
         else:
             graph.infer_outputs()
 
+        # Annotate graph nodes with constant/abstract input/output kinds.
+        self._annotate_node_bound_kinds(graph)
+
         # Validate graph
         graph.validate()
 
         return graph
+
+    def _annotate_node_bound_kinds(self, graph: Graph) -> None:
+        """Populate per-node input/output kind annotations used for dispatch."""
+        output_kind_by_node_id: dict[int, str] = {}
+
+        for node in graph.topological_order():
+            if node.node_type == NodeType.INPUT:
+                output_kind = "abstract"
+                node.input_kinds = tuple()
+            elif node.node_type in {NodeType.CONSTANT, NodeType.PARAMETER}:
+                output_kind = "constant"
+                node.input_kinds = tuple()
+            else:
+                signature: list[str] = []
+                for input_node in node.inputs:
+                    input_output_kind = output_kind_by_node_id.get(input_node.id)
+                    if input_output_kind is None:
+                        raise ConversionError(
+                            f"Node {node.id} has input node {input_node.id} without inferred output kind"
+                        )
+                    signature.append(input_output_kind)
+
+                node.input_kinds = tuple(signature)
+                output_kind = (
+                    "constant"
+                    if signature and all(kind == "constant" for kind in signature)
+                    else "abstract"
+                )
+
+            node.output_kinds = tuple(output_kind for _ in range(node.num_outputs))
+            output_kind_by_node_id[node.id] = output_kind
 
     def _run_shape_propagation(self, example_inputs: tuple[torch.Tensor, ...]) -> None:
         """

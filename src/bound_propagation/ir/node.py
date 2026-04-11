@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
+import torch
+
 from .metadata import TensorMetadata
 from .operations import OperationType
 
@@ -23,6 +25,13 @@ class NodeType(StrEnum):
     OUTPUT = "output"  # Graph output (may just be alias to operation node)
     CONSTANT = "constant"  # Constant value
     PARAMETER = "parameter"  # Learnable parameter
+
+
+class AbstractValueType(StrEnum):
+    """Abstract value types for dispatching bounding strategies."""
+
+    CONSTANT = "constant"  # Known constant value (e.g., weights, fixed scalars)
+    ABSTRACT = "abstract"  # Abstract bounds (e.g., IntervalBounds, LinearBounds)
 
 
 @dataclass
@@ -52,6 +61,8 @@ class Node:
     inputs: list[Node]
     output_metadata: TensorMetadata | tuple[TensorMetadata, ...]
     attributes: dict[str, Any] = field(default_factory=dict)
+    input_signature: tuple[AbstractValueType, ...] | None = None
+    output_signature: AbstractValueType | None = None
     node_type: NodeType = NodeType.OPERATION
     name: str | None = None
 
@@ -77,13 +88,6 @@ class Node:
         return len(self.inputs)
 
     @property
-    def num_outputs(self) -> int:
-        """Number of outputs (most operations have 1, some have multiple)."""
-        if isinstance(self.output_metadata, tuple):
-            return len(self.output_metadata)
-        return 1
-
-    @property
     def is_input(self) -> bool:
         """Check if this is an input node."""
         return self.node_type == NodeType.INPUT
@@ -94,19 +98,14 @@ class Node:
         return self.node_type == NodeType.OUTPUT
 
     @property
-    def is_constant(self) -> bool:
-        """Check if this is a constant node."""
-        return self.node_type == NodeType.CONSTANT
-
-    @property
-    def is_parameter(self) -> bool:
-        """Check if this is a parameter node."""
-        return self.node_type == NodeType.PARAMETER
+    def is_value(self) -> bool:
+        """Check if this is a constant or parameter node."""
+        return self.node_type in [NodeType.CONSTANT, NodeType.PARAMETER]
 
     @property
     def is_operation(self) -> bool:
         """Check if this is a standard operation node."""
-        return self.node_type == NodeType.OPERATION
+        return self.node_type in [NodeType.OPERATION, NodeType.OUTPUT]
 
     def get_output_metadata(self, output_idx: int = 0) -> TensorMetadata:
         """
@@ -141,6 +140,41 @@ class Node:
     def has_attribute(self, key: str) -> bool:
         """Check if an attribute exists."""
         return key in self.attributes
+
+    @property
+    def value(self) -> torch.Tensor:
+        """Return the tensor value for constant or parameter nodes."""
+        if self.node_type not in {NodeType.CONSTANT, NodeType.PARAMETER}:
+            raise ValueError(
+                f"Node {self.id} ({self.node_type}) does not hold a constant value"
+            )
+
+        if "value" not in self.attributes:
+            raise ValueError(
+                f"Node {self.id} ({self.node_type}) is missing required 'value' attribute"
+            )
+
+        value = self.attributes["value"]
+        if not isinstance(value, torch.Tensor):
+            raise TypeError(
+                f"Node {self.id} ({self.node_type}) has non-tensor value type {type(value)}"
+            )
+
+        return value
+
+    @property
+    def resolved_input_signature(self) -> tuple[AbstractValueType, ...]:
+        """Return node abstract input signature annotation required for dispatch."""
+        if self.input_signature is None:
+            raise ValueError(f"Node {self.id} is missing input_signature annotation")
+        return self.input_signature
+
+    @property
+    def resolved_output_signature(self) -> AbstractValueType:
+        """Return node abstract output signature annotation required for dispatch."""
+        if self.output_signature is None:
+            raise ValueError(f"Node {self.id} is missing output_signature annotation")
+        return self.output_signature
 
     def validate_inputs(
         self,

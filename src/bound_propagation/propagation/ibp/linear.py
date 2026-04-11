@@ -11,25 +11,28 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPLinearStrategy(ForwardIBPStrategy):
+class IBPLinear(ForwardIBPStrategy):
     """IBP strategy for LINEAR operation: y = x @ W^T + b."""
 
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[IntervalBounds],
+        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
     ) -> IntervalBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"LINEAR requires 1 input, got {len(input_bounds)}")
+            raise ValueError(f"linear requires 1 input, got {len(input_bounds)}")
 
-        x_bounds: IntervalBounds = input_bounds[0]
+        x_bounds = input_bounds[0]
+
+        if not isinstance(x_bounds, IntervalBounds):
+            raise TypeError("IBPLinear requires input to be IntervalBounds")
 
         # Get weight and bias from node attributes
         weight = node.attributes.get("weight")
         bias = node.attributes.get("bias")
 
         if weight is None:
-            raise ValueError("LINEAR node missing weight attribute")
+            raise ValueError("linear node missing weight attribute")
 
         # Compute bounds for W^T @ x
         # For each output: lower_i = sum_j (W_ij * x_j) where we choose x_j based on sign of W_ij

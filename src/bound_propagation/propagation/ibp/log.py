@@ -11,23 +11,26 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class IBPLogStrategy(ForwardIBPStrategy):
+class IBPLog(ForwardIBPStrategy):
     """IBP strategy for LOG operation: log([a, b]) = [log(a), log(b)] for a, b > 0."""
 
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[IntervalBounds],
+        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
     ) -> IntervalBounds:
 
         if len(input_bounds) != 1:
-            raise ValueError(f"LOG requires 1 input, got {len(input_bounds)}")
+            raise ValueError(f"log requires 1 input, got {len(input_bounds)}")
 
-        x_bounds: IntervalBounds = input_bounds[0]
+        x_bounds = input_bounds[0]
+
+        if not isinstance(x_bounds, IntervalBounds):
+            raise TypeError("IBPLog requires input to be IntervalBounds")
 
         # Check for non-positive inputs
         if torch.any(x_bounds.lower <= 0):
-            raise ValueError("LOG requires positive input bounds")
+            raise ValueError("log requires positive input bounds")
 
         # Log is monotonic for positive inputs
         lower = torch.log(x_bounds.lower)

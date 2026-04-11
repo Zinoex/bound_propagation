@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import deque
 from collections.abc import Sequence
 
-from .node import Node
+from .node import AbstractValueType, Node
 
 
 class Graph:
@@ -37,7 +37,7 @@ class Graph:
             nodes: Optional sequence of nodes to initialize graph with
         """
         self._nodes: list[Node] = nodes
-        self._input_nodes: list[Node] = []
+        self._input_nodes: list[Node] = [node for node in nodes if node.is_input]
         self._output_nodes: list[Node] = []
         self._next_node_id: int = 0
         self._topological_order_cache: list[Node] | None = None
@@ -75,7 +75,7 @@ class Graph:
 
     def has_node(self, node_id: int) -> bool:
         """Check if a node with the given ID exists."""
-        return node_id in self._nodes
+        return any(node.id == node_id for node in self._nodes)
 
     def mark_outputs(self, output_nodes: Sequence[Node]) -> None:
         """
@@ -87,8 +87,9 @@ class Graph:
         Raises:
             ValueError: If any node is not in the graph
         """
+        node_ids = {node.id for node in self._nodes}
         for node in output_nodes:
-            if node.id not in self._nodes:
+            if node.id not in node_ids:
                 raise ValueError(f"Cannot mark node {node.id} as output: not in graph")
 
         self._output_nodes = list(output_nodes)
@@ -262,6 +263,48 @@ class Graph:
                 queue.extend(next_deps)
 
         return dependents
+
+    def annotate_input_kinds(self):
+        """
+        Annotate nodes with constant/abstract input kind information.
+
+        Inputs are always treated as abstract. Constant/parameter nodes are
+        treated as constant. Operation nodes become constant only if all their
+        inputs are constant.
+
+        Returns:
+            Mapping from node ID to tuple of input kinds for operation-like nodes.
+            Kinds are the strings "constant" or "abstract".
+        """
+        output_signatures: dict[int, AbstractValueType] = {}
+        input_signatures: dict[int, tuple[AbstractValueType, ...]] = {}
+
+        for node in self.topological_order():
+            if node.is_input:
+                output_signature = AbstractValueType.ABSTRACT
+            elif node.is_value:
+                output_signature = AbstractValueType.CONSTANT
+            else:
+                input_kinds: list[AbstractValueType] = []
+                for input_node in node.inputs:
+                    if input_node.id not in output_signatures:
+                        raise ValueError(
+                            f"Input node {input_node.id} for node {node.id} has no inferred kind"
+                        )
+                    input_kinds.append(output_signatures[input_node.id])
+
+                signature = tuple(input_kinds)
+                input_signatures[node.id] = signature
+                node.input_signature = signature
+
+                output_signature = (
+                    AbstractValueType.CONSTANT
+                    if signature and all(kind == AbstractValueType.CONSTANT for kind in signature)
+                    else AbstractValueType.ABSTRACT
+                )
+
+            output_signatures[node.id] = output_signature
+            node.output_signature = output_signature
 
     def __len__(self) -> int:
         """Number of nodes in graph."""

@@ -11,8 +11,9 @@ from typing import TYPE_CHECKING, Generic, TypeVar
 
 import torch
 
+from ..bounds import AbstractBounds
+
 if TYPE_CHECKING:
-    from ..bounds import AbstractBounds
     from ..ir import Node
 
 
@@ -57,7 +58,7 @@ class ForwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[T | torch.Tensor],
+        input_bounds: list[T | torch.Tensor | torch.types.Number],
     ) -> T:
         """
         Compute output bounds for a node.
@@ -108,7 +109,7 @@ class BackwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
         self,
         node: Node,
         output_bounds: T,
-    ) -> list[T]:
+    ) -> list[T | None]:
         """
         Propagate linear bounds backward through this operation to a specific input.
 
