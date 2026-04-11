@@ -15,6 +15,7 @@ import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.regions import HyperRectangle
+
 # from bound_propagation.strategy import BoundPropagator
 from bound_propagation.tracer import BoundPropagationTracer, GraphConverter
 

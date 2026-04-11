@@ -4,17 +4,17 @@ Tests for RelaxationStrategy and RelaxationRegistry.
 
 import pytest
 import torch
-
-from bound_propagation.bounds.interval_bounds import IntervalBounds
-from bound_propagation.ir.metadata import TensorMetadata
-from bound_propagation.ir.node import Node, NodeType
-from bound_propagation.ir.operations import OperationType
 from bound_propagation.relaxations import (
     LinearRelaxation,
     RelaxationRegistry,
     RelaxationStrategy,
     register_relaxation_strategy,
 )
+
+from bound_propagation.bounds.interval_bounds import IntervalBounds
+from bound_propagation.ir.metadata import TensorMetadata
+from bound_propagation.ir.node import Node, NodeType
+from bound_propagation.ir.operations import OperationType
 
 
 @pytest.fixture(autouse=True)

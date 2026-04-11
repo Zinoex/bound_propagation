@@ -17,6 +17,7 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.ir import Graph, Node, NodeType, OperationType, TensorMetadata
 from bound_propagation.regions import HyperRectangle
+
 # from bound_propagation.strategy import BackwardLBPPropagator
 
 

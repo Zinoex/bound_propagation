@@ -12,8 +12,7 @@ from typing import Any, cast
 import torch
 import torch.fx as fx
 
-from bound_propagation.ir import DeviceType, Graph, Node, NodeType, OperationType, TensorMetadata
-
+from ..ir import DeviceType, Graph, Node, NodeType, OperationType, TensorMetadata
 from .op_mapping import get_operation_type
 
 

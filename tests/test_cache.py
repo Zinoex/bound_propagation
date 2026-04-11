@@ -2,11 +2,13 @@
 Tests for bound propagation caching.
 """
 
+# Import relaxations to ensure they're registered
+import bound_propagation.relaxations  # noqa: F401
 import pytest
 import torch
+from bound_propagation.cache import BoundCache, hash_region, region_contains, regions_equal
 
 from bound_propagation.bounds.interval_bounds import IntervalBounds
-from bound_propagation.cache import BoundCache, hash_region, regions_equal, region_contains
 from bound_propagation.ir.graph import Graph
 from bound_propagation.ir.metadata import TensorMetadata
 from bound_propagation.ir.node import Node, NodeType
@@ -17,9 +19,6 @@ from bound_propagation.propagation.methods import (
 )
 from bound_propagation.regions.hyperrectangle import HyperRectangle
 from bound_propagation.regions.multi_input import MultiInputRegion
-
-# Import relaxations to ensure they're registered
-import bound_propagation.relaxations  # noqa: F401
 
 
 class TestRegionHashing:

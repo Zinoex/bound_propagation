@@ -18,11 +18,11 @@ import torch
 class LinearRelaxation:
     """
     Represents a linear relaxation of an operation.
-    
+
     For an operation z = f(x_1, x_2, ..., x_n), the relaxation is:
         z_lower ≥ W_1^L @ x_1 + W_2^L @ x_2 + ... + W_n^L @ x_n + b^L
         z_upper ≤ W_1^U @ x_1 + W_2^U @ x_2 + ... + W_n^U @ x_n + b^U
-    
+
     Attributes:
         coeffs_lower: List of tensors, one per input. Each tensor represents
                       the linear coefficient matrix for that input's contribution
@@ -35,14 +35,14 @@ class LinearRelaxation:
         input_shapes: Optional list of input tensor shapes for validation.
         output_shape: Optional output tensor shape for validation.
     """
-    
+
     coeffs_lower: List[torch.Tensor]
     coeffs_upper: List[torch.Tensor]
     bias_lower: torch.Tensor
     bias_upper: torch.Tensor
     input_shapes: Optional[List[torch.Size]] = None
     output_shape: Optional[torch.Size] = None
-    
+
     def __post_init__(self):
         """Validate the relaxation structure."""
         if len(self.coeffs_lower) != len(self.coeffs_upper):
@@ -50,17 +50,17 @@ class LinearRelaxation:
                 f"Number of lower coefficients ({len(self.coeffs_lower)}) "
                 f"must match upper coefficients ({len(self.coeffs_upper)})"
             )
-        
+
         if len(self.coeffs_lower) == 0:
             raise ValueError("At least one input coefficient is required")
-        
+
         # Check that bias shapes match
         if self.bias_lower.shape != self.bias_upper.shape:
             raise ValueError(
                 f"Bias shapes don't match: lower={self.bias_lower.shape}, "
                 f"upper={self.bias_upper.shape}"
             )
-        
+
         # Validate input shapes if provided
         if self.input_shapes is not None:
             if len(self.input_shapes) != len(self.coeffs_lower):
@@ -68,19 +68,19 @@ class LinearRelaxation:
                     f"Number of input shapes ({len(self.input_shapes)}) "
                     f"must match number of coefficients ({len(self.coeffs_lower)})"
                 )
-    
+
     @property
     def num_inputs(self) -> int:
         """Return the number of inputs this relaxation covers."""
         return len(self.coeffs_lower)
-    
+
     def get_input_coeff(self, input_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Get the coefficient tensors for a specific input.
-        
+
         Args:
             input_idx: Index of the input (0-based).
-        
+
         Returns:
             Tuple of (lower_coeff, upper_coeff) for the specified input.
         """
@@ -89,14 +89,14 @@ class LinearRelaxation:
                 f"Input index {input_idx} out of range [0, {self.num_inputs})"
             )
         return self.coeffs_lower[input_idx], self.coeffs_upper[input_idx]
-    
+
     def to(self, device: torch.device) -> "LinearRelaxation":
         """
         Move all tensors in the relaxation to the specified device.
-        
+
         Args:
             device: Target device.
-        
+
         Returns:
             New LinearRelaxation with tensors on the target device.
         """
@@ -108,18 +108,18 @@ class LinearRelaxation:
             input_shapes=self.input_shapes,
             output_shape=self.output_shape,
         )
-    
+
     def is_exact(self, rtol: float = 1e-5, atol: float = 1e-8) -> bool:
         """
         Check if the relaxation is exact (lower == upper).
-        
+
         This is true for linear operations where the relaxation
         is exact rather than approximate.
-        
+
         Args:
             rtol: Relative tolerance for comparison.
             atol: Absolute tolerance for comparison.
-        
+
         Returns:
             True if lower and upper bounds are equal (within tolerance).
         """
@@ -131,7 +131,7 @@ class LinearRelaxation:
             self.bias_lower, self.bias_upper, rtol=rtol, atol=atol
         )
         return coeffs_match and bias_match
-    
+
     @staticmethod
     def create_identity(
         input_shape: torch.Size,
@@ -140,15 +140,15 @@ class LinearRelaxation:
     ) -> "LinearRelaxation":
         """
         Create an identity relaxation (output = input).
-        
+
         This is useful for operations that are pass-through or
         for initializing relaxations.
-        
+
         Args:
             input_shape: Shape of the input/output tensor.
             device: Device for the tensors.
             dtype: Data type for the tensors.
-        
+
         Returns:
             LinearRelaxation representing the identity function.
         """
@@ -156,7 +156,7 @@ class LinearRelaxation:
         # We use a scalar coefficient that will be broadcast during composition
         coeff = torch.ones(1, device=device, dtype=dtype)
         bias = torch.zeros(input_shape, device=device, dtype=dtype)
-        
+
         return LinearRelaxation(
             coeffs_lower=[coeff],
             coeffs_upper=[coeff],
@@ -165,7 +165,7 @@ class LinearRelaxation:
             input_shapes=[input_shape],
             output_shape=input_shape,
         )
-    
+
     @staticmethod
     def create_diagonal(
         alpha_lower: torch.Tensor,
@@ -175,17 +175,17 @@ class LinearRelaxation:
     ) -> "LinearRelaxation":
         """
         Create a diagonal (element-wise) relaxation from alpha/beta parameters.
-        
+
         For element-wise operations, the relaxation has the form:
             y_i_lower = alpha_lower_i * x_i + beta_lower_i
             y_i_upper = alpha_upper_i * x_i + beta_upper_i
-        
+
         Args:
             alpha_lower: Element-wise slopes for lower bound.
             alpha_upper: Element-wise slopes for upper bound.
             beta_lower: Element-wise biases for lower bound.
             beta_upper: Element-wise biases for upper bound.
-        
+
         Returns:
             LinearRelaxation with diagonal coefficients.
         """

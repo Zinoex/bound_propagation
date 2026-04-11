@@ -14,7 +14,7 @@ from typing import Any
 import torch
 import torch.nn.functional as F
 
-from bound_propagation.ir import OperationType
+from ..ir import OperationType
 
 # Mapping from torch function to OperationType
 TORCH_OP_MAPPING: dict[Callable[..., Any] | str, OperationType] = {

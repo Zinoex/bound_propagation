@@ -2,6 +2,8 @@
 Tests for BackwardLBP and IBP propagators.
 """
 
+# Import relaxations to ensure they're registered
+import bound_propagation.relaxations  # noqa: F401
 import pytest
 import torch
 
@@ -14,10 +16,8 @@ from bound_propagation.propagation.methods import (
     BackwardLBPPropagator,
     IBPPropagator,
 )
+from bound_propagation.propagation.methods.base import InputBoundKind
 from bound_propagation.regions.hyperrectangle import HyperRectangle
-
-# Import relaxations to ensure they're registered
-import bound_propagation.relaxations  # noqa: F401
 
 
 class TestIBPPropagator:
@@ -27,6 +27,61 @@ class TestIBPPropagator:
         """Test creating an IBP propagator."""
         propagator = IBPPropagator()
         assert propagator.method_name == "ibp"
+
+    def test_operation_strategies_are_reused(self):
+        """IBP should create operation strategies once and reuse them."""
+        graph = Graph()
+        metadata = TensorMetadata(shape=(2,), dtype="float32")
+
+        input_node = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.INPUT,
+        )
+        graph.add_node(input_node)
+
+        const_node = Node(
+            id=1,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={"value": torch.tensor([1.0, 2.0])},
+            node_type=NodeType.CONSTANT,
+        )
+        graph.add_node(const_node)
+
+        add_node = Node(
+            id=2,
+            op_type=OperationType.ADD,
+            inputs=[input_node, const_node],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.OPERATION,
+        )
+        graph.add_node(add_node)
+        graph.mark_outputs([add_node])
+
+        propagator = IBPPropagator()
+        dispatch_key = (
+            OperationType.ADD,
+            (InputBoundKind.ABSTRACT, InputBoundKind.CONSTANT),
+        )
+        cached_strategy = propagator._operation_strategies[dispatch_key]
+
+        region = HyperRectangle(
+            lower=torch.tensor([0.0, 0.0]),
+            upper=torch.tensor([1.0, 1.0]),
+        )
+
+        first_bounds = propagator.propagate(graph, region)
+        second_bounds = propagator.propagate(graph, region)
+
+        assert torch.allclose(first_bounds[add_node.id].lower, second_bounds[add_node.id].lower)
+        assert torch.allclose(first_bounds[add_node.id].upper, second_bounds[add_node.id].upper)
+        assert propagator._operation_strategies[dispatch_key] is cached_strategy
     
     def test_input_node_bounds(self):
         """Test bounds creation for input nodes."""
@@ -250,6 +305,54 @@ class TestBackwardLBPPropagator:
         """Test creating a BackwardLBP propagator."""
         propagator = BackwardLBPPropagator()
         assert propagator.method_name == "backward_lbp"
+
+    def test_relaxation_strategies_are_reused_during_propagation(self, monkeypatch):
+        """Backward LBP should resolve relaxation strategies once in the propagator."""
+        graph = Graph()
+        metadata = TensorMetadata(shape=(2,), dtype="float32")
+
+        input_node = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.INPUT,
+        )
+        graph.add_node(input_node)
+
+        relu_node = Node(
+            id=1,
+            op_type=OperationType.RELU,
+            inputs=[input_node],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.OPERATION,
+        )
+        graph.add_node(relu_node)
+        graph.mark_outputs([relu_node])
+
+        propagator = BackwardLBPPropagator()
+        cached_strategy = propagator._relaxation_strategies[OperationType.RELU]
+
+        monkeypatch.setattr(
+            "bound_propagation.relaxations.base.RelaxationRegistry.get",
+            lambda op_type: (_ for _ in ()).throw(AssertionError("registry lookup during propagate")),
+        )
+        monkeypatch.setattr(
+            "bound_propagation.relaxations.base.RelaxationRegistry.has_strategy",
+            lambda op_type: (_ for _ in ()).throw(AssertionError("registry lookup during propagate")),
+        )
+
+        region = HyperRectangle(
+            lower=torch.tensor([-1.0, -1.0]),
+            upper=torch.tensor([1.0, 1.0]),
+        )
+
+        bounds = propagator.propagate(graph, region)
+
+        assert bounds[input_node.id] is not None
+        assert propagator._relaxation_strategies[OperationType.RELU] is cached_strategy
     
     def test_simple_linear_backward(self):
         """Test backward propagation through a simple linear network."""

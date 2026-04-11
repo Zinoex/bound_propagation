@@ -6,14 +6,13 @@ Computes linear relaxations for the ReLU activation function.
 
 import torch
 
-from bound_propagation.bounds.interval_bounds import IntervalBounds
-from bound_propagation.ir.node import Node
-from bound_propagation.ir.operations import OperationType
-from bound_propagation.relaxations.base import (
+from ....bounds import IntervalBounds
+from ....ir import Node, OperationType
+from ..base import (
     RelaxationStrategy,
     register_relaxation_strategy,
 )
-from bound_propagation.relaxations.linear_relaxation import LinearRelaxation
+from ..linear_relaxation import LinearRelaxation
 
 
 def compute_relu_alpha_beta(
@@ -23,18 +22,18 @@ def compute_relu_alpha_beta(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute alpha/beta parameters for ReLU linear relaxation.
-    
+
     For ReLU, the relaxation divides the input space into three regimes:
     1. Negative regime (upper <= 0): output is always 0
     2. Positive regime (lower >= 0): output is identity (y = x)
     3. Crossing regime (lower < 0 < upper): linear approximation
-    
+
     Args:
         lower: Lower bounds of pre-activation
         upper: Upper bounds of pre-activation
         adaptive: Whether to use adaptive ReLU relaxation (chooses slope
                  based on which bound is tighter)
-    
+
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
         where y_lower >= alpha_lower * x + beta_lower
@@ -94,25 +93,25 @@ def compute_relu_alpha_beta(
 class ReluRelaxationStrategy(RelaxationStrategy):
     """
     Relaxation strategy for ReLU activation function.
-    
+
     ReLU is a piecewise linear function: relu(x) = max(0, x)
     The relaxation uses different linear approximations depending on
     whether the input interval is negative, positive, or crossing zero.
     """
-    
+
     def __init__(self, adaptive: bool = False):
         """
         Initialize ReLU relaxation strategy.
-        
+
         Args:
             adaptive: If True, use adaptive slope selection in crossing regime.
         """
         self.adaptive = adaptive
-    
+
     @property
     def supported_op_type(self) -> OperationType:
         return OperationType.RELU
-    
+
     def relax(
         self,
         node: Node,
@@ -120,14 +119,14 @@ class ReluRelaxationStrategy(RelaxationStrategy):
     ) -> LinearRelaxation:
         """
         Compute linear relaxation for ReLU.
-        
+
         Args:
             node: The ReLU operation node.
             interval_inputs: List containing single IntervalBounds for the input.
-        
+
         Returns:
             LinearRelaxation with diagonal coefficients (element-wise slopes).
-        
+
         Raises:
             ValueError: If number of inputs is not 1.
         """
@@ -135,15 +134,15 @@ class ReluRelaxationStrategy(RelaxationStrategy):
             raise ValueError(
                 f"ReLU expects 1 input, got {len(interval_inputs)}"
             )
-        
+
         input_bounds = interval_inputs[0]
         lower, upper = input_bounds.concretize()
-        
+
         # Compute alpha/beta parameters
         alpha_lower, beta_lower, alpha_upper, beta_upper = compute_relu_alpha_beta(
             lower, upper, adaptive=self.adaptive
         )
-        
+
         # Create diagonal relaxation
         return LinearRelaxation.create_diagonal(
             alpha_lower=alpha_lower,

@@ -6,15 +6,14 @@ of operations given concrete interval bounds. Relaxations are shared between
 forward and backward LBP propagation methods.
 """
 
-from bound_propagation.relaxations.base import (
+# Import submodules to trigger auto-registration of strategies
+from . import bilinear, elementwise
+from .base import (
     RelaxationRegistry,
     RelaxationStrategy,
     register_relaxation_strategy,
 )
-from bound_propagation.relaxations.linear_relaxation import LinearRelaxation
-
-# Import submodules to trigger auto-registration of strategies
-from bound_propagation.relaxations import bilinear, elementwise
+from .linear_relaxation import LinearRelaxation
 
 __all__ = [
     "LinearRelaxation",

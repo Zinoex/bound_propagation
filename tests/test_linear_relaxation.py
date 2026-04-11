@@ -4,7 +4,6 @@ Tests for LinearRelaxation data structure.
 
 import pytest
 import torch
-
 from bound_propagation.relaxations import LinearRelaxation
 
 

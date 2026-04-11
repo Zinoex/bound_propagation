@@ -8,13 +8,13 @@ Import this module to auto-register all element-wise relaxation strategies.
 """
 
 # Import to trigger auto-registration
-from bound_propagation.relaxations.elementwise.exp import ExpRelaxationStrategy
-from bound_propagation.relaxations.elementwise.log import LogRelaxationStrategy
-from bound_propagation.relaxations.elementwise.relu import ReluRelaxationStrategy
-from bound_propagation.relaxations.elementwise.sigmoid import (
+from .exp import ExpRelaxationStrategy
+from .log import LogRelaxationStrategy
+from .relu import ReluRelaxationStrategy
+from .sigmoid import (
     SigmoidRelaxationStrategy,
 )
-from bound_propagation.relaxations.elementwise.tanh import TanhRelaxationStrategy
+from .tanh import TanhRelaxationStrategy
 
 __all__ = [
     "ReluRelaxationStrategy",

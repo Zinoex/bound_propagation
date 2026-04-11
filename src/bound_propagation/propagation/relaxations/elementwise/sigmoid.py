@@ -6,14 +6,13 @@ Computes linear relaxations for the sigmoid activation function.
 
 import torch
 
-from bound_propagation.bounds.interval_bounds import IntervalBounds
-from bound_propagation.ir.node import Node
-from bound_propagation.ir.operations import OperationType
-from bound_propagation.relaxations.base import (
+from ....bounds import IntervalBounds
+from ....ir import Node, OperationType
+from ..base import (
     RelaxationStrategy,
     register_relaxation_strategy,
 )
-from bound_propagation.relaxations.linear_relaxation import LinearRelaxation
+from ..linear_relaxation import LinearRelaxation
 
 
 def compute_sigmoid_alpha_beta(
@@ -22,17 +21,17 @@ def compute_sigmoid_alpha_beta(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute alpha/beta parameters for sigmoid linear relaxation.
-    
+
     Sigmoid is a smooth S-shaped function: sigmoid(x) = 1 / (1 + exp(-x))
     The relaxation uses different strategies depending on the regime:
     - Negative regime: secant line for upper, tangent at midpoint for lower
     - Positive regime: tangent at midpoint for upper, secant line for lower
     - Crossing regime: tangent lines for bounds
-    
+
     Args:
         lower: Lower bounds of pre-activation
         upper: Upper bounds of pre-activation
-    
+
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
     """
@@ -107,7 +106,7 @@ def compute_sigmoid_alpha_beta(
         alpha_upper[crossing] = lower_prime[crossing]
         beta_upper[crossing] = lower_act[crossing] - lower_prime[crossing] * lower[crossing]
 
-        # Lower: tangent at upper bound  
+        # Lower: tangent at upper bound
         alpha_lower[crossing] = upper_prime[crossing]
         beta_lower[crossing] = lower_act[crossing] - upper_prime[crossing] * lower[crossing]
 
@@ -118,15 +117,15 @@ def compute_sigmoid_alpha_beta(
 class SigmoidRelaxationStrategy(RelaxationStrategy):
     """
     Relaxation strategy for sigmoid activation function.
-    
+
     Sigmoid is a smooth, monotonic function that maps inputs to (0, 1).
     The relaxation uses tangent and secant lines depending on the regime.
     """
-    
+
     @property
     def supported_op_type(self) -> OperationType:
         return OperationType.SIGMOID
-    
+
     def relax(
         self,
         node: Node,
@@ -134,14 +133,14 @@ class SigmoidRelaxationStrategy(RelaxationStrategy):
     ) -> LinearRelaxation:
         """
         Compute linear relaxation for sigmoid.
-        
+
         Args:
             node: The sigmoid operation node.
             interval_inputs: List containing single IntervalBounds for the input.
-        
+
         Returns:
             LinearRelaxation with diagonal coefficients (element-wise slopes).
-        
+
         Raises:
             ValueError: If number of inputs is not 1.
         """
@@ -149,15 +148,15 @@ class SigmoidRelaxationStrategy(RelaxationStrategy):
             raise ValueError(
                 f"Sigmoid expects 1 input, got {len(interval_inputs)}"
             )
-        
+
         input_bounds = interval_inputs[0]
         lower, upper = input_bounds.concretize()
-        
+
         # Compute alpha/beta parameters
         alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(
             lower, upper
         )
-        
+
         # Create diagonal relaxation
         return LinearRelaxation.create_diagonal(
             alpha_lower=alpha_lower,

@@ -2,6 +2,8 @@
 Tests for method propagators.
 """
 
+# Import relaxations to trigger auto-registration
+import bound_propagation.relaxations  # noqa: F401
 import pytest
 import torch
 
@@ -11,9 +13,6 @@ from bound_propagation.ir.node import Node, NodeType
 from bound_propagation.ir.operations import OperationType
 from bound_propagation.propagation.methods import ForwardLBPPropagator
 from bound_propagation.regions.hyperrectangle import HyperRectangle
-
-# Import relaxations to trigger auto-registration
-import bound_propagation.relaxations  # noqa: F401
 
 
 class TestForwardLBPPropagator:
@@ -99,6 +98,54 @@ class TestForwardLBPPropagator:
         # ReLU output should have bounds
         relu_bounds = bounds[relu_node.id]
         assert relu_bounds is not None
+
+    def test_relaxation_strategies_are_reused_during_propagation(self, monkeypatch):
+        """Forward LBP should resolve relaxation strategies once in the propagator."""
+        graph = Graph()
+        metadata = TensorMetadata(shape=(2,), dtype="float32")
+
+        input_node = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.INPUT,
+        )
+        graph.add_node(input_node)
+
+        relu_node = Node(
+            id=1,
+            op_type=OperationType.RELU,
+            inputs=[input_node],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.OPERATION,
+        )
+        graph.add_node(relu_node)
+        graph.mark_outputs([relu_node])
+
+        propagator = ForwardLBPPropagator()
+        cached_strategy = propagator._relaxation_strategies[OperationType.RELU]
+
+        monkeypatch.setattr(
+            "bound_propagation.relaxations.base.RelaxationRegistry.get",
+            lambda op_type: (_ for _ in ()).throw(AssertionError("registry lookup during propagate")),
+        )
+        monkeypatch.setattr(
+            "bound_propagation.relaxations.base.RelaxationRegistry.has_strategy",
+            lambda op_type: (_ for _ in ()).throw(AssertionError("registry lookup during propagate")),
+        )
+
+        region = HyperRectangle(
+            lower=torch.tensor([-1.0, -1.0]),
+            upper=torch.tensor([1.0, 1.0]),
+        )
+
+        bounds = propagator.propagate(graph, region)
+
+        assert bounds[relu_node.id] is not None
+        assert propagator._relaxation_strategies[OperationType.RELU] is cached_strategy
     
     def test_constant_node(self):
         """Test bounds for constant nodes."""

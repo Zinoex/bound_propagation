@@ -6,60 +6,90 @@ propagator class that orchestrates bound propagation through the graph.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from enum import StrEnum
+from itertools import product
 
-from bound_propagation.bounds.abstract_bounds import AbstractBounds
-from bound_propagation.cache.bound_cache import BoundCache
-from bound_propagation.ir.graph import Graph
-from bound_propagation.regions.abstract import AbstractRegion
+import torch
+
+from ...bounds import AbstractBounds, IntervalBounds, LinearBounds
+from ...ir import Graph
+from ...regions import AbstractRegion
+
+
+class InputBoundKind(StrEnum):
+    """Coarse input classification used for strategy dispatch."""
+
+    CONSTANT = "constant"
+    ABSTRACT = "abstract"
+
+
+def classify_input_bound(bound: AbstractBounds) -> InputBoundKind:
+    """Classify a bound as constant or abstract for dispatch purposes."""
+    if isinstance(bound, IntervalBounds):
+        if torch.allclose(bound.lower, bound.upper):
+            return InputBoundKind.CONSTANT
+        return InputBoundKind.ABSTRACT
+
+    if isinstance(bound, LinearBounds):
+        if bound.linear_lower is None and bound.linear_upper is None:
+            return InputBoundKind.CONSTANT
+        return InputBoundKind.ABSTRACT
+
+    return InputBoundKind.ABSTRACT
+
+
+def classify_input_signature(
+    bounds: list[AbstractBounds],
+) -> tuple[InputBoundKind, ...]:
+    """Build a dispatch signature for a list of input bounds."""
+    return tuple(classify_input_bound(bound) for bound in bounds)
+
+
+def enumerate_input_signatures(arity: int) -> list[tuple[InputBoundKind, ...]]:
+    """Enumerate all constant/abstract signatures for a given arity."""
+    if arity < 0:
+        raise ValueError(f"arity must be non-negative, got {arity}")
+
+    return [
+        tuple(signature)
+        for signature in product(
+            (InputBoundKind.CONSTANT, InputBoundKind.ABSTRACT),
+            repeat=arity,
+        )
+    ]
 
 
 class MethodPropagator(ABC):
     """
     Abstract base class for method-specific bound propagators.
-    
+
     A MethodPropagator implements a specific bound propagation algorithm
     (e.g., IBP, Forward LBP, Backward LBP) by traversing the computation
     graph and computing bounds at each node.
-    
+
     Subclasses implement the propagate() method with their specific logic.
-    
-    Attributes:
-        cache: Optional cache for storing computed bounds
     """
-    
-    def __init__(self, *, cache: Optional[BoundCache] = None) -> None:
-        """
-        Initialize propagator.
-        
-        Args:
-            cache: Optional cache for storing/retrieving bounds. If None,
-                  no caching is performed.
-        """
-        self.cache = cache
-    
+
     @abstractmethod
     def propagate(
         self,
         graph: Graph,
         region: AbstractRegion,
-        start_node: Optional[int] = None,
-    ) -> Dict[int, AbstractBounds]:
+    ) -> list[AbstractBounds]:
         """
         Propagate bounds through the computation graph.
-        
+
         Args:
             graph: The computation graph to propagate through.
             region: Input region (e.g., HyperRectangle) defining bounds on inputs.
             start_node: Optional node ID to start propagation from. If None,
                        propagates to all output nodes.
-        
+
         Returns:
-            Dictionary mapping node IDs to their computed bounds.
-            At minimum, includes bounds for all output nodes.
+            List of computed bounds, one for each output node.
         """
         pass
-    
+
     @property
     @abstractmethod
     def method_name(self) -> str:

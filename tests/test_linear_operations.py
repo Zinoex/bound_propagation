@@ -2,6 +2,8 @@
 Tests for exact propagation of linear operations.
 """
 
+# Import relaxations to ensure they're registered
+import bound_propagation.relaxations  # noqa: F401
 import pytest
 import torch
 
@@ -12,9 +14,6 @@ from bound_propagation.ir.node import Node, NodeType
 from bound_propagation.ir.operations import OperationType
 from bound_propagation.propagation.methods import ForwardLBPPropagator
 from bound_propagation.regions.hyperrectangle import HyperRectangle
-
-# Import relaxations to ensure they're registered
-import bound_propagation.relaxations  # noqa: F401
 
 
 class TestLinearOperations:
@@ -194,6 +193,120 @@ class TestLinearOperations:
         
         assert torch.allclose(result.lower, expected_lower, atol=1e-6)
         assert torch.allclose(result.upper, expected_upper, atol=1e-6)
+
+    def test_mul_with_constant_uses_exact_dispatch(self, monkeypatch):
+        """Constant MUL should use exact dispatch instead of bilinear relaxation."""
+        graph = Graph()
+        metadata = TensorMetadata(shape=(2,), dtype="float32")
+
+        input_node = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.INPUT,
+        )
+        graph.add_node(input_node)
+
+        constant_node = Node(
+            id=1,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={"value": torch.tensor([2.0, -3.0])},
+            node_type=NodeType.CONSTANT,
+        )
+        graph.add_node(constant_node)
+
+        mul_node = Node(
+            id=2,
+            op_type=OperationType.MUL,
+            inputs=[input_node, constant_node],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.OPERATION,
+        )
+        graph.add_node(mul_node)
+        graph.mark_outputs([mul_node])
+
+        propagator = ForwardLBPPropagator()
+        monkeypatch.setattr(
+            propagator._relaxation_strategies[OperationType.MUL],
+            "relax",
+            lambda node, interval_inputs: (_ for _ in ()).throw(
+                AssertionError("constant MUL should not use bilinear relaxation")
+            ),
+        )
+
+        region = HyperRectangle(
+            lower=torch.tensor([-1.0, -1.0]),
+            upper=torch.tensor([2.0, 2.0]),
+        )
+
+        bounds = propagator.propagate(graph, region)
+        result = bounds[mul_node.id]
+
+        assert isinstance(result, IntervalBounds)
+        assert torch.allclose(result.lower, torch.tensor([-2.0, -6.0]))
+        assert torch.allclose(result.upper, torch.tensor([4.0, 3.0]))
+
+    def test_div_by_constant_uses_exact_dispatch(self, monkeypatch):
+        """Constant DIV should use exact dispatch instead of bilinear relaxation."""
+        graph = Graph()
+        metadata = TensorMetadata(shape=(2,), dtype="float32")
+
+        input_node = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.INPUT,
+        )
+        graph.add_node(input_node)
+
+        constant_node = Node(
+            id=1,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=metadata,
+            attributes={"value": torch.tensor([2.0, -2.0])},
+            node_type=NodeType.CONSTANT,
+        )
+        graph.add_node(constant_node)
+
+        div_node = Node(
+            id=2,
+            op_type=OperationType.DIV,
+            inputs=[input_node, constant_node],
+            output_metadata=metadata,
+            attributes={},
+            node_type=NodeType.OPERATION,
+        )
+        graph.add_node(div_node)
+        graph.mark_outputs([div_node])
+
+        propagator = ForwardLBPPropagator()
+        monkeypatch.setattr(
+            propagator._relaxation_strategies[OperationType.DIV],
+            "relax",
+            lambda node, interval_inputs: (_ for _ in ()).throw(
+                AssertionError("constant DIV should not use bilinear relaxation")
+            ),
+        )
+
+        region = HyperRectangle(
+            lower=torch.tensor([2.0, 2.0]),
+            upper=torch.tensor([4.0, 4.0]),
+        )
+
+        bounds = propagator.propagate(graph, region)
+        result = bounds[div_node.id]
+
+        assert isinstance(result, IntervalBounds)
+        assert torch.allclose(result.lower, torch.tensor([1.0, -2.0]))
+        assert torch.allclose(result.upper, torch.tensor([2.0, -1.0]))
 
 
 class TestInputIdsTracking:

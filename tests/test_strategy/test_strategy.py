@@ -14,6 +14,7 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.ir import OperationType
 from bound_propagation.regions import HyperRectangle
+
 # from bound_propagation.strategy import (
 #     BoundingStrategy,
 #     StrategyConfig,

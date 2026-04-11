@@ -2,6 +2,8 @@
 Tests for multi-input and multi-output support in propagators.
 """
 
+# Import relaxations to ensure they're registered
+import bound_propagation.relaxations  # noqa: F401
 import pytest
 import torch
 
@@ -16,9 +18,6 @@ from bound_propagation.propagation.methods import (
 )
 from bound_propagation.regions.hyperrectangle import HyperRectangle
 from bound_propagation.regions.multi_input import MultiInputRegion
-
-# Import relaxations to ensure they're registered
-import bound_propagation.relaxations  # noqa: F401
 
 
 class TestMultiInputRegion:

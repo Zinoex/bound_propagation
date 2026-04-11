@@ -8,8 +8,8 @@ Import this module to auto-register all bilinear relaxation strategies.
 """
 
 # Import to trigger auto-registration
-from bound_propagation.relaxations.bilinear.div import DivRelaxationStrategy
-from bound_propagation.relaxations.bilinear.mul import MulRelaxationStrategy
+from .div import DivRelaxationStrategy
+from .mul import MulRelaxationStrategy
 
 __all__ = [
     "MulRelaxationStrategy",
