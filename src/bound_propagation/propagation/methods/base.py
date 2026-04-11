@@ -6,6 +6,7 @@ propagator class that orchestrates bound propagation through the graph.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Sequence
 from enum import StrEnum
 from itertools import product
 
@@ -13,7 +14,7 @@ import torch
 
 from ...bounds import AbstractBounds, IntervalBounds, LinearBounds
 from ...ir import Graph
-from ...regions import AbstractRegion
+from ...regions import SimpleRegion
 
 
 class InputBoundKind(StrEnum):
@@ -68,22 +69,28 @@ class MethodPropagator(ABC):
     graph and computing bounds at each node.
 
     Subclasses implement the propagate() method with their specific logic.
+
+    Attributes:
+        graph: The computation graph being propagated through.
     """
+    def __init__(self, graph: Graph):
+        self._graph = graph
+
+    @property
+    def graph(self) -> Graph:
+        """Access the computation graph being propagated through."""
+        return self._graph
 
     @abstractmethod
     def propagate(
         self,
-        graph: Graph,
-        region: AbstractRegion,
-    ) -> list[AbstractBounds]:
+        input_regions: list[SimpleRegion],
+    ) -> Sequence[AbstractBounds]:
         """
         Propagate bounds through the computation graph.
 
         Args:
-            graph: The computation graph to propagate through.
-            region: Input region (e.g., HyperRectangle) defining bounds on inputs.
-            start_node: Optional node ID to start propagation from. If None,
-                       propagates to all output nodes.
+            input_regions: List of input regions (e.g., HyperRectangles) defining bounds on inputs.
 
         Returns:
             List of computed bounds, one for each output node.

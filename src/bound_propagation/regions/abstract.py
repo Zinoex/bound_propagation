@@ -98,3 +98,19 @@ class AbstractRegion(ABC):
             inf_{x in region} direction^T x
         """
         pass
+
+
+class SimpleRegion(AbstractRegion, ABC):
+    """
+    A simple region that is not the composition of multiple input regions.
+    """
+
+    @abstractmethod
+    def aabb(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Get axis-aligned bounding box (AABB) of the region.
+
+        Returns:
+            Tuple of (lower_bounds, upper_bounds) defining the AABB
+        """
+        ...

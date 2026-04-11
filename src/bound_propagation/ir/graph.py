@@ -29,28 +29,24 @@ class Graph:
         output_nodes: Nodes that are graph outputs
     """
 
-    def __init__(self, nodes: Sequence[Node] | None = None) -> None:
+    def __init__(self, nodes: list[Node]) -> None:
         """
         Initialize a graph from a sequence of nodes.
 
         Args:
             nodes: Optional sequence of nodes to initialize graph with
         """
-        self._nodes: dict[int, Node] = {}
+        self._nodes: list[Node] = nodes
         self._input_nodes: list[Node] = []
         self._output_nodes: list[Node] = []
         self._next_node_id: int = 0
         self._topological_order_cache: list[Node] | None = None
         self._reverse_topological_order_cache: list[Node] | None = None
 
-        if nodes:
-            for node in nodes:
-                self.add_node(node)
-
     @property
     def nodes(self) -> list[Node]:
         """All nodes in the graph, ordered by ID."""
-        return sorted(self._nodes.values(), key=lambda n: n.id)
+        return self._nodes
 
     @property
     def input_nodes(self) -> list[Node]:
@@ -76,50 +72,6 @@ class Graph:
     def num_outputs(self) -> int:
         """Number of output nodes."""
         return len(self._output_nodes)
-
-    def add_node(self, node: Node) -> None:
-        """
-        Add a node to the graph.
-
-        Args:
-            node: Node to add
-
-        Raises:
-            ValueError: If node ID already exists in graph
-        """
-        if node.id in self._nodes:
-            raise ValueError(f"Node with ID {node.id} already exists in graph")
-
-        self._nodes[node.id] = node
-
-        # Update input/output tracking
-        if node.is_input:
-            self._input_nodes.append(node)
-
-        # Output nodes are marked explicitly (or inferred later)
-        # We'll need to call mark_outputs() after graph construction
-
-        # Track next ID for new nodes
-        if node.id >= self._next_node_id:
-            self._next_node_id = node.id + 1
-
-        # Invalidate cached orderings
-        self._invalidate_caches()
-
-    def get_node(self, node_id: int) -> Node:
-        """
-        Get a node by its ID.
-
-        Args:
-            node_id: ID of the node to retrieve
-
-        Returns:
-            The node with the specified ID
-
-        Raises:
-            KeyError: If node ID not found
-        """
-        return self._nodes[node_id]
 
     def has_node(self, node_id: int) -> bool:
         """Check if a node with the given ID exists."""
@@ -148,14 +100,14 @@ class Graph:
         An output node is one whose result is not used by any other node.
         """
         # Count how many times each node is used as input
-        input_counts: dict[int, int] = dict.fromkeys(self._nodes, 0)
+        input_counts: dict[int, int] = {node.id: 0 for node in self._nodes}
 
-        for node in self._nodes.values():
+        for node in self._nodes:
             for input_node in node.inputs:
                 input_counts[input_node.id] += 1
 
         # Nodes with zero downstream users are outputs
-        self._output_nodes = [node for node in self._nodes.values() if input_counts[node.id] == 0 and not node.is_input]
+        self._output_nodes = [node for node in self._nodes if input_counts[node.id] == 0 and not node.is_input]
 
     def topological_order(self) -> list[Node]:
         """
@@ -173,13 +125,13 @@ class Graph:
             return self._topological_order_cache
 
         # Build in-degree map
-        in_degree: dict[int, int] = dict.fromkeys(self._nodes, 0)
-        for node in self._nodes.values():
+        in_degree: dict[int, int] = {node.id: 0 for node in self._nodes}
+        for node in self._nodes:
             for _input_node in node.inputs:
                 in_degree[node.id] += 1
 
         # Kahn's algorithm
-        queue = deque([node for node in self._nodes.values() if in_degree[node.id] == 0])
+        queue = deque([node for node in self._nodes if in_degree[node.id] == 0])
         result: list[Node] = []
 
         while queue:
@@ -187,7 +139,7 @@ class Graph:
             result.append(node)
 
             # Find all nodes that use this node as input
-            for dependent_node in self._nodes.values():
+            for dependent_node in self._nodes:
                 # Count how many times this node appears in dependent's inputs
                 count = dependent_node.inputs.count(node)
                 if count > 0:
@@ -241,21 +193,18 @@ class Graph:
                 raise ValueError("Graph has no output nodes")
 
         # Validate all nodes
-        for node in self._nodes.values():
+        for node in self._nodes:
             # Input nodes should have no inputs
             if node.is_input and node.inputs:
                 raise ValueError(f"Input node {node.id} has inputs")
 
             # Check all input nodes are in graph
             for input_node in node.inputs:
-                if input_node.id not in self._nodes:
+                if input_node.id not in [n.id for n in self._nodes]:
                     raise ValueError(f"Node {node.id} references input node {input_node.id} which is not in graph")
 
         # Check for cycles by computing topological order
-        try:
-            self.topological_order()
-        except ValueError as e:
-            raise ValueError(f"Graph validation failed: {e}") from e
+        self.topological_order()
 
     def get_dependencies(self, node: Node, recursive: bool = False) -> set[Node]:
         """
@@ -295,7 +244,7 @@ class Graph:
             Set of dependent nodes
         """
         # Find direct dependents
-        direct_dependents = {n for n in self._nodes.values() if node in n.inputs}
+        direct_dependents = {n for n in self._nodes if node in n.inputs}
 
         if not recursive:
             return direct_dependents
@@ -309,15 +258,10 @@ class Graph:
             if dep_node not in dependents:
                 dependents.add(dep_node)
                 # Find nodes that depend on dep_node
-                next_deps = {n for n in self._nodes.values() if dep_node in n.inputs}
+                next_deps = {n for n in self._nodes if dep_node in n.inputs}
                 queue.extend(next_deps)
 
         return dependents
-
-    def _invalidate_caches(self) -> None:
-        """Invalidate cached computations (topological order, etc.)."""
-        self._topological_order_cache = None
-        self._reverse_topological_order_cache = None
 
     def __len__(self) -> int:
         """Number of nodes in graph."""
@@ -326,8 +270,8 @@ class Graph:
     def __contains__(self, node_or_id: Node | int) -> bool:
         """Check if node (or node ID) is in graph."""
         if isinstance(node_or_id, Node):
-            return node_or_id.id in self._nodes
-        return node_or_id in self._nodes
+            return node_or_id in self._nodes
+        return node_or_id in [node.id for node in self._nodes]
 
     def __iter__(self):
         """Iterate over nodes in topological order."""

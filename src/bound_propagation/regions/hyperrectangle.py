@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import torch
 
-from .abstract import AbstractRegion
+from .abstract import SimpleRegion
 
 
-class HyperRectangle(AbstractRegion):
+class HyperRectangle(SimpleRegion):
     """
     Hyperrectangle input region.
 
@@ -97,6 +97,17 @@ class HyperRectangle(AbstractRegion):
             inf_{x in hyperrectangle} direction^T x
         """
         return torch.where(direction >= 0, self.lower, self.upper) * direction
+
+    def aabb(self) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Get axis-aligned bounding box (AABB) of the hyperrectangle.
+
+        For a hyperrectangle, the AABB is just the lower and upper bounds.
+
+        Returns:
+            Tuple of (lower_bounds, upper_bounds) defining the AABB
+        """
+        return self.lower, self.upper
 
     @property
     def width(self) -> torch.Tensor:

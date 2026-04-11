@@ -9,6 +9,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Generic, TypeVar
 
+import torch
+
 if TYPE_CHECKING:
     from ..bounds import AbstractBounds
     from ..ir import Node
@@ -55,7 +57,7 @@ class ForwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[T],
+        input_bounds: list[T | torch.Tensor],
     ) -> T:
         """
         Compute output bounds for a node.
