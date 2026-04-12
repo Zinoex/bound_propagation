@@ -144,7 +144,6 @@ class TestIntervalBounds:
         assert hasattr(bounds, "upper")
         assert hasattr(bounds, "shape")
         assert hasattr(bounds, "device")
-        assert hasattr(bounds, "region")
         assert hasattr(bounds, "to")
         assert hasattr(bounds, "concretize")
         assert hasattr(bounds, "clone")

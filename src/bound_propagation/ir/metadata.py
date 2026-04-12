@@ -6,15 +6,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from enum import StrEnum
 
-
-class DeviceType(StrEnum):
-    """Device type for tensor computation."""
-
-    CPU = "cpu"
-    CUDA = "cuda"
-    MPS = "mps"  # Apple Silicon
+import torch
 
 
 @dataclass(frozen=True)
@@ -27,14 +20,14 @@ class TensorMetadata:
     Attributes:
         shape: Tuple representing tensor dimensions. Can include -1 for unknown dimensions.
                Follows PyTorch convention: (batch, *features) or (batch, channels, *spatial)
-        dtype: String representation of data type (e.g., "float32", "float64", "int64")
-        device: Device type where tensor resides
+        dtype: String representation of data type (e.g., "torch.float32", "torch.float64", "torch.int64")
+        device: Device where tensor resides
         requires_grad: Whether tensor requires gradient computation
     """
 
     shape: tuple[int, ...]
-    dtype: str = "float32"
-    device: DeviceType = DeviceType.CPU
+    dtype: str | torch.dtype = "float32"
+    device: torch.Device = torch.device("cpu")
     requires_grad: bool = False
 
     def __post_init__(self) -> None:
@@ -49,6 +42,11 @@ class TensorMetadata:
                 raise TypeError(f"Shape dimensions must be integers, got {type(dim)}")
             if dim < -1:
                 raise ValueError(f"Shape dimensions must be >= -1, got {dim}")
+
+        object.__setattr__(self, "dtype", self._normalize_dtype(self.dtype))
+
+        if self.device is None:
+            raise TypeError("device must be a str, int, or torch.device, got None")
 
     @property
     def ndim(self) -> int:
@@ -68,26 +66,6 @@ class TensorMetadata:
         for dim in self.shape:
             result *= dim
         return result
-
-    def is_compatible_with(self, other: TensorMetadata) -> bool:
-        """
-        Check if this metadata is compatible with another for operations.
-
-        Compatible means:
-        - Same number of dimensions OR broadcasting is possible
-        - dtypes are compatible (both floating point or both integer)
-        - Device types match
-        """
-        if self.device != other.device:
-            return False
-
-        # Check dtype compatibility (simplified)
-        self_is_float = "float" in self.dtype
-        other_is_float = "float" in other.dtype
-
-        # Check shape compatibility (broadcasting rules)
-        # For now, simplified check - could be extended
-        return self_is_float == other_is_float
 
     def broadcast_with(self, other: TensorMetadata) -> TensorMetadata:
         """
@@ -133,35 +111,43 @@ class TensorMetadata:
         )
 
     @staticmethod
-    def _promote_dtype(dtype1: str, dtype2: str) -> str:
+    def _normalize_dtype(dtype: str | torch.dtype) -> str:
+        """Normalize supported dtype values to the project's string form."""
+        if isinstance(dtype, torch.dtype):
+            return str(dtype).removeprefix("torch.")
+
+        if not isinstance(dtype, str):
+            raise TypeError(f"dtype must be a str or torch.dtype, got {type(dtype)}")
+
+        normalized_dtype = dtype.removeprefix("torch.")
+        if not hasattr(torch, normalized_dtype):
+            raise ValueError(f"Unsupported dtype: {dtype!r}")
+
+        torch_dtype = getattr(torch, normalized_dtype)
+        if not isinstance(torch_dtype, torch.dtype):
+            raise ValueError(f"Unsupported dtype: {dtype!r}")
+
+        return normalized_dtype
+
+    @staticmethod
+    def _to_torch_dtype(dtype: str | torch.dtype) -> torch.dtype:
+        """Convert a supported dtype value to torch.dtype."""
+        normalized_dtype = TensorMetadata._normalize_dtype(dtype)
+        torch_dtype = getattr(torch, normalized_dtype)
+        if not isinstance(torch_dtype, torch.dtype):
+            raise ValueError(f"Unsupported dtype: {dtype!r}")
+        return torch_dtype
+
+    @staticmethod
+    def _promote_dtype(dtype1: str | torch.dtype, dtype2: str | torch.dtype) -> str:
         """
-        Promote dtypes to higher precision following PyTorch rules.
-        Simplified version - could be extended.
+        Promote dtypes using PyTorch's promotion rules.
         """
-        # Priority order for floating point
-        float_priority = ["float64", "float32", "float16"]
-        int_priority = ["int64", "int32", "int16", "int8"]
-
-        # If one is float and one is int, promote to float
-        dtype1_is_float = "float" in dtype1
-        dtype2_is_float = "float" in dtype2
-
-        if dtype1_is_float != dtype2_is_float:
-            # Mixed float/int - promote to float
-            return dtype1 if dtype1_is_float else dtype2
-
-        # Both float or both int - choose higher precision
-        if dtype1_is_float:
-            priority = float_priority
-        else:
-            priority = int_priority
-
-        for dtype in priority:
-            if dtype in (dtype1, dtype2):
-                return dtype
-
-        # Default fallback
-        return dtype1
+        promoted_dtype = torch.promote_types(
+            TensorMetadata._to_torch_dtype(dtype1),
+            TensorMetadata._to_torch_dtype(dtype2),
+        )
+        return TensorMetadata._normalize_dtype(promoted_dtype)
 
     def with_shape(self, new_shape: Sequence[int]) -> TensorMetadata:
         """Create a new metadata instance with a different shape."""
@@ -184,4 +170,4 @@ class TensorMetadata:
     def __str__(self) -> str:
         """Human-readable string representation."""
         grad_str = ", requires_grad=True" if self.requires_grad else ""
-        return f"TensorMetadata(shape={self.shape}, dtype={self.dtype}, device={self.device.value}{grad_str})"
+        return f"TensorMetadata(shape={self.shape}, dtype={self.dtype}, device={self.device}{grad_str})"

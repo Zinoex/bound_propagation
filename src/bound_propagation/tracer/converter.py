@@ -145,7 +145,7 @@ class GraphConverter:
         # Convert device string to torch.device
         device = torch.device(param.device)
 
-        metadata = TensorMetadata(shape=tuple(param.shape), dtype=str(param.dtype).replace("torch.", ""), device=device)
+        metadata = TensorMetadata(shape=tuple(param.shape), dtype=str(param.dtype).removeprefix("torch."), device=device)
 
         ir_node = Node(
             id=self._next_node_id(),
@@ -239,7 +239,7 @@ class GraphConverter:
 
         # Extract shape, dtype, device
         shape = tuple(tensor_meta.shape)
-        dtype = str(tensor_meta.dtype)
+        dtype = str(tensor_meta.dtype).removeprefix("torch.")
 
         # Handle device - may be missing or have different name
         if hasattr(tensor_meta, "device"):

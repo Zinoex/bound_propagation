@@ -4,7 +4,7 @@ Tests for computation graph nodes.
 
 import pytest
 
-from bound_propagation.ir import DeviceType, Node, NodeType, OperationType, TensorMetadata
+from bound_propagation.ir import Node, NodeType, OperationType, TensorMetadata
 
 
 class TestNodeType:
@@ -30,7 +30,7 @@ class TestNode:
     @pytest.fixture
     def sample_metadata(self):
         """Sample tensor metadata for testing."""
-        return TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
+        return TensorMetadata(shape=(2, 3), dtype="float32")
 
     @pytest.fixture
     def input_node(self, sample_metadata):

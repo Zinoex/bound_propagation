@@ -1,10 +1,10 @@
 """
 Tests for tensor metadata classes.
 """
-
 from dataclasses import FrozenInstanceError
 
 import pytest
+import torch
 
 from bound_propagation.ir import TensorMetadata
 
@@ -17,7 +17,7 @@ class TestTensorMetadata:
         metadata = TensorMetadata(shape=(2, 3, 4))
         assert metadata.shape == (2, 3, 4)
         assert metadata.dtype == "float32"
-        assert metadata.device == "cpu"
+        assert metadata.device == torch.device("cpu")
         assert metadata.requires_grad is False
 
     def test_with_all_parameters(self):
@@ -74,39 +74,26 @@ class TestTensorMetadata:
         metadata = TensorMetadata(shape=(-1, 3, 4))
         assert metadata.shape == (-1, 3, 4)
 
+    def test_dtype_normalization_accepts_torch_prefix(self):
+        """Test that torch-prefixed dtype strings are normalized."""
+        metadata = TensorMetadata(shape=(2, 3), dtype="torch.float32")
+        assert metadata.dtype == "float32"
+
+    def test_dtype_normalization_accepts_torch_dtype(self):
+        """Test that torch.dtype values are normalized."""
+        metadata = TensorMetadata(shape=(2, 3), dtype=torch.float64)
+        assert metadata.dtype == "float64"
+
+    def test_dtype_validation_rejects_unknown_dtype(self):
+        """Test that unsupported dtype values raise ValueError."""
+        with pytest.raises(ValueError, match="Unsupported dtype"):
+            TensorMetadata(shape=(2, 3), dtype="not_a_dtype")
+
     def test_frozen_dataclass(self):
         """Test that TensorMetadata is immutable."""
         metadata = TensorMetadata(shape=(2, 3))
         with pytest.raises(FrozenInstanceError):
             metadata.shape = (4, 5)  # ty:ignore[invalid-assignment]
-
-    def test_is_compatible_with_same_device(self):
-        """Test compatibility check with matching devices."""
-        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device="cpu")
-        assert meta1.is_compatible_with(meta2)
-
-    def test_is_compatible_with_different_device(self):
-        """Test compatibility check with different devices."""
-        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float32", device="cuda")
-        assert not meta1.is_compatible_with(meta2)
-
-    def test_is_compatible_with_matching_dtypes(self):
-        """Test compatibility check with matching dtype categories."""
-        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device="cpu")
-        assert meta1.is_compatible_with(meta2)
-
-        meta3 = TensorMetadata(shape=(2, 3), dtype="int32", device="cpu")
-        meta4 = TensorMetadata(shape=(2, 3), dtype="int64", device="cpu")
-        assert meta3.is_compatible_with(meta4)
-
-    def test_is_compatible_with_mismatched_dtype_categories(self):
-        """Test compatibility check with different dtype categories."""
-        meta_float = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
-        meta_int = TensorMetadata(shape=(2, 3), dtype="int32", device="cpu")
-        assert not meta_float.is_compatible_with(meta_int)
 
     def test_broadcast_with_same_shape(self):
         """Test broadcasting with identical shapes."""
@@ -160,6 +147,13 @@ class TestTensorMetadata:
         assert result.device == "cuda"
         # requires_grad should be True if either is True
         assert result.requires_grad is True
+
+    def test_broadcast_uses_pytorch_dtype_promotion(self):
+        """Test that broadcasting delegates dtype promotion to PyTorch."""
+        meta1 = TensorMetadata(shape=(2, 1), dtype="int32")
+        meta2 = TensorMetadata(shape=(2, 3), dtype="float32")
+        result = meta1.broadcast_with(meta2)
+        assert result.dtype == "float32"
 
     def test_batch_dimension_inference(self):
         """Test common batch dimension patterns."""
