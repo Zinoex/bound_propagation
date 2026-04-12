@@ -27,32 +27,39 @@ class IBPSin(ForwardIBPStrategy):
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPSin requires input to be IntervalBounds")
 
-        # Analyze regimes (by the batch) based on the period of sine
-        # Lower:
-        # - if it includes a trough (2k+1)*pi/2, then the minimum is -1
-        # - else if it includes a peak 2k*pi, then the minimum is minimum of sin(lower) and sin(upper)
-
-        # Upper:
-        # - if it includes a peak 2k*pi, then the maximum is 1
-        # - else if it includes a trough (2k+1)*pi/2, then the maximum is maximum of sin(lower) and sin(upper)
+        # Analyze regimes based on the period of sine
+        # Peak (max = 1) occurs at π/2 + 2k*π for integer k
+        # Trough (min = -1) occurs at 3π/2 + 2k*π for integer k
+        #
+        # An interval [a, b] contains a peak if: floor((b - π/2) / 2π) >= ceil((a - π/2) / 2π)
+        # An interval [a, b] contains a trough if: floor((b - 3π/2) / 2π) >= ceil((a - 3π/2) / 2π)
 
         two_pi = 2 * torch.pi
-        lower_mod = torch.remainder(x_bounds.lower, two_pi)
-        upper_mod = torch.remainder(x_bounds.upper, two_pi)
-        includes_peak = (lower_mod <= 0) & (upper_mod >= 0) | (lower_mod <= two_pi) & (upper_mod >= two_pi)
-        includes_trough = (lower_mod <= torch.pi / 2) & (upper_mod >= torch.pi / 2)
+        pi = torch.pi
+        pi_over_2 = pi / 2
+        three_pi_over_2 = 3 * pi / 2
+
+        # Check for peak: does [a, b] contain any π/2 + 2k*π?
+        includes_peak = torch.floor((x_bounds.upper - pi_over_2) / two_pi) >= torch.ceil(
+            (x_bounds.lower - pi_over_2) / two_pi
+        )
+
+        # Check for trough: does [a, b] contain any 3π/2 + 2k*π?
+        includes_trough = torch.floor((x_bounds.upper - three_pi_over_2) / two_pi) >= torch.ceil(
+            (x_bounds.lower - three_pi_over_2) / two_pi
+        )
 
         sin_lower = torch.sin(x_bounds.lower)
         sin_upper = torch.sin(x_bounds.upper)
 
         lower = torch.where(
             includes_trough,
-            torch.tensor(-1.0, device=x_bounds.lower.device),
+            torch.tensor(-1.0, device=x_bounds.lower.device, dtype=x_bounds.lower.dtype),
             torch.min(sin_lower, sin_upper),
         )
         upper = torch.where(
             includes_peak,
-            torch.tensor(1.0, device=x_bounds.lower.device),
+            torch.tensor(1.0, device=x_bounds.upper.device, dtype=x_bounds.upper.dtype),
             torch.max(sin_lower, sin_upper),
         )
 

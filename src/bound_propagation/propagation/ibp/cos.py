@@ -27,32 +27,37 @@ class IBPCos(ForwardIBPStrategy):
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPCos requires input to be IntervalBounds")
 
-        # Analyze regimes (by the batch) based on the period of cosine
-        # Lower:
-        # - if it includes a trough (2k+1)*pi, then the minimum is -1
-        # - else if it includes a peak 2k*pi, then the minimum is minimum of cos(lower) and cos(upper)
-
-        # Upper:
-        # - if it includes a peak 2k*pi, then the maximum is 1
-        # - else if it includes a trough (2k+1)*pi, then the maximum is maximum of cos(lower) and cos(upper)
+        # Analyze regimes based on the period of cosine
+        # Peak occurs at 2k*π for integer k (where cos = 1)
+        # Trough occurs at (2k+1)*π for integer k (where cos = -1)
+        #
+        # An interval [a, b] contains a peak if: floor(b / 2π) >= ceil(a / 2π)
+        # An interval [a, b] contains a trough if: floor((b - π) / 2π) >= ceil((a - π) / 2π)
 
         two_pi = 2 * torch.pi
-        lower_mod = torch.remainder(x_bounds.lower, two_pi)
-        upper_mod = torch.remainder(x_bounds.upper, two_pi)
-        includes_peak = (lower_mod <= 0) & (upper_mod >= 0) | (lower_mod <= two_pi) & (upper_mod >= two_pi)
-        includes_trough = (lower_mod <= torch.pi) & (upper_mod >= torch.pi)
+        pi = torch.pi
+
+        # Check for peak: does [a, b] contain any 2k*π?
+        # This is true when floor(b / 2π) >= ceil(a / 2π)
+        includes_peak = torch.floor(x_bounds.upper / two_pi) >= torch.ceil(x_bounds.lower / two_pi)
+
+        # Check for trough: does [a, b] contain any (2k+1)*π?
+        # Shift by π and check: floor((b - π) / 2π) >= ceil((a - π) / 2π)
+        includes_trough = torch.floor((x_bounds.upper - pi) / two_pi) >= torch.ceil(
+            (x_bounds.lower - pi) / two_pi
+        )
 
         cos_lower = torch.cos(x_bounds.lower)
         cos_upper = torch.cos(x_bounds.upper)
 
         lower = torch.where(
             includes_trough,
-            torch.tensor(-1.0, device=x_bounds.lower.device),
+            torch.tensor(-1.0, device=x_bounds.lower.device, dtype=x_bounds.lower.dtype),
             torch.min(cos_lower, cos_upper),
         )
         upper = torch.where(
             includes_peak,
-            torch.tensor(1.0, device=x_bounds.lower.device),
+            torch.tensor(1.0, device=x_bounds.upper.device, dtype=x_bounds.upper.dtype),
             torch.max(cos_lower, cos_upper),
         )
 
