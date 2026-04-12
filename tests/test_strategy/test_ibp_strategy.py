@@ -6,16 +6,11 @@ See tests/test_backward_and_ibp.py for new IBP tests.
 """
 
 import pytest
-
-pytestmark = pytest.mark.skip(reason="Old strategy architecture deprecated")
-
 import torch
 
 from bound_propagation.bounds import IntervalBounds, LinearBounds
 from bound_propagation.ir import Node, OperationType, TensorMetadata
 from bound_propagation.regions import HyperRectangle
-
-# from bound_propagation.strategy import StrategyConfig, get_global_registry
 
 
 def create_test_node(op_type: OperationType, **attrs) -> Node:

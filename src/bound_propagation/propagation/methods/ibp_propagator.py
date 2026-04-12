@@ -10,11 +10,11 @@ from ...ir import Graph, NodeType
 from ...regions import SimpleRegion
 from ..ibp import ForwardIBPStrategy, ForwardIBPStrategyRegistry
 from .base import (
-    MethodPropagator,
+    BoundPropagator,
 )
 
 
-class IBPPropagator(MethodPropagator):
+class IBPPropagator(BoundPropagator):
     """
     Interval Bound Propagation (IBP).
 

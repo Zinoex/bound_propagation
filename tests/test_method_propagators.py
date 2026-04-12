@@ -2,15 +2,9 @@
 Tests for method propagators.
 """
 
-# Import relaxations to trigger auto-registration
 import torch
 
-import bound_propagation.propagation.relaxations  # noqa: F401
-from bound_propagation.ir.graph import Graph
-from bound_propagation.ir.metadata import TensorMetadata
-from bound_propagation.ir.node import Node, NodeType
-from bound_propagation.ir.operations import OperationType
-from bound_propagation.propagation.methods import ForwardLBPPropagator
+from bound_propagation.ir import Graph, Node, NodeType, OperationType, TensorMetadata
 from bound_propagation.regions.hyperrectangle import HyperRectangle
 
 
