@@ -52,9 +52,7 @@ class DivRelaxationStrategy(RelaxationStrategy):
             ValueError: If number of inputs is not 2 or if divisor contains zero.
         """
         if len(interval_inputs) != 2:
-            raise ValueError(
-                f"Div expects 2 inputs, got {len(interval_inputs)}"
-            )
+            raise ValueError(f"Div expects 2 inputs, got {len(interval_inputs)}")
 
         x_bounds = interval_inputs[0]
         y_bounds = interval_inputs[1]
@@ -64,9 +62,7 @@ class DivRelaxationStrategy(RelaxationStrategy):
 
         # Check for division by zero
         if torch.any((y_l <= 0) & (y_u >= 0)):
-            raise ValueError(
-                "Division relaxation requires divisor bounds that don't contain zero"
-            )
+            raise ValueError("Division relaxation requires divisor bounds that don't contain zero")
 
         # Compute the four corners
         corner_ll = x_l / y_l

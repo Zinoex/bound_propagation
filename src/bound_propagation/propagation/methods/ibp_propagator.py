@@ -22,6 +22,7 @@ class IBPPropagator(MethodPropagator):
     Uses interval arithmetic rules for all operations. Faster than LBP but
     less precise because it doesn't track linear dependencies.
     """
+
     def __init__(self, graph: Graph, registry: ForwardIBPStrategyRegistry | None = None):
         super().__init__(graph)
         self._registry = registry or ForwardIBPStrategyRegistry.default_registry()
@@ -31,16 +32,9 @@ class IBPPropagator(MethodPropagator):
 
     def _ensure_node_kind_annotations(self) -> None:
         """Ensure node-level input/output kind annotations exist for dispatch."""
-        missing_operation_annotation = any(
-            node.is_operation
-            and node.input_signature is None
-            for node in self.graph.nodes
-        )
+        missing_operation_annotation = any(node.is_operation and node.input_signature is None for node in self.graph.nodes)
         if missing_operation_annotation:
-            raise ValueError(
-                "All OPERATION and OUTPUT nodes must have input_signature annotations for IBP dispatch"
-            )
-
+            raise ValueError("All OPERATION and OUTPUT nodes must have input_signature annotations for IBP dispatch")
 
     def _build_strategies(self) -> dict[int, ForwardIBPStrategy]:
         """Build a cache of strategies for each node in the graph."""
@@ -49,9 +43,7 @@ class IBPPropagator(MethodPropagator):
             if node.is_operation:
                 signature = node.input_signature
                 if signature is None:
-                    raise ValueError(
-                        f"Node {node.id} is missing input_signature annotation required for IBP dispatch"
-                    )
+                    raise ValueError(f"Node {node.id} is missing input_signature annotation required for IBP dispatch")
                 strategy_cache[node.id] = self._registry.get_strategy(
                     node.op_type,
                     signature,
@@ -79,9 +71,7 @@ class IBPPropagator(MethodPropagator):
             List of computed interval bounds, one for each output.
         """
         if len(input_regions) != len(self.graph.input_nodes):
-            raise ValueError(
-                f"Expected {len(self.graph.input_nodes)} input regions, got {len(input_regions)}"
-            )
+            raise ValueError(f"Expected {len(self.graph.input_nodes)} input regions, got {len(input_regions)}")
 
         # Get nodes in topological order
         nodes = self.graph.topological_order()

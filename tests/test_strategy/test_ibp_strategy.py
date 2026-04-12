@@ -24,9 +24,7 @@ def create_test_node(op_type: OperationType, **attrs) -> Node:
         id=0,
         op_type=op_type,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         attributes=attrs,
         name=op_type.name.lower(),
     )
@@ -256,9 +254,7 @@ class TestIBPLinear:
         weight = torch.tensor([[1.0, 2.0], [3.0, 4.0], [-1.0, -2.0]])
         bias = torch.tensor([0.5, 1.0, 2.0])
 
-        node = create_test_node(
-            OperationType.LINEAR, weight=weight, bias=bias
-        )
+        node = create_test_node(OperationType.LINEAR, weight=weight, bias=bias)
         config = StrategyConfig()
 
         result = strategy.compute_bounds(node, [x_bounds], config)
@@ -281,9 +277,7 @@ class TestIBPLinear:
 
         weight = torch.tensor([[1.0, -1.0]])
 
-        node = create_test_node(
-            OperationType.LINEAR, weight=weight, bias=None
-        )
+        node = create_test_node(OperationType.LINEAR, weight=weight, bias=None)
         config = StrategyConfig()
 
         result = strategy.compute_bounds(node, [x_bounds], config)
@@ -353,9 +347,7 @@ class TestIBPError:
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
 
         # Create LinearBounds instead of IntervalBounds
-        linear_bounds = LinearBounds.from_interval_bounds(
-            IntervalBounds(region, torch.tensor([0.0]), torch.tensor([1.0]))
-        )
+        linear_bounds = LinearBounds.from_interval_bounds(IntervalBounds(region, torch.tensor([0.0]), torch.tensor([1.0])))
 
         node = create_test_node(OperationType.ADD)
         config = StrategyConfig()

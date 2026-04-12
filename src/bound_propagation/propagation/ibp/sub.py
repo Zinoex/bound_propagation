@@ -34,6 +34,7 @@ class IBPSub(ForwardIBPStrategy):
 
         return IntervalBounds(lower, upper)
 
+
 class IBPSubConstantRight(ForwardIBPStrategy):
     """IBP strategy for SUB when the second input is constant."""
 

@@ -145,7 +145,6 @@ class LinearBounds(AbstractBounds):
             bias_upper=self.bias_upper[item],
         )
 
-
     def concretize(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Concretize bounds to interval bounds.

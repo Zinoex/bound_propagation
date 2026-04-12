@@ -56,6 +56,4 @@ class BackwardLBPTanhStrategy(ForwardBoundingStrategy):
         alpha_lower, beta_lower, alpha_upper, beta_upper = compute_tanh_alpha_beta(lower, upper)
 
         # Apply the linear relaxation to the bounds using backward composition
-        return apply_linear_relaxation_backward(
-            bounds, alpha_lower, beta_lower, alpha_upper, beta_upper
-        )
+        return apply_linear_relaxation_backward(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

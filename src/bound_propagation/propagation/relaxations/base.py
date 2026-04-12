@@ -7,7 +7,6 @@ between forward and backward LBP propagation.
 """
 
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional
 
 from ...bounds import IntervalBounds
 from ...ir import Node, OperationType
@@ -29,7 +28,7 @@ class RelaxationStrategy(ABC):
     def relax(
         self,
         node: Node,
-        interval_inputs: List[IntervalBounds],
+        interval_inputs: list[IntervalBounds],
     ) -> LinearRelaxation:
         """
         Compute a linear relaxation for this operation.
@@ -67,7 +66,7 @@ class RelaxationRegistry:
     Strategies are registered at module import time and retrieved when needed.
     """
 
-    _registry: Dict[OperationType, RelaxationStrategy] = {}
+    _registry: dict[OperationType, RelaxationStrategy] = {}
 
     @classmethod
     def register(
@@ -86,15 +85,11 @@ class RelaxationRegistry:
             ValueError: If a strategy is already registered for this operation.
         """
         if op_type in cls._registry:
-            raise ValueError(
-                f"Relaxation strategy already registered for {op_type}. "
-                f"Existing: {cls._registry[op_type].__class__.__name__}, "
-                f"New: {strategy.__class__.__name__}"
-            )
+            raise ValueError(f"Relaxation strategy already registered for {op_type}. Existing: {cls._registry[op_type].__class__.__name__}, New: {strategy.__class__.__name__}")
         cls._registry[op_type] = strategy
 
     @classmethod
-    def get(cls, op_type: OperationType) -> Optional[RelaxationStrategy]:
+    def get(cls, op_type: OperationType) -> RelaxationStrategy | None:
         """
         Get the relaxation strategy for an operation type.
 
@@ -125,7 +120,7 @@ class RelaxationRegistry:
         cls._registry.clear()
 
     @classmethod
-    def list_registered_ops(cls) -> List[OperationType]:
+    def list_registered_ops(cls) -> list[OperationType]:
         """Return a list of all operation types with registered strategies."""
         return list(cls._registry.keys())
 

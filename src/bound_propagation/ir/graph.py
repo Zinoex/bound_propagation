@@ -288,20 +288,14 @@ class Graph:
                 input_kinds: list[AbstractValueType] = []
                 for input_node in node.inputs:
                     if input_node.id not in output_signatures:
-                        raise ValueError(
-                            f"Input node {input_node.id} for node {node.id} has no inferred kind"
-                        )
+                        raise ValueError(f"Input node {input_node.id} for node {node.id} has no inferred kind")
                     input_kinds.append(output_signatures[input_node.id])
 
                 signature = tuple(input_kinds)
                 input_signatures[node.id] = signature
                 node.input_signature = signature
 
-                output_signature = (
-                    AbstractValueType.CONSTANT
-                    if signature and all(kind == AbstractValueType.CONSTANT for kind in signature)
-                    else AbstractValueType.ABSTRACT
-                )
+                output_signature = AbstractValueType.CONSTANT if signature and all(kind == AbstractValueType.CONSTANT for kind in signature) else AbstractValueType.ABSTRACT
 
             output_signatures[node.id] = output_signature
             node.output_signature = output_signature

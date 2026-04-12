@@ -57,9 +57,7 @@ class MulRelaxationStrategy(RelaxationStrategy):
             ValueError: If number of inputs is not 2.
         """
         if len(interval_inputs) != 2:
-            raise ValueError(
-                f"Mul expects 2 inputs, got {len(interval_inputs)}"
-            )
+            raise ValueError(f"Mul expects 2 inputs, got {len(interval_inputs)}")
 
         x_bounds = interval_inputs[0]
         y_bounds = interval_inputs[1]

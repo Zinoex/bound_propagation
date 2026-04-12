@@ -72,16 +72,10 @@ class MultiInputRegion(AbstractRegion):
 
     def to(self, device: str | torch.device) -> MultiInputRegion:
         """Move all regions to a device."""
-        return MultiInputRegion({
-            input_id: region.to(device)
-            for input_id, region in self.regions.items()
-        })
+        return MultiInputRegion({input_id: region.to(device) for input_id, region in self.regions.items()})
 
     def __getitem__(self, item) -> MultiInputRegion:
-        return MultiInputRegion({
-            input_id: region[item]
-            for input_id, region in self.regions.items()
-        })
+        return MultiInputRegion({input_id: region[item] for input_id, region in self.regions.items()})
 
     def get(self, input_id: int) -> HyperRectangle | None:
         """

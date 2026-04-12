@@ -78,8 +78,6 @@ class ForwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
         pass
 
 
-
-
 class BackwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
     """
     Abstract base class for backward bound propagation strategies.

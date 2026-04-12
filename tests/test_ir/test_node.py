@@ -81,23 +81,23 @@ class TestNode:
         constant_node = Node(id=2, op_type=OperationType.CONSTANT, inputs=[], output_metadata=input_node.output_metadata, node_type=NodeType.CONSTANT)
         assert constant_node.is_input is False
 
-    def test_is_constant_property(self):
-        """Test is_constant property."""
+    def test_is_value_property_for_constant(self):
+        """Test is_value property for constant nodes."""
         metadata = TensorMetadata(shape=(2, 3))
         constant_node = Node(id=0, op_type=OperationType.CONSTANT, inputs=[], output_metadata=metadata, node_type=NodeType.CONSTANT)
-        assert constant_node.is_constant is True
+        assert constant_node.is_value is True
 
         input_node = Node(id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=metadata, node_type=NodeType.INPUT)
-        assert input_node.is_constant is False
+        assert input_node.is_value is False
 
-    def test_is_parameter_property(self):
-        """Test is_parameter property."""
+    def test_is_value_property_for_parameter(self):
+        """Test is_value property for parameter nodes."""
         metadata = TensorMetadata(shape=(2, 3))
         param_node = Node(id=0, op_type=OperationType.PARAMETER, inputs=[], output_metadata=metadata, node_type=NodeType.PARAMETER)
-        assert param_node.is_parameter is True
+        assert param_node.is_value is True
 
         input_node = Node(id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=metadata, node_type=NodeType.INPUT)
-        assert input_node.is_parameter is False
+        assert input_node.is_value is False
 
     def test_is_operation_property(self, input_node, operation_node):
         """Test is_operation property."""

@@ -122,10 +122,7 @@ class Node:
         """
         if isinstance(self.output_metadata, tuple):
             if output_idx < 0 or output_idx >= len(self.output_metadata):
-                raise IndexError(
-                    f"Node {self.id} has {len(self.output_metadata)} outputs, "
-                    f"but index {output_idx} requested"
-                )
+                raise IndexError(f"Node {self.id} has {len(self.output_metadata)} outputs, but index {output_idx} requested")
             metadata = self.output_metadata[output_idx]
             assert isinstance(metadata, TensorMetadata)  # type: ignore[misc]
             return metadata
@@ -145,20 +142,14 @@ class Node:
     def value(self) -> torch.Tensor:
         """Return the tensor value for constant or parameter nodes."""
         if self.node_type not in {NodeType.CONSTANT, NodeType.PARAMETER}:
-            raise ValueError(
-                f"Node {self.id} ({self.node_type}) does not hold a constant value"
-            )
+            raise ValueError(f"Node {self.id} ({self.node_type}) does not hold a constant value")
 
         if "value" not in self.attributes:
-            raise ValueError(
-                f"Node {self.id} ({self.node_type}) is missing required 'value' attribute"
-            )
+            raise ValueError(f"Node {self.id} ({self.node_type}) is missing required 'value' attribute")
 
         value = self.attributes["value"]
         if not isinstance(value, torch.Tensor):
-            raise TypeError(
-                f"Node {self.id} ({self.node_type}) has non-tensor value type {type(value)}"
-            )
+            raise TypeError(f"Node {self.id} ({self.node_type}) has non-tensor value type {type(value)}")
 
         return value
 
@@ -196,22 +187,13 @@ class Node:
         num_inputs = self.num_inputs
 
         if expected_count is not None and num_inputs != expected_count:
-            raise ValueError(
-                f"Node {self.id} ({self.op_type}) expects {expected_count} inputs, "
-                f"got {num_inputs}"
-            )
+            raise ValueError(f"Node {self.id} ({self.op_type}) expects {expected_count} inputs, got {num_inputs}")
 
         if min_count is not None and num_inputs < min_count:
-            raise ValueError(
-                f"Node {self.id} ({self.op_type}) expects at least {min_count} inputs, "
-                f"got {num_inputs}"
-            )
+            raise ValueError(f"Node {self.id} ({self.op_type}) expects at least {min_count} inputs, got {num_inputs}")
 
         if max_count is not None and num_inputs > max_count:
-            raise ValueError(
-                f"Node {self.id} ({self.op_type}) expects at most {max_count} inputs, "
-                f"got {num_inputs}"
-            )
+            raise ValueError(f"Node {self.id} ({self.op_type}) expects at most {max_count} inputs, got {num_inputs}")
 
     def __str__(self) -> str:
         """Human-readable string representation."""

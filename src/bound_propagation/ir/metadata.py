@@ -120,10 +120,7 @@ class TensorMetadata:
             elif d2 == 1:
                 result_shape.append(d1)
             else:
-                raise ValueError(
-                    f"Cannot broadcast shapes {self.shape} and {other.shape}: "
-                    f"dimension mismatch at position with {d1} and {d2}"
-                )
+                raise ValueError(f"Cannot broadcast shapes {self.shape} and {other.shape}: dimension mismatch at position with {d1} and {d2}")
 
         # Determine result dtype (promote to higher precision)
         result_dtype = self._promote_dtype(self.dtype, other.dtype)

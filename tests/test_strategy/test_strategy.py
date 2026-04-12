@@ -25,12 +25,15 @@ from bound_propagation.regions import HyperRectangle
 #     register_strategy,
 # )
 
+
 # Stub classes to prevent import errors (file is skipped anyway)
 class BoundingStrategy:
     pass
 
+
 class StrategyConfig:
     pass
+
 
 class StrategyRegistry:
     pass

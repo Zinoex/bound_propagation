@@ -6,7 +6,6 @@ computing relaxations for non-linear operations.
 """
 
 from collections.abc import Callable
-from typing import Dict, List, Optional
 
 import torch
 
@@ -39,7 +38,7 @@ class ForwardLBPPropagator(MethodPropagator):
         super().__init__(cache=cache)
         self._exact_operation_strategies: dict[
             tuple[OperationType, tuple[InputBoundKind, ...]],
-            Callable[[Node, List[AbstractBounds]], AbstractBounds],
+            Callable[[Node, list[AbstractBounds]], AbstractBounds],
         ] = {}
         self._register_exact_strategy_for_all_signatures(OperationType.ADD, 2, self._propagate_add_exact_strategy)
         self._register_exact_strategy_for_all_signatures(OperationType.SUB, 2, self._propagate_sub_exact_strategy)
@@ -90,7 +89,7 @@ class ForwardLBPPropagator(MethodPropagator):
         self,
         op_type: OperationType,
         signature: tuple[InputBoundKind, ...],
-        strategy: Callable[[Node, List[AbstractBounds]], AbstractBounds],
+        strategy: Callable[[Node, list[AbstractBounds]], AbstractBounds],
     ) -> None:
         self._exact_operation_strategies[(op_type, signature)] = strategy
 
@@ -98,7 +97,7 @@ class ForwardLBPPropagator(MethodPropagator):
         self,
         op_type: OperationType,
         arity: int,
-        strategy: Callable[[Node, List[AbstractBounds]], AbstractBounds],
+        strategy: Callable[[Node, list[AbstractBounds]], AbstractBounds],
     ) -> None:
         for signature in enumerate_input_signatures(arity):
             self._register_exact_strategy(op_type, signature, strategy)
@@ -111,8 +110,8 @@ class ForwardLBPPropagator(MethodPropagator):
         self,
         graph: Graph,
         region: AbstractRegion,
-        start_node: Optional[int] = None,
-    ) -> Dict[int, AbstractBounds]:
+        start_node: int | None = None,
+    ) -> dict[int, AbstractBounds]:
         """
         Propagate linear bounds forward through the graph.
 
@@ -125,7 +124,7 @@ class ForwardLBPPropagator(MethodPropagator):
             Dictionary mapping node IDs to their linear bounds.
         """
         # Dictionary to store bounds for each node
-        bounds: Dict[int, AbstractBounds] = {}
+        bounds: dict[int, AbstractBounds] = {}
 
         # Process nodes in topological order
         for node in graph.topological_order():
@@ -149,9 +148,7 @@ class ForwardLBPPropagator(MethodPropagator):
             else:
                 # Operation node: compute bounds
                 input_bounds = [bounds[inp.id] for inp in node.inputs]
-                bounds[node.id] = self._compute_operation_bounds(
-                    node, input_bounds, region
-                )
+                bounds[node.id] = self._compute_operation_bounds(node, input_bounds, region)
 
             # Store in cache
             if self.cache is not None:
@@ -181,10 +178,7 @@ class ForwardLBPPropagator(MethodPropagator):
         # Handle multi-input regions by looking up the node's region
         if isinstance(region, MultiInputRegion):
             if node.id not in region:
-                raise ValueError(
-                    f"Input node {node.id} not found in MultiInputRegion. "
-                    f"Available inputs: {list(region.keys())}"
-                )
+                raise ValueError(f"Input node {node.id} not found in MultiInputRegion. Available inputs: {list(region.keys())}")
             node_region = region[node.id]
             return IntervalBounds(
                 lower=node_region.lower.clone(),
@@ -224,7 +218,7 @@ class ForwardLBPPropagator(MethodPropagator):
     def _compute_operation_bounds(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         region: AbstractRegion,
     ) -> AbstractBounds:
         """
@@ -270,16 +264,14 @@ class ForwardLBPPropagator(MethodPropagator):
         for op_type in RelaxationRegistry.list_registered_ops():
             strategy = RelaxationRegistry.get(op_type)
             if strategy is None:
-                raise ValueError(
-                    f"Relaxation registry reported {op_type} as registered but returned None"
-                )
+                raise ValueError(f"Relaxation registry reported {op_type} as registered but returned None")
             strategies[op_type] = strategy
         return strategies
 
     def _compute_with_relaxation(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         region: AbstractRegion,
         strategy: RelaxationStrategy,
     ) -> AbstractBounds:
@@ -324,21 +316,13 @@ class ForwardLBPPropagator(MethodPropagator):
             # For lower bound: minimize coeff_l * x
             # If coeff_l >= 0: minimum is coeff_l * lower
             # If coeff_l < 0: minimum is coeff_l * upper
-            lower_contrib = torch.where(
-                coeff_l >= 0,
-                coeff_l * interval_input.lower,
-                coeff_l * interval_input.upper
-            )
+            lower_contrib = torch.where(coeff_l >= 0, coeff_l * interval_input.lower, coeff_l * interval_input.upper)
             output_lower_contrib.append(lower_contrib)
 
             # For upper bound: maximize coeff_u * x
             # If coeff_u >= 0: maximum is coeff_u * upper
             # If coeff_u < 0: maximum is coeff_u * lower
-            upper_contrib = torch.where(
-                coeff_u >= 0,
-                coeff_u * interval_input.upper,
-                coeff_u * interval_input.lower
-            )
+            upper_contrib = torch.where(coeff_u >= 0, coeff_u * interval_input.upper, coeff_u * interval_input.lower)
             output_upper_contrib.append(upper_contrib)
 
         # Combine contributions
@@ -350,7 +334,7 @@ class ForwardLBPPropagator(MethodPropagator):
     def _compute_interval_fallback(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
     ) -> IntervalBounds:
         """
         Exact propagation for linear operations using interval arithmetic.
@@ -374,9 +358,7 @@ class ForwardLBPPropagator(MethodPropagator):
         signature = classify_input_signature(input_bounds)
         exact_strategy = self._exact_operation_strategies.get((node.op_type, signature))
         if exact_strategy is None:
-            raise NotImplementedError(
-                f"Exact propagation not implemented for {node.op_type} with input signature {signature}"
-            )
+            raise NotImplementedError(f"Exact propagation not implemented for {node.op_type} with input signature {signature}")
 
         result = exact_strategy(node, input_bounds)
         if not isinstance(result, IntervalBounds):
@@ -387,35 +369,35 @@ class ForwardLBPPropagator(MethodPropagator):
     def _propagate_add_exact_strategy(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
     ) -> IntervalBounds:
         return self._propagate_add(self._concretize_to_intervals(input_bounds))
 
     def _propagate_sub_exact_strategy(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
     ) -> IntervalBounds:
         return self._propagate_sub(self._concretize_to_intervals(input_bounds))
 
     def _propagate_matmul_exact_strategy(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
     ) -> IntervalBounds:
         return self._propagate_matmul(node, self._concretize_to_intervals(input_bounds))
 
     def _propagate_linear_exact_strategy(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
     ) -> IntervalBounds:
         return self._propagate_linear(node, self._concretize_to_intervals(input_bounds))
 
     def _propagate_mul_by_constant_strategy(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
     ) -> IntervalBounds:
         intervals = self._concretize_to_intervals(input_bounds)
         left_kind = classify_input_bound(input_bounds[0])
@@ -432,7 +414,7 @@ class ForwardLBPPropagator(MethodPropagator):
     def _propagate_div_by_constant_strategy(
         self,
         node: Node,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
     ) -> IntervalBounds:
         intervals = self._concretize_to_intervals(input_bounds)
         divisor = intervals[1].lower
@@ -442,9 +424,9 @@ class ForwardLBPPropagator(MethodPropagator):
 
     def _concretize_to_intervals(
         self,
-        input_bounds: List[AbstractBounds],
-    ) -> List[IntervalBounds]:
-        intervals: List[IntervalBounds] = []
+        input_bounds: list[AbstractBounds],
+    ) -> list[IntervalBounds]:
+        intervals: list[IntervalBounds] = []
         for bound in input_bounds:
             if isinstance(bound, IntervalBounds):
                 intervals.append(bound)
@@ -490,7 +472,7 @@ class ForwardLBPPropagator(MethodPropagator):
         )
         return IntervalBounds(lower=lower, upper=upper)
 
-    def _propagate_add(self, intervals: List[IntervalBounds]) -> IntervalBounds:
+    def _propagate_add(self, intervals: list[IntervalBounds]) -> IntervalBounds:
         """Exact interval propagation for ADD: [a,b] + [c,d] = [a+c, b+d]."""
         if len(intervals) != 2:
             raise ValueError(f"ADD expects 2 inputs, got {len(intervals)}")
@@ -499,7 +481,7 @@ class ForwardLBPPropagator(MethodPropagator):
         upper = intervals[0].upper + intervals[1].upper
         return IntervalBounds(lower=lower, upper=upper)
 
-    def _propagate_sub(self, intervals: List[IntervalBounds]) -> IntervalBounds:
+    def _propagate_sub(self, intervals: list[IntervalBounds]) -> IntervalBounds:
         """Exact interval propagation for SUB: [a,b] - [c,d] = [a-d, b-c]."""
         if len(intervals) != 2:
             raise ValueError(f"SUB expects 2 inputs, got {len(intervals)}")
@@ -508,9 +490,7 @@ class ForwardLBPPropagator(MethodPropagator):
         upper = intervals[0].upper - intervals[1].lower
         return IntervalBounds(lower=lower, upper=upper)
 
-    def _propagate_matmul(
-        self, node: Node, intervals: List[IntervalBounds]
-    ) -> IntervalBounds:
+    def _propagate_matmul(self, node: Node, intervals: list[IntervalBounds]) -> IntervalBounds:
         """Exact interval propagation for MATMUL: y = x @ W."""
         if len(intervals) != 2:
             raise ValueError(f"MATMUL expects 2 inputs, got {len(intervals)}")
@@ -540,13 +520,9 @@ class ForwardLBPPropagator(MethodPropagator):
         else:
             # Both inputs are non-constant - use bilinear bounds
             # This is conservative but sound
-            raise NotImplementedError(
-                "MATMUL with two non-constant inputs not yet implemented"
-            )
+            raise NotImplementedError("MATMUL with two non-constant inputs not yet implemented")
 
-    def _propagate_linear(
-        self, node: Node, intervals: List[IntervalBounds]
-    ) -> IntervalBounds:
+    def _propagate_linear(self, node: Node, intervals: list[IntervalBounds]) -> IntervalBounds:
         """Exact interval propagation for LINEAR: y = x @ W + b."""
         # LINEAR typically has x as learnable, W and b as constants
         if len(intervals) == 1:

@@ -5,6 +5,7 @@ DEPRECATED: Many tests use the old API where IntervalBounds and LinearBounds req
 The new API no longer requires this. New tests in test_linear_relaxation.py and test_method_propagators.py
 cover the updated functionality.
 """
+
 import pytest
 
 pytestmark = pytest.mark.skip(reason="Old bounds API tests - many use deprecated region parameter")

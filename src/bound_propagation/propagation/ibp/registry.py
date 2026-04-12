@@ -21,9 +21,7 @@ class ForwardIBPStrategyRegistry:
     ):
         key = (operation_type, abstract_signature)
         if key in self._registry:
-            raise ValueError(
-                f"Strategy for operation type '{operation_type}' and signature={abstract_signature} is already registered."
-            )
+            raise ValueError(f"Strategy for operation type '{operation_type}' and signature={abstract_signature} is already registered.")
         self._registry[key] = strategy
 
     def get_strategy(
@@ -36,10 +34,7 @@ class ForwardIBPStrategyRegistry:
         if strategy is not None:
             return strategy
 
-        raise ValueError(
-            f"No strategy registered for operation type '{operation_type}' with signature={signature}."
-        )
-
+        raise ValueError(f"No strategy registered for operation type '{operation_type}' with signature={signature}.")
 
     @classmethod
     def default_registry(cls) -> ForwardIBPStrategyRegistry:

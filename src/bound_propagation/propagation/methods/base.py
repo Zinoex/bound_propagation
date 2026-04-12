@@ -73,6 +73,7 @@ class MethodPropagator(ABC):
     Attributes:
         graph: The computation graph being propagated through.
     """
+
     def __init__(self, graph: Graph):
         self._graph = graph
 

@@ -11,6 +11,7 @@ class ForwardLBPStrategyRegistry:
     """
     Registry for forward linear bounding strategies.
     """
+
     def __init__(self):
         self._registry: dict[OperationType, ForwardLBPStrategy] = {}
 

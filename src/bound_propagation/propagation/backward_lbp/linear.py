@@ -18,6 +18,7 @@ class BackwardLBPLinearStrategy(BackwardLBPBoundingStrategy):
     For linear layer y = x @ W^T + b, in backward mode the computation
     is the same as forward mode since it's an exact linear operation.
     """
+
     def propagate_backwards(
         self,
         node: Node,
@@ -72,10 +73,12 @@ class BackwardLBPLinearStrategy(BackwardLBPBoundingStrategy):
         if bias is not None:
             bias_upper = bias_upper + bias
 
-        return [LinearBounds(
-            region=bounds.region,
-            linear_lower=linear_lower,
-            bias_lower=bias_lower,
-            linear_upper=linear_upper,
-            bias_upper=bias_upper,
-        )]
+        return [
+            LinearBounds(
+                region=bounds.region,
+                linear_lower=linear_lower,
+                bias_lower=bias_lower,
+                linear_upper=linear_upper,
+                bias_upper=bias_upper,
+            )
+        ]

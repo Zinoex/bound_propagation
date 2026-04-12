@@ -60,11 +60,7 @@ def compute_sigmoid_alpha_beta(
     d_prime = sigmoid_derivative(d)
 
     # Slope of secant line
-    slope = torch.where(
-        zero_width,
-        torch.zeros_like(lower),
-        (upper_act - lower_act) / (upper - lower)
-    )
+    slope = torch.where(zero_width, torch.zeros_like(lower), (upper_act - lower_act) / (upper - lower))
 
     # Zero-width case: use the value itself
     alpha_lower[zero_width] = 0
@@ -145,17 +141,13 @@ class SigmoidRelaxationStrategy(RelaxationStrategy):
             ValueError: If number of inputs is not 1.
         """
         if len(interval_inputs) != 1:
-            raise ValueError(
-                f"Sigmoid expects 1 input, got {len(interval_inputs)}"
-            )
+            raise ValueError(f"Sigmoid expects 1 input, got {len(interval_inputs)}")
 
         input_bounds = interval_inputs[0]
         lower, upper = input_bounds.concretize()
 
         # Compute alpha/beta parameters
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(
-            lower, upper
-        )
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
 
         # Create diagonal relaxation
         return LinearRelaxation.create_diagonal(

@@ -34,9 +34,7 @@ def create_add_constant_graph() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -46,9 +44,7 @@ def create_add_constant_graph() -> Graph:
         id=1,
         op_type=OperationType.CONSTANT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.CONSTANT,
         attributes={"value": torch.tensor([1.0, 2.0])},
         name="const",
@@ -59,9 +55,7 @@ def create_add_constant_graph() -> Graph:
         id=2,
         op_type=OperationType.ADD,
         inputs=[input_node, const_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="add",
     )
 
@@ -84,9 +78,7 @@ def create_relu_graph() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -96,9 +88,7 @@ def create_relu_graph() -> Graph:
         id=1,
         op_type=OperationType.RELU,
         inputs=[input_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="relu",
     )
 
@@ -121,9 +111,7 @@ def create_matmul_relu_graph() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -133,9 +121,7 @@ def create_matmul_relu_graph() -> Graph:
         id=1,
         op_type=OperationType.CONSTANT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2, 2), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2, 2), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.CONSTANT,
         attributes={"value": torch.tensor([[1.0, -1.0], [0.5, 0.5]])},
         name="weight",
@@ -146,9 +132,7 @@ def create_matmul_relu_graph() -> Graph:
         id=2,
         op_type=OperationType.MATMUL,
         inputs=[input_node, weight_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="matmul",
     )
 
@@ -157,9 +141,7 @@ def create_matmul_relu_graph() -> Graph:
         id=3,
         op_type=OperationType.RELU,
         inputs=[matmul_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="relu",
     )
 
@@ -175,11 +157,11 @@ class TestBackwardLBPPropagator:
     def test_simple_addition(self):
         """
         Test backward LBP on y = x + c.
-        
+
         For linear operations, we expect identity linear bounds:
         - A = I (identity matrix)
         - bias = 0
-        
+
         This means the output depends linearly on the input with slope 1.
         """
         graph = create_add_constant_graph()
@@ -221,7 +203,7 @@ class TestBackwardLBPPropagator:
     def test_relu_all_positive(self):
         """
         Test backward LBP on y = relu(x) where x is all positive.
-        
+
         When the input is all positive, relu is the identity function,
         so we expect A = I.
         """
@@ -260,11 +242,11 @@ class TestBackwardLBPPropagator:
     def test_relu_crossing_zero(self):
         """
         Test backward LBP on y = relu(x) where x crosses zero.
-        
+
         When x can be negative or positive, relu uses a linear relaxation:
         - Lower bound: y >= 0 (alpha_lower = 0)
         - Upper bound: y <= slope * x + bias (secant line)
-        
+
         For crossing regime, slope = upper / (upper - lower)
         """
         graph = create_relu_graph()
@@ -311,7 +293,7 @@ class TestBackwardLBPPropagator:
     def test_relu_all_negative(self):
         """
         Test backward LBP on y = relu(x) where x is all negative.
-        
+
         When the input is all negative, relu is always zero,
         so we expect A = 0 (no dependency on input).
         """
@@ -347,11 +329,11 @@ class TestBackwardLBPPropagator:
     def test_matmul_relu(self):
         """
         Test backward LBP on y = relu(x @ W).
-        
+
         This tests backward propagation through multiple operations:
         1. Backward through ReLU (uses relaxation based on concrete bounds)
         2. Backward through MATMUL (applies W^T)
-        
+
         The composition should give us bounds on how output depends on input.
         """
         graph = create_matmul_relu_graph()
@@ -392,7 +374,7 @@ class TestBackwardLBPPropagator:
     def test_output_bounds_identity(self):
         """
         Test that output bounds are initialized with identity.
-        
+
         For backward LBP, output nodes should have A = I, representing
         that the output depends on itself with identity mapping.
         """
@@ -421,13 +403,13 @@ class TestBackwardLBPPropagator:
     def test_forward_bounds_computed(self):
         """
         Test that forward bounds are automatically computed if not provided.
-        
+
         Backward LBP requires concrete bounds from a forward pass for computing
         relaxations. The propagator should automatically compute these using IBP
         if not provided.
         """
         graph = create_relu_graph()
-        
+
         # Create propagator without providing forward bounds
         propagator = BackwardLBPPropagator(graph)
 
@@ -445,7 +427,7 @@ class TestBackwardLBPPropagator:
     def test_reverse_topological_order(self):
         """
         Test that backward propagation processes nodes in reverse order.
-        
+
         This is a key property of backward LBP: it should traverse from
         output to input, not input to output.
         """
@@ -476,7 +458,7 @@ class TestBackwardLBPStrategies:
     def test_backward_add_strategy(self):
         """
         Test BackwardAddStrategy.
-        
+
         For z = x + y, both inputs should receive the full output bounds.
         """
         from bound_propagation.strategy.backward_lbp.add_backward import (
@@ -505,9 +487,7 @@ class TestBackwardLBPStrategies:
             id=0,
             op_type=OperationType.ADD,
             inputs=[],  # Dummy inputs
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         )
 
         # Propagate to first input
@@ -526,7 +506,7 @@ class TestBackwardLBPStrategies:
     def test_backward_matmul_strategy(self):
         """
         Test BackwardMatmulStrategy.
-        
+
         For z = x @ W, backward propagation should apply W^T.
         """
         from bound_propagation.strategy.backward_lbp.matmul_backward import (
@@ -541,7 +521,7 @@ class TestBackwardLBPStrategies:
     def test_backward_relu_strategy(self):
         """
         Test BackwardReluStrategy.
-        
+
         For z = relu(x), backward propagation should use linear relaxations
         based on concrete bounds.
         """

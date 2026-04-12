@@ -172,4 +172,3 @@ class IntervalBounds(AbstractBounds):
             lower=self._lower.clone(),
             upper=self._upper.clone(),
         )
-

@@ -52,9 +52,7 @@ class ExpRelaxationStrategy(RelaxationStrategy):
             ValueError: If number of inputs is not 1.
         """
         if len(interval_inputs) != 1:
-            raise ValueError(
-                f"Exp expects 1 input, got {len(interval_inputs)}"
-            )
+            raise ValueError(f"Exp expects 1 input, got {len(interval_inputs)}")
 
         input_bounds = interval_inputs[0]
         lower, upper = input_bounds.concretize()
@@ -66,28 +64,16 @@ class ExpRelaxationStrategy(RelaxationStrategy):
         zero_width = torch.isclose(lower, upper)
 
         # Secant line slope
-        slope = torch.where(
-            zero_width,
-            torch.zeros_like(lower),
-            (upper_act - lower_act) / (upper - lower)
-        )
+        slope = torch.where(zero_width, torch.zeros_like(lower), (upper_act - lower_act) / (upper - lower))
 
         # Lower bound: secant line (for convex function)
         alpha_lower = torch.where(zero_width, torch.zeros_like(lower), slope)
-        beta_lower = torch.where(
-            zero_width,
-            lower_act,
-            lower_act - slope * lower
-        )
+        beta_lower = torch.where(zero_width, lower_act, lower_act - slope * lower)
 
         # Upper bound: tangent at upper point (for convex function)
         upper_deriv = upper_act  # derivative of exp(x) is exp(x)
         alpha_upper = torch.where(zero_width, torch.zeros_like(lower), upper_deriv)
-        beta_upper = torch.where(
-            zero_width,
-            upper_act,
-            upper_act - upper_deriv * upper
-        )
+        beta_upper = torch.where(zero_width, upper_act, upper_act - upper_deriv * upper)
 
         # Create diagonal relaxation
         return LinearRelaxation.create_diagonal(

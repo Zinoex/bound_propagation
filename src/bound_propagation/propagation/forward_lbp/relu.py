@@ -37,11 +37,7 @@ class ForwardLBPReluStrategy(ForwardLBPStrategy):
         lower, upper = bounds.concretize()
 
         # Compute alpha/beta parameters for ReLU relaxation
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_relu_alpha_beta(
-            lower, upper, adaptive=False
-        )
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_relu_alpha_beta(lower, upper, adaptive=False)
 
         # Apply the linear relaxation to the bounds
-        return apply_linear_relaxation(
-            bounds, alpha_lower, beta_lower, alpha_upper, beta_upper
-        )
+        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

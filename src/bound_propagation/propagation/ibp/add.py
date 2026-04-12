@@ -54,11 +54,7 @@ class IBPAddWithConstant(ForwardIBPStrategy):
         elif isinstance(right, IntervalBounds):
             x, c = right, left
         else:
-            raise TypeError(
-                "IBPAddWithConstant requires one input to be IntervalBounds "
-                "and the other input to be torch.Tensor or Number, "
-                f"got {type(left)} and {type(right)}"
-            )
+            raise TypeError(f"IBPAddWithConstant requires one input to be IntervalBounds and the other input to be torch.Tensor or Number, got {type(left)} and {type(right)}")
 
         c = cast(torch.Tensor | torch.types.Number, c)
 

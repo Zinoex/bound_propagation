@@ -39,7 +39,7 @@ class TestGraph:
 
     def test_empty_graph_creation(self):
         """Test creating an empty graph."""
-        graph = Graph()
+        graph = Graph([])
         assert graph.num_nodes == 0
         assert graph.num_inputs == 0
         assert graph.num_outputs == 0
@@ -52,37 +52,36 @@ class TestGraph:
         assert graph.num_inputs == 1
         assert graph.num_outputs == 1
 
-    def test_add_node(self, sample_metadata):
-        """Test adding nodes to graph."""
-        graph = Graph()
+    def test_graph_creation_with_single_node(self, sample_metadata):
+        """Test creating a graph with a single node."""
         node = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
 
-        graph.add_node(node)
+        graph = Graph([node])
         assert graph.num_nodes == 1
         assert graph.has_node(0)
-        assert graph.get_node(0) == node
+        assert graph.nodes == [node]
 
-    def test_add_duplicate_node_id_raises_error(self, sample_metadata):
-        """Test that adding node with duplicate ID raises error."""
-        graph = Graph()
+    def test_graph_preserves_nodes_with_duplicate_ids(self, sample_metadata):
+        """Test that graph construction preserves the provided node sequence."""
         node1 = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
         node2 = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)  # Same ID
 
-        graph.add_node(node1)
-        with pytest.raises(ValueError, match="already exists"):
-            graph.add_node(node2)
+        graph = Graph([node1, node2])
 
-    def test_get_node(self, simple_graph):
-        """Test getting node by ID."""
+        assert graph.num_nodes == 2
+        assert graph.nodes == [node1, node2]
+
+    def test_nodes_can_be_filtered_by_id(self, simple_graph):
+        """Test accessing nodes by ID through the nodes property."""
         graph, input_node, relu_node = simple_graph
-        assert graph.get_node(0) == input_node
-        assert graph.get_node(1) == relu_node
+        nodes_by_id = {node.id: node for node in graph.nodes}
+        assert nodes_by_id[0] == input_node
+        assert nodes_by_id[1] == relu_node
 
-    def test_get_nonexistent_node_raises_error(self, simple_graph):
-        """Test that getting nonexistent node raises KeyError."""
+    def test_missing_node_id_is_reported_by_has_node(self, simple_graph):
+        """Test that missing node IDs are reported by has_node."""
         graph, _, _ = simple_graph
-        with pytest.raises(KeyError):
-            graph.get_node(999)
+        assert graph.has_node(999) is False
 
     def test_has_node(self, simple_graph):
         """Test checking if node exists."""
@@ -135,7 +134,7 @@ class TestGraph:
 
     def test_mark_outputs_with_invalid_node_raises_error(self, sample_metadata):
         """Test marking non-graph node as output raises error."""
-        graph = Graph()
+        graph = Graph([])
         node = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
 
         with pytest.raises(ValueError, match="not in graph"):
@@ -364,22 +363,19 @@ class TestGraph:
         assert "inputs=" in repr_str
         assert "outputs=" in repr_str
 
-    def test_cache_invalidation_on_add_node(self, sample_metadata):
-        """Test that adding node invalidates caches."""
+    def test_topological_order_updates_when_graph_is_rebuilt(self, sample_metadata):
+        """Test that rebuilding a graph with new nodes produces a new order."""
         x = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
         graph = Graph([x])
         graph.mark_outputs([x])
 
-        # Compute topological order (caches it)
         order1 = graph.topological_order()
 
-        # Add new node
         y = Node(id=1, op_type=OperationType.RELU, inputs=[x], output_metadata=sample_metadata)
-        graph.add_node(y)
-        graph.mark_outputs([y])
+        expanded_graph = Graph([x, y])
+        expanded_graph.mark_outputs([y])
 
-        # Should recompute order
-        order2 = graph.topological_order()
+        order2 = expanded_graph.topological_order()
         assert order1 is not order2
         assert len(order2) == 2
 
@@ -442,6 +438,6 @@ class TestGraph:
 
     def test_empty_graph_iteration(self):
         """Test iterating over empty graph."""
-        graph = Graph()
+        graph = Graph([])
         nodes = list(graph)
         assert len(nodes) == 0

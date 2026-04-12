@@ -3,7 +3,14 @@ from __future__ import annotations
 import pytest
 import torch
 
-from bound_propagation.ir import Graph, Node, NodeType, OperationType, TensorMetadata
+from bound_propagation.ir import (
+    AbstractValueType,
+    Graph,
+    Node,
+    NodeType,
+    OperationType,
+    TensorMetadata,
+)
 from bound_propagation.propagation.ibp import (
     ForwardIBPStrategyRegistry,
     IBPAdd,
@@ -94,13 +101,22 @@ class TestInputKindTraversal:
         graph = Graph([x, c1, c2, const_add, mixed_add, out])
         graph.mark_outputs([out])
 
-        signatures = graph.annotate_input_kinds()
+        graph.annotate_input_kinds()
 
-        assert signatures[const_add.id] == ("constant", "constant")
-        assert signatures[mixed_add.id] == ("abstract", "constant")
-        assert signatures[out.id] == ("abstract", "constant")
-        assert const_add.attributes["output_kind"] == "constant"
-        assert mixed_add.attributes["output_kind"] == "abstract"
+        assert const_add.input_signature == (
+            AbstractValueType.CONSTANT,
+            AbstractValueType.CONSTANT,
+        )
+        assert mixed_add.input_signature == (
+            AbstractValueType.ABSTRACT,
+            AbstractValueType.CONSTANT,
+        )
+        assert out.input_signature == (
+            AbstractValueType.ABSTRACT,
+            AbstractValueType.CONSTANT,
+        )
+        assert const_add.output_signature == AbstractValueType.CONSTANT
+        assert mixed_add.output_signature == AbstractValueType.ABSTRACT
 
 
 class TestIBPSignatureDispatch:
@@ -137,6 +153,7 @@ class TestIBPSignatureDispatch:
 
         graph = Graph([x, c, mixed_add, abstract_add])
         graph.mark_outputs([abstract_add])
+        graph.annotate_input_kinds()
 
         propagator = IBPPropagator(graph)
 
@@ -187,6 +204,7 @@ class TestIBPSignatureDispatch:
 
         graph = Graph([x, c_add, c_mul, add_node, mul_node])
         graph.mark_outputs([mul_node])
+        graph.annotate_input_kinds()
 
         propagator = IBPPropagator(graph)
         outputs = propagator.propagate(
@@ -205,7 +223,7 @@ class TestIBPSignatureDispatch:
         assert torch.allclose(out.lower, torch.tensor([4.0, -5.0]))
         assert torch.allclose(out.upper, torch.tensor([6.0, -4.0]))
 
-    def test_number_constants_are_supported(self) -> None:
+    def test_number_constants_are_rejected(self) -> None:
         x = Node(
             id=0,
             op_type=OperationType.INPUT,
@@ -246,39 +264,55 @@ class TestIBPSignatureDispatch:
 
         graph = Graph([x, c_add, c_mul, add_node, mul_node])
         graph.mark_outputs([mul_node])
+        graph.annotate_input_kinds()
 
         propagator = IBPPropagator(graph)
-        outputs = propagator.propagate(
-            [
-                HyperRectangle(
-                    lower=torch.tensor([0.0, 1.0]),
-                    upper=torch.tensor([1.0, 2.0]),
-                )
-            ]
-        )
-
-        # (x + 2) * (-1) with x in [0,1]x[1,2] -> [-3,-2]x[-4,-3]
-        out = outputs[0]
-        assert torch.allclose(out.lower, torch.tensor([-3.0, -4.0]))
-        assert torch.allclose(out.upper, torch.tensor([-2.0, -3.0]))
+        with pytest.raises(TypeError, match="non-tensor value type"):
+            propagator.propagate(
+                [
+                    HyperRectangle(
+                        lower=torch.tensor([0.0, 1.0]),
+                        upper=torch.tensor([1.0, 2.0]),
+                    )
+                ]
+            )
 
 
 class TestIBPRegistryStrictness:
     def test_lookup_requires_exact_input_signature(self) -> None:
         registry = ForwardIBPStrategyRegistry()
         strategy = IBPAdd()
-        registry.register(OperationType.ADD, strategy, signature=("abstract", "abstract"))
+        registry.register(
+            OperationType.ADD,
+            strategy,
+            abstract_signature=(
+                AbstractValueType.ABSTRACT,
+                AbstractValueType.ABSTRACT,
+            ),
+        )
 
-        assert registry.get_strategy(OperationType.ADD, ("abstract", "abstract")) is strategy
+        assert (
+            registry.get_strategy(
+                OperationType.ADD,
+                (AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
+            )
+            is strategy
+        )
 
-        with pytest.raises(ValueError, match="with input_kinds"):
-            registry.get_strategy(OperationType.ADD, ("abstract", "constant"))
+        with pytest.raises(ValueError, match="signature"):
+            registry.get_strategy(
+                OperationType.ADD,
+                (AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
+            )
 
     def test_default_registry_does_not_register_folded_constant_signatures(self) -> None:
         registry = ForwardIBPStrategyRegistry.default_registry()
 
-        with pytest.raises(ValueError, match="with input_kinds"):
-            registry.get_strategy(OperationType.RELU, ("constant",))
+        with pytest.raises(ValueError, match="signature"):
+            registry.get_strategy(OperationType.RELU, (AbstractValueType.CONSTANT,))
 
-        with pytest.raises(ValueError, match="with input_kinds"):
-            registry.get_strategy(OperationType.ADD, ("constant", "constant"))
+        with pytest.raises(ValueError, match="signature"):
+            registry.get_strategy(
+                OperationType.ADD,
+                (AbstractValueType.CONSTANT, AbstractValueType.CONSTANT),
+            )

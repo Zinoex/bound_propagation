@@ -9,7 +9,6 @@ For multi-input operations, coefficients are stored as a list (one per input).
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
 
 import torch
 
@@ -36,45 +35,36 @@ class LinearRelaxation:
         output_shape: Optional output tensor shape for validation.
     """
 
-    coeffs_lower: List[torch.Tensor]
-    coeffs_upper: List[torch.Tensor]
+    coeffs_lower: list[torch.Tensor]
+    coeffs_upper: list[torch.Tensor]
     bias_lower: torch.Tensor
     bias_upper: torch.Tensor
-    input_shapes: Optional[List[torch.Size]] = None
-    output_shape: Optional[torch.Size] = None
+    input_shapes: list[torch.Size] | None = None
+    output_shape: torch.Size | None = None
 
     def __post_init__(self):
         """Validate the relaxation structure."""
         if len(self.coeffs_lower) != len(self.coeffs_upper):
-            raise ValueError(
-                f"Number of lower coefficients ({len(self.coeffs_lower)}) "
-                f"must match upper coefficients ({len(self.coeffs_upper)})"
-            )
+            raise ValueError(f"Number of lower coefficients ({len(self.coeffs_lower)}) must match upper coefficients ({len(self.coeffs_upper)})")
 
         if len(self.coeffs_lower) == 0:
             raise ValueError("At least one input coefficient is required")
 
         # Check that bias shapes match
         if self.bias_lower.shape != self.bias_upper.shape:
-            raise ValueError(
-                f"Bias shapes don't match: lower={self.bias_lower.shape}, "
-                f"upper={self.bias_upper.shape}"
-            )
+            raise ValueError(f"Bias shapes don't match: lower={self.bias_lower.shape}, upper={self.bias_upper.shape}")
 
         # Validate input shapes if provided
         if self.input_shapes is not None:
             if len(self.input_shapes) != len(self.coeffs_lower):
-                raise ValueError(
-                    f"Number of input shapes ({len(self.input_shapes)}) "
-                    f"must match number of coefficients ({len(self.coeffs_lower)})"
-                )
+                raise ValueError(f"Number of input shapes ({len(self.input_shapes)}) must match number of coefficients ({len(self.coeffs_lower)})")
 
     @property
     def num_inputs(self) -> int:
         """Return the number of inputs this relaxation covers."""
         return len(self.coeffs_lower)
 
-    def get_input_coeff(self, input_idx: int) -> Tuple[torch.Tensor, torch.Tensor]:
+    def get_input_coeff(self, input_idx: int) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get the coefficient tensors for a specific input.
 
@@ -85,9 +75,7 @@ class LinearRelaxation:
             Tuple of (lower_coeff, upper_coeff) for the specified input.
         """
         if input_idx < 0 or input_idx >= self.num_inputs:
-            raise IndexError(
-                f"Input index {input_idx} out of range [0, {self.num_inputs})"
-            )
+            raise IndexError(f"Input index {input_idx} out of range [0, {self.num_inputs})")
         return self.coeffs_lower[input_idx], self.coeffs_upper[input_idx]
 
     def to(self, device: torch.device) -> "LinearRelaxation":
@@ -123,13 +111,8 @@ class LinearRelaxation:
         Returns:
             True if lower and upper bounds are equal (within tolerance).
         """
-        coeffs_match = all(
-            torch.allclose(c_l, c_u, rtol=rtol, atol=atol)
-            for c_l, c_u in zip(self.coeffs_lower, self.coeffs_upper)
-        )
-        bias_match = torch.allclose(
-            self.bias_lower, self.bias_upper, rtol=rtol, atol=atol
-        )
+        coeffs_match = all(torch.allclose(c_l, c_u, rtol=rtol, atol=atol) for c_l, c_u in zip(self.coeffs_lower, self.coeffs_upper))
+        bias_match = torch.allclose(self.bias_lower, self.bias_upper, rtol=rtol, atol=atol)
         return coeffs_match and bias_match
 
     @staticmethod

@@ -35,9 +35,7 @@ def create_simple_graph() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -47,9 +45,7 @@ def create_simple_graph() -> Graph:
         id=1,
         op_type=OperationType.RELU,
         inputs=[input_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="relu",
     )
 
@@ -72,9 +68,7 @@ def create_linear_graph() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -87,9 +81,7 @@ def create_linear_graph() -> Graph:
         id=1,
         op_type=OperationType.LINEAR,
         inputs=[input_node],
-        output_metadata=TensorMetadata(
-            shape=(3,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(3,), dtype=torch.float32, device=torch.device("cpu")),
         attributes={"weight": weight, "bias": bias},
         name="linear",
     )
@@ -113,9 +105,7 @@ def create_chained_graph() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -125,9 +115,7 @@ def create_chained_graph() -> Graph:
         id=1,
         op_type=OperationType.RELU,
         inputs=[input_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="relu",
     )
 
@@ -136,9 +124,7 @@ def create_chained_graph() -> Graph:
         id=2,
         op_type=OperationType.CONSTANT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.CONSTANT,
         attributes={"value": torch.tensor([1.0, 1.0])},
         name="const",
@@ -149,9 +135,7 @@ def create_chained_graph() -> Graph:
         id=3,
         op_type=OperationType.ADD,
         inputs=[relu_node, const_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="add",
     )
 
@@ -178,9 +162,7 @@ def create_dag_graph() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -190,9 +172,7 @@ def create_dag_graph() -> Graph:
         id=1,
         op_type=OperationType.RELU,
         inputs=[input_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="relu",
     )
 
@@ -202,9 +182,7 @@ def create_dag_graph() -> Graph:
         id=2,
         op_type=OperationType.ADD,
         inputs=[relu_node, input_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="add",
     )
 
@@ -229,9 +207,7 @@ def create_multi_use_dag() -> Graph:
         id=0,
         op_type=OperationType.INPUT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.INPUT,
         name="x",
     )
@@ -241,9 +217,7 @@ def create_multi_use_dag() -> Graph:
         id=1,
         op_type=OperationType.CONSTANT,
         inputs=[],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         node_type=NodeType.CONSTANT,
         attributes={"value": torch.tensor([1.0, 1.0])},
         name="const",
@@ -254,9 +228,7 @@ def create_multi_use_dag() -> Graph:
         id=2,
         op_type=OperationType.ADD,
         inputs=[input_node, const_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="add",
     )
 
@@ -266,9 +238,7 @@ def create_multi_use_dag() -> Graph:
         id=3,
         op_type=OperationType.MUL,
         inputs=[add_node, add_node],
-        output_metadata=TensorMetadata(
-            shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-        ),
+        output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         name="mul",
     )
 
@@ -595,9 +565,7 @@ class TestBoundPropagatorError:
             id=0,
             op_type=OperationType.INPUT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.INPUT,
             name="x",
         )
@@ -607,9 +575,7 @@ class TestBoundPropagatorError:
             id=1,
             op_type=OperationType.CONSTANT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.CONSTANT,
             attributes={},  # Missing 'value'
             name="const",

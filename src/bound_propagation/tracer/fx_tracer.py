@@ -73,16 +73,11 @@ class BoundPropagationTracer(fx.Tracer):
             elif node.op == "call_module":
                 module_type = self._get_module_type(node)
                 if module_type is None or module_type not in MODULE_OP_MAPPING:
-                    unsupported_nodes.append(
-                        f"{node.name}: call_module target={node.target!r} type={module_type}"
-                    )
+                    unsupported_nodes.append(f"{node.name}: call_module target={node.target!r} type={module_type}")
 
         if unsupported_nodes:
             details = "\n  - " + "\n  - ".join(unsupported_nodes)
-            raise UnsupportedOperationError(
-                "Traced graph contains unsupported operations. "
-                "Only mapped operations are accepted:" + details
-            )
+            raise UnsupportedOperationError("Traced graph contains unsupported operations. Only mapped operations are accepted:" + details)
 
     def _get_module_type(self, node: fx.Node) -> type[torch.nn.Module] | None:
         """Resolve module type for a call_module node."""
@@ -99,14 +94,17 @@ class BoundPropagationTracer(fx.Tracer):
 
 class TraceError(Exception):
     """Base exception raised for tracing/validation failures."""
+
     ...
 
 
 class UnsupportedOperationError(TraceError):
     """Exception raised when an operation not present in op mapping is traced."""
+
     ...
 
 
 class ControlFlowError(Exception):
     """Backward-compatible alias for legacy control-flow related errors."""
+
     ...

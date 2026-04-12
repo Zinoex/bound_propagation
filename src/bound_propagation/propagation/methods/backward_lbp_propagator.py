@@ -6,7 +6,6 @@ computing relaxations for non-linear operations.
 """
 
 from collections.abc import Callable
-from typing import Dict, List
 
 import torch
 
@@ -39,7 +38,7 @@ class BackwardLBPPropagator(MethodPropagator):
         self._linear_operation_strategies: dict[
             tuple[OperationType, tuple[InputBoundKind, ...]],
             Callable[
-                [Node, AbstractBounds, List[AbstractBounds], int, AbstractRegion],
+                [Node, AbstractBounds, list[AbstractBounds], int, AbstractRegion],
                 AbstractBounds,
             ],
         ] = {}
@@ -62,7 +61,7 @@ class BackwardLBPPropagator(MethodPropagator):
         op_type: OperationType,
         signature: tuple[InputBoundKind, ...],
         strategy: Callable[
-            [Node, AbstractBounds, List[AbstractBounds], int, AbstractRegion],
+            [Node, AbstractBounds, list[AbstractBounds], int, AbstractRegion],
             AbstractBounds,
         ],
     ) -> None:
@@ -73,7 +72,7 @@ class BackwardLBPPropagator(MethodPropagator):
         op_type: OperationType,
         arity: int,
         strategy: Callable[
-            [Node, AbstractBounds, List[AbstractBounds], int, AbstractRegion],
+            [Node, AbstractBounds, list[AbstractBounds], int, AbstractRegion],
             AbstractBounds,
         ],
     ) -> None:
@@ -104,9 +103,7 @@ class BackwardLBPPropagator(MethodPropagator):
         for op_type in RelaxationRegistry.list_registered_ops():
             strategy = RelaxationRegistry.get(op_type)
             if strategy is None:
-                raise ValueError(
-                    f"Relaxation registry reported {op_type} as registered but returned None"
-                )
+                raise ValueError(f"Relaxation registry reported {op_type} as registered but returned None")
             strategies[op_type] = strategy
         return strategies
 
@@ -114,8 +111,8 @@ class BackwardLBPPropagator(MethodPropagator):
         self,
         graph: Graph,
         region: AbstractRegion,
-        output_bounds: Dict[int, AbstractBounds] | None = None,
-    ) -> Dict[int, AbstractBounds]:
+        output_bounds: dict[int, AbstractBounds] | None = None,
+    ) -> dict[int, AbstractBounds]:
         """
         Propagate bounds backward through the graph.
 
@@ -142,7 +139,7 @@ class BackwardLBPPropagator(MethodPropagator):
         nodes = list(reversed(graph.topological_order()))
 
         # Initialize bounds dictionary
-        bounds: Dict[int, AbstractBounds] = {}
+        bounds: dict[int, AbstractBounds] = {}
 
         # Initialize output bounds
         if output_bounds is None:
@@ -187,10 +184,7 @@ class BackwardLBPPropagator(MethodPropagator):
                 consumer_bounds = bounds[consumer_node.id]
 
                 # Get input bounds for the consumer
-                input_bounds = [
-                    bounds.get(inp.id, self._create_zero_bounds(inp, region))
-                    for inp in consumer_node.inputs
-                ]
+                input_bounds = [bounds.get(inp.id, self._create_zero_bounds(inp, region)) for inp in consumer_node.inputs]
 
                 # Find which input index we are
                 input_idx = self._find_input_index(consumer_node, node)
@@ -265,7 +259,7 @@ class BackwardLBPPropagator(MethodPropagator):
             upper=zeros,
         )
 
-    def _find_downstream_nodes(self, graph: Graph, node: Node) -> List[Node]:
+    def _find_downstream_nodes(self, graph: Graph, node: Node) -> list[Node]:
         """Find all nodes that use this node as input."""
         downstream = []
         for potential_consumer in graph.nodes:
@@ -284,7 +278,7 @@ class BackwardLBPPropagator(MethodPropagator):
         self,
         node: Node,
         node_bounds: AbstractBounds,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         input_idx: int,
         region: AbstractRegion,
     ) -> AbstractBounds:
@@ -310,9 +304,7 @@ class BackwardLBPPropagator(MethodPropagator):
         signature = self._input_signature_from_nodes(node)
         strategy = self._linear_operation_strategies.get((op_type, signature))
         if strategy is None:
-            raise NotImplementedError(
-                f"Backward propagation for {op_type} with input signature {signature} not yet implemented"
-            )
+            raise NotImplementedError(f"Backward propagation for {op_type} with input signature {signature} not yet implemented")
 
         return strategy(node, node_bounds, input_bounds, input_idx, region)
 
@@ -320,7 +312,7 @@ class BackwardLBPPropagator(MethodPropagator):
         self,
         node: Node,
         node_bounds: AbstractBounds,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         input_idx: int,
         region: AbstractRegion,
         strategy: RelaxationStrategy,
@@ -352,16 +344,8 @@ class BackwardLBPPropagator(MethodPropagator):
 
         if isinstance(node_bounds, IntervalBounds):
             # Simple case: interval × coefficients
-            lower_contrib = torch.where(
-                coeff_l >= 0,
-                coeff_l * node_bounds.lower,
-                coeff_l * node_bounds.upper
-            )
-            upper_contrib = torch.where(
-                coeff_u >= 0,
-                coeff_u * node_bounds.upper,
-                coeff_u * node_bounds.lower
-            )
+            lower_contrib = torch.where(coeff_l >= 0, coeff_l * node_bounds.lower, coeff_l * node_bounds.upper)
+            upper_contrib = torch.where(coeff_u >= 0, coeff_u * node_bounds.upper, coeff_u * node_bounds.lower)
             return IntervalBounds(lower=lower_contrib, upper=upper_contrib)
         else:
             # LinearBounds case - would need composition
@@ -369,23 +353,15 @@ class BackwardLBPPropagator(MethodPropagator):
             lower, upper = node_bounds.concretize()
             interval_bound = IntervalBounds(lower=lower, upper=upper)
 
-            lower_contrib = torch.where(
-                coeff_l >= 0,
-                coeff_l * interval_bound.lower,
-                coeff_l * interval_bound.upper
-            )
-            upper_contrib = torch.where(
-                coeff_u >= 0,
-                coeff_u * interval_bound.upper,
-                coeff_u * interval_bound.lower
-            )
+            lower_contrib = torch.where(coeff_l >= 0, coeff_l * interval_bound.lower, coeff_l * interval_bound.upper)
+            upper_contrib = torch.where(coeff_u >= 0, coeff_u * interval_bound.upper, coeff_u * interval_bound.lower)
             return IntervalBounds(lower=lower_contrib, upper=upper_contrib)
 
     def _compute_backward_add(
         self,
         node: Node,
         node_bounds: AbstractBounds,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         input_idx: int,
         region: AbstractRegion,
     ) -> AbstractBounds:
@@ -396,7 +372,7 @@ class BackwardLBPPropagator(MethodPropagator):
         self,
         node: Node,
         node_bounds: AbstractBounds,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         input_idx: int,
         region: AbstractRegion,
     ) -> AbstractBounds:
@@ -416,7 +392,7 @@ class BackwardLBPPropagator(MethodPropagator):
         self,
         node: Node,
         node_bounds: AbstractBounds,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         input_idx: int,
         region: AbstractRegion,
     ) -> AbstractBounds:
@@ -426,9 +402,7 @@ class BackwardLBPPropagator(MethodPropagator):
 
         weight_node = node.inputs[1]
         if weight_node.node_type != NodeType.CONSTANT:
-            raise NotImplementedError(
-                "Backward MATMUL with non-constant weight not yet implemented"
-            )
+            raise NotImplementedError("Backward MATMUL with non-constant weight not yet implemented")
 
         weight = weight_node.attributes.get("value")
         if weight is None:
@@ -440,15 +414,13 @@ class BackwardLBPPropagator(MethodPropagator):
         self,
         node: Node,
         node_bounds: AbstractBounds,
-        input_bounds: List[AbstractBounds],
+        input_bounds: list[AbstractBounds],
         input_idx: int,
         region: AbstractRegion,
     ) -> AbstractBounds:
         """Exact backward propagation for LINEAR."""
         if input_idx > 0:
-            raise NotImplementedError(
-                "Backward through LINEAR weight/bias not yet implemented"
-            )
+            raise NotImplementedError("Backward through LINEAR weight/bias not yet implemented")
 
         weight = node.attributes.get("weight")
         if weight is None:
@@ -463,9 +435,7 @@ class BackwardLBPPropagator(MethodPropagator):
         operation_name: str,
     ) -> AbstractBounds:
         if not isinstance(node_bounds, IntervalBounds):
-            raise NotImplementedError(
-                f"Backward {operation_name} with LinearBounds not yet implemented"
-            )
+            raise NotImplementedError(f"Backward {operation_name} with LinearBounds not yet implemented")
 
         pos_weight = torch.clamp(weight_transpose, min=0)
         neg_weight = torch.clamp(weight_transpose, max=0)

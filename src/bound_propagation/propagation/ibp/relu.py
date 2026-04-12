@@ -10,6 +10,7 @@ from .base import ForwardIBPStrategy
 if TYPE_CHECKING:
     from ...ir import Node
 
+
 class IBPRelu(ForwardIBPStrategy):
     """IBP strategy for RELU activation: relu([a, b]) = [max(0, a), max(0, b)]."""
 

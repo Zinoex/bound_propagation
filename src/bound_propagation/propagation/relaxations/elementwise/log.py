@@ -52,19 +52,14 @@ class LogRelaxationStrategy(RelaxationStrategy):
             ValueError: If number of inputs is not 1 or if inputs are non-positive.
         """
         if len(interval_inputs) != 1:
-            raise ValueError(
-                f"Log expects 1 input, got {len(interval_inputs)}"
-            )
+            raise ValueError(f"Log expects 1 input, got {len(interval_inputs)}")
 
         input_bounds = interval_inputs[0]
         lower, upper = input_bounds.concretize()
 
         # Check that all inputs are positive
         if torch.any(lower <= 0):
-            raise ValueError(
-                "Log relaxation requires positive lower bounds. "
-                f"Got minimum lower bound: {lower.min().item()}"
-            )
+            raise ValueError(f"Log relaxation requires positive lower bounds. Got minimum lower bound: {lower.min().item()}")
 
         # Compute log at bounds
         lower_act = torch.log(lower)
@@ -75,28 +70,16 @@ class LogRelaxationStrategy(RelaxationStrategy):
         # Tangent at lower point provides upper bound
         zero_width = torch.isclose(lower, upper)
 
-        slope = torch.where(
-            zero_width,
-            torch.zeros_like(lower),
-            (upper_act - lower_act) / (upper - lower)
-        )
+        slope = torch.where(zero_width, torch.zeros_like(lower), (upper_act - lower_act) / (upper - lower))
 
         # For exact points
         alpha_lower = torch.where(zero_width, torch.zeros_like(lower), slope)
-        beta_lower = torch.where(
-            zero_width,
-            lower_act,
-            lower_act - slope * lower
-        )
+        beta_lower = torch.where(zero_width, lower_act, lower_act - slope * lower)
 
         # Upper bound: tangent at lower point (concave function)
         lower_deriv = 1.0 / lower
         alpha_upper = torch.where(zero_width, torch.zeros_like(lower), lower_deriv)
-        beta_upper = torch.where(
-            zero_width,
-            upper_act,
-            lower_act - lower_deriv * lower
-        )
+        beta_upper = torch.where(zero_width, upper_act, lower_act - lower_deriv * lower)
 
         # Create diagonal relaxation
         return LinearRelaxation.create_diagonal(

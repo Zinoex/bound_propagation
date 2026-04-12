@@ -42,11 +42,7 @@ def compute_tanh_alpha_beta(
     d_prime = tanh_derivative(d)
 
     # Slope of secant line
-    slope = torch.where(
-        zero_width,
-        torch.zeros_like(lower),
-        (upper_act - lower_act) / (upper - lower)
-    )
+    slope = torch.where(zero_width, torch.zeros_like(lower), (upper_act - lower_act) / (upper - lower))
 
     # Zero-width case
     alpha_lower[zero_width] = 0

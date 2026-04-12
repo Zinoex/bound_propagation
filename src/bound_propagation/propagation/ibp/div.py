@@ -45,6 +45,7 @@ class IBPDiv(ForwardIBPStrategy):
 
         return IntervalBounds(lower, upper)
 
+
 class IBPDivConstant(ForwardIBPStrategy):
     """IBP strategy for DIV when divisor is constant."""
 
@@ -66,11 +67,7 @@ class IBPDivConstant(ForwardIBPStrategy):
             interval = y
             c = x
         else:
-            raise TypeError(
-                "IBPDivConstantStrategy requires the first input to be IntervalBounds "
-                "and the second input to be torch.Tensor or Number, "
-                f"got {type(x)} and {type(y)}"
-            )
+            raise TypeError(f"IBPDivConstantStrategy requires the first input to be IntervalBounds and the second input to be torch.Tensor or Number, got {type(x)} and {type(y)}")
 
         if isinstance(c, torch.Tensor):
             lower = torch.where(
@@ -101,6 +98,7 @@ class IBPDivConstant(ForwardIBPStrategy):
         else:
             raise TypeError(f"Constant input must be torch.Tensor or Number, got {type(c)}")
 
+
 class IBPConstantDiv(ForwardIBPStrategy):
     """IBP strategy for DIV when dividend is constant."""
 
@@ -122,11 +120,7 @@ class IBPConstantDiv(ForwardIBPStrategy):
             c = y
             interval = x
         else:
-            raise TypeError(
-                "IBPConstantDiv requires the first input to be torch.Tensor or Number "
-                "and the second input to be IntervalBounds, "
-                f"got {type(x)} and {type(y)}"
-            )
+            raise TypeError(f"IBPConstantDiv requires the first input to be torch.Tensor or Number and the second input to be IntervalBounds, got {type(x)} and {type(y)}")
 
         if torch.any((interval.lower <= 0) & (interval.upper >= 0)):
             return IntervalBounds.unbounded_like(interval)

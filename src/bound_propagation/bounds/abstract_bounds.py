@@ -29,6 +29,7 @@ class AbstractBounds(ABC):
     - Combination of bounds from different sources
     - Concretization to intervals for local analysis
     """
+
     def __init__(self, region: AbstractRegion):
         self.region = region
 

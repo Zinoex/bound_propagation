@@ -21,23 +21,11 @@ class FashionMNISTNetwork(nn.Sequential):
             img_size = 28 * 28
             classes = 10
 
-            super().__init__(
-                nn.Linear(img_size, 64),
-                nn.ReLU(),
-                nn.Linear(64, 64),
-                nn.ReLU(),
-                nn.Linear(64, 64),
-                nn.ReLU(),
-                nn.Linear(64, classes)
-            )
+            super().__init__(nn.Linear(img_size, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, classes))
 
 
 def construct_transform():
-    transform = transforms.Compose([
-        transforms.PILToTensor(),
-        transforms.ConvertImageDtype(torch.float),
-        transforms.Lambda(torch.flatten)
-    ])
+    transform = transforms.Compose([transforms.PILToTensor(), transforms.ConvertImageDtype(torch.float), transforms.Lambda(torch.flatten)])
 
     # Identity transform - because cross entropy loss supports class indexing
     target_transform = transforms.Compose([])
@@ -46,12 +34,11 @@ def construct_transform():
 
 
 def train(net, args):
-    print('')
-    print('[TRAINING]')
+    print("")
+    print("[TRAINING]")
 
     transform, target_transform = construct_transform()
-    train_data = datasets.FashionMNIST('../fashion_data', train=True, download=True,
-                                       transform=transform, target_transform=target_transform)
+    train_data = datasets.FashionMNIST("../fashion_data", train=True, download=True, transform=transform, target_transform=target_transform)
     train_loader = DataLoader(train_data, batch_size=500, shuffle=True, num_workers=8)
 
     criterion = torch.nn.CrossEntropyLoss()
@@ -59,7 +46,6 @@ def train(net, args):
 
     k = 1.0
     for epoch in trange(20):
-
         running_loss = 0.0
         running_cross_entropy = 0.0
         for i, (X, y) in enumerate(train_loader):
@@ -81,7 +67,7 @@ def train(net, args):
             running_loss += loss.item()
             running_cross_entropy += cross_entropy.item()
             if i % 100 == 99:  # print every 100 mini-batches
-                print(f'[{epoch + 1}, {i + 1:3d}] loss: {running_loss / 100:.3f}, cross entropy: {running_cross_entropy / 100:.3f}')
+                print(f"[{epoch + 1}, {i + 1:3d}] loss: {running_loss / 100:.3f}, cross entropy: {running_cross_entropy / 100:.3f}")
                 running_loss = 0.0
                 running_cross_entropy = 0.0
 
@@ -90,12 +76,11 @@ def train(net, args):
 
 @torch.no_grad()
 def test(net, args):
-    print('')
-    print('[TEST]')
+    print("")
+    print("[TEST]")
 
     transform, target_transform = construct_transform()
-    test_data = datasets.FashionMNIST('../fashion_data', train=False, download=True,
-                                      transform=transform, target_transform=target_transform)
+    test_data = datasets.FashionMNIST("../fashion_data", train=False, download=True, transform=transform, target_transform=target_transform)
     test_loader = DataLoader(test_data, batch_size=100, shuffle=False, num_workers=8)
 
     correct = 0
@@ -107,26 +92,26 @@ def test(net, args):
         predicted = torch.argmax(y_hat, 1)
         correct += (predicted == y).sum().item()
 
-    print(f'Accuracy: {correct / len(test_data):.3f}')
+    print(f"Accuracy: {correct / len(test_data):.3f}")
 
 
 # torch.no_grad() has a huge impact on the memory consumption (due to the need to store intermediate tensors)
 # so if you don't need gradients (e.g. for verifying but not training) then do use it to allow larger batch sizes
 @torch.no_grad()
 def timing(net, args):
-    print('')
-    print('[TIMING]')
+    print("")
+    print("[TIMING]")
 
     methods = [
-        ('ibp', net.ibp),
-        ('crown_ibp', lambda x: net.crown_ibp(x).concretize()),
-        ('crown', lambda x: net.crown(x).concretize()),
-        ('alpha_crown_ibp', lambda x: net.crown_ibp(x, alpha=True).concretize()),
-        ('alpha_crown', lambda x: net.crown(x, alpha=True).concretize())
+        ("ibp", net.ibp),
+        ("crown_ibp", lambda x: net.crown_ibp(x).concretize()),
+        ("crown", lambda x: net.crown(x).concretize()),
+        ("alpha_crown_ibp", lambda x: net.crown_ibp(x, alpha=True).concretize()),
+        ("alpha_crown", lambda x: net.crown(x, alpha=True).concretize()),
     ]
 
     for method_name, method in methods:
-        print(f'Method: {method_name}')
+        print(f"Method: {method_name}")
 
         for batch_size, iterations in [(10, 1000), (100, 100), (1000, 10)]:
             x = torch.rand(batch_size, 28 * 28, device=args.device)
@@ -134,7 +119,7 @@ def timing(net, args):
             exec_time = timeit.timeit(lambda: method(x), number=iterations)
             out_size = method(x).lower.size()
 
-            print(f'Out size: {out_size}, iterations: {iterations}, execution time: {exec_time}')
+            print(f"Out size: {out_size}, iterations: {iterations}, execution time: {exec_time}")
 
 
 def adversarial_logit(y_hat, y):
@@ -166,24 +151,23 @@ def adversarial_prob_margin(y_hat, y):
 
 @torch.no_grad()
 def verify(net, args):
-    print('')
-    print('[VERIFY]')
+    print("")
+    print("[VERIFY]")
 
     methods = [
-        ('ibp', net.ibp),
-        ('crown_ibp', lambda x: net.crown_ibp(x).concretize()),
-        ('crown', lambda x: net.crown(x).concretize()),
-        ('alpha_crown_ibp', lambda x: net.crown_ibp(x, alpha=True).concretize()),
-        ('alpha_crown', lambda x: net.crown(x, alpha=True).concretize())
+        ("ibp", net.ibp),
+        ("crown_ibp", lambda x: net.crown_ibp(x).concretize()),
+        ("crown", lambda x: net.crown(x).concretize()),
+        ("alpha_crown_ibp", lambda x: net.crown_ibp(x, alpha=True).concretize()),
+        ("alpha_crown", lambda x: net.crown(x, alpha=True).concretize()),
     ]
 
     transform, target_transform = construct_transform()
-    test_data = datasets.FashionMNIST('../fashion_data', train=False, download=True,
-                                      transform=transform, target_transform=target_transform)
+    test_data = datasets.FashionMNIST("../fashion_data", train=False, download=True, transform=transform, target_transform=target_transform)
     test_loader = DataLoader(test_data, batch_size=100, shuffle=False, num_workers=8)
 
     for method_name, method in methods:
-        print(f'Method: {method_name}')
+        print(f"Method: {method_name}")
 
         margin_sum = 0.0
         for i, (X, y) in enumerate(test_loader):
@@ -194,7 +178,7 @@ def verify(net, args):
 
             margin_sum += worst_margin.sum().item()
 
-        print(f'[{method_name}] Average adversarial margin: {margin_sum / len(test_data):.3f}')
+        print(f"[{method_name}] Average adversarial margin: {margin_sum / len(test_data):.3f}")
 
 
 def main(args):
@@ -211,12 +195,11 @@ def main(args):
 
 def parse_arguments():
     parser = ArgumentParser()
-    parser.add_argument('--device', choices=list(map(torch.device, ['cuda', 'cpu'])), type=torch.device, default='cuda',
-                        help='Select device for tensor operations')
+    parser.add_argument("--device", choices=list(map(torch.device, ["cuda", "cpu"])), type=torch.device, default="cuda", help="Select device for tensor operations")
 
     return parser.parse_args()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = parse_arguments()
     main(args)

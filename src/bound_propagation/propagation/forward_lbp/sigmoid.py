@@ -32,11 +32,7 @@ class ForwardLBPSigmoidStrategy(ForwardLBPStrategy):
         lower, upper = bounds.concretize()
 
         # Compute alpha/beta parameters for sigmoid relaxation
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(
-            lower, upper
-        )
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
 
         # Apply the linear relaxation to the bounds
-        return apply_linear_relaxation(
-            bounds, alpha_lower, beta_lower, alpha_upper, beta_upper
-        )
+        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

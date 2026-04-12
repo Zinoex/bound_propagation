@@ -46,9 +46,7 @@ class TestPhase2Integration:
             id=0,
             op_type=OperationType.INPUT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(3,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(3,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.INPUT,
             name="x",
         )
@@ -60,9 +58,7 @@ class TestPhase2Integration:
             id=1,
             op_type=OperationType.LINEAR,
             inputs=[input_node],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             attributes={"weight": weight, "bias": bias},
             name="linear",
         )
@@ -71,9 +67,7 @@ class TestPhase2Integration:
             id=2,
             op_type=OperationType.RELU,
             inputs=[linear_node],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="relu",
         )
 
@@ -118,9 +112,7 @@ class TestPhase2Integration:
             id=0,
             op_type=OperationType.INPUT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.INPUT,
             name="x",
         )
@@ -129,9 +121,7 @@ class TestPhase2Integration:
             id=1,
             op_type=OperationType.SIGMOID,
             inputs=[input_node],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="sigmoid",
         )
 
@@ -139,9 +129,7 @@ class TestPhase2Integration:
             id=2,
             op_type=OperationType.CONSTANT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.CONSTANT,
             attributes={"value": torch.tensor([2.0, 2.0])},
             name="const_2",
@@ -151,9 +139,7 @@ class TestPhase2Integration:
             id=3,
             op_type=OperationType.MUL,
             inputs=[sigmoid_node, const_2],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="mul",
         )
 
@@ -161,9 +147,7 @@ class TestPhase2Integration:
             id=4,
             op_type=OperationType.CONSTANT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.CONSTANT,
             attributes={"value": torch.tensor([1.0, 1.0])},
             name="const_1",
@@ -173,9 +157,7 @@ class TestPhase2Integration:
             id=5,
             op_type=OperationType.ADD,
             inputs=[mul_node, const_1],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="add",
         )
 
@@ -216,9 +198,7 @@ class TestPhase2Integration:
             id=0,
             op_type=OperationType.INPUT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.INPUT,
             name="x",
         )
@@ -227,9 +207,7 @@ class TestPhase2Integration:
             id=1,
             op_type=OperationType.TANH,
             inputs=[input_node],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="tanh",
         )
 
@@ -265,9 +243,7 @@ class TestPhase2Integration:
             id=0,
             op_type=OperationType.INPUT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.INPUT,
             name="x1",
         )
@@ -276,9 +252,7 @@ class TestPhase2Integration:
             id=1,
             op_type=OperationType.INPUT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.INPUT,
             name="x2",
         )
@@ -287,9 +261,7 @@ class TestPhase2Integration:
             id=2,
             op_type=OperationType.RELU,
             inputs=[input1],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="relu",
         )
 
@@ -297,9 +269,7 @@ class TestPhase2Integration:
             id=3,
             op_type=OperationType.SIGMOID,
             inputs=[input2],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="sigmoid",
         )
 
@@ -307,9 +277,7 @@ class TestPhase2Integration:
             id=4,
             op_type=OperationType.ADD,
             inputs=[relu_node, sigmoid_node],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             name="add",
         )
 
@@ -375,9 +343,7 @@ class TestPhase2Summary:
             id=0,
             op_type=OperationType.INPUT,
             inputs=[],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
             node_type=NodeType.INPUT,
         )
 
@@ -385,9 +351,7 @@ class TestPhase2Summary:
             id=1,
             op_type=OperationType.RELU,
             inputs=[input_node],
-            output_metadata=TensorMetadata(
-                shape=(2,), dtype=torch.float32, device=torch.device("cpu")
-            ),
+            output_metadata=TensorMetadata(shape=(2,), dtype=torch.float32, device=torch.device("cpu")),
         )
 
         graph = Graph(nodes=[input_node, relu_node])
@@ -399,4 +363,3 @@ class TestPhase2Summary:
         assert len(all_bounds) == 2
         output_bounds = propagator.get_output_bounds()
         assert len(output_bounds) == 1
-

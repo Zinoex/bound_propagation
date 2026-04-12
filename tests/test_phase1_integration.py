@@ -9,6 +9,7 @@ steps in the plan:
 3. Test that control flow is detected and rejected
 4. Verify graph can be executed (forward pass matches original function)
 """
+
 from typing import cast
 
 import pytest

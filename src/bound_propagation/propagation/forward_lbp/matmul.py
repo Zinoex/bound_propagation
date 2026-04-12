@@ -40,10 +40,7 @@ class ForwardLBPMatmulStrategy(ForwardLBPStrategy):
             return self._matmul_by_constant(bounds_a, weight)
         else:
             # Both vary - need to concretize
-            raise NotImplementedError(
-                "LBP matmul with two varying operands not yet supported. "
-                "Use constant weights or switch to IBP method."
-            )
+            raise NotImplementedError("LBP matmul with two varying operands not yet supported. Use constant weights or switch to IBP method.")
 
     def _matmul_by_constant(self, bounds: LinearBounds, weight: torch.Tensor) -> LinearBounds:
         """
