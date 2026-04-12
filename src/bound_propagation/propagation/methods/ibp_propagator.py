@@ -60,7 +60,7 @@ class IBPPropagator(BoundPropagator):
 
     def propagate(
         self,
-        input_regions: list[SimpleRegion],
+        input_regions: Sequence[SimpleRegion],
     ) -> Sequence[AbstractBounds]:
         """
         Propagate interval bounds forward through the graph.

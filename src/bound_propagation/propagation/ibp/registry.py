@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ...ir import AbstractValueType
+
 if TYPE_CHECKING:
-    from ...ir import AbstractValueType, OperationType
+    from ...ir import OperationType
     from .base import ForwardIBPStrategy
 
 
@@ -36,6 +38,15 @@ class ForwardIBPStrategyRegistry:
         strategy = self._registry.get(key)
         if strategy is not None:
             return strategy
+
+        # Fallback: For variable-arity operations (e.g., concat, stack),
+        # if registered with (ABSTRACT,), match any tuple of all ABSTRACT values
+
+        if all(s == AbstractValueType.ABSTRACT for s in signature):
+            fallback_key = (operation_type, (AbstractValueType.ABSTRACT,))
+            strategy = self._registry.get(fallback_key)
+            if strategy is not None:
+                return strategy
 
         raise ValueError(f"No strategy registered for operation type '{operation_type}' with signature={signature}.")
 

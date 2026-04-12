@@ -198,7 +198,10 @@ class GraphConverter:
         return ir_node
 
     def _get_input_nodes(self, fx_node: fx.Node) -> list[Node]:
-        """Get IR nodes corresponding to fx node's inputs."""
+        """Get IR nodes corresponding to fx node's inputs.
+
+        Handles operations like concat/stack where inputs are passed as a list.
+        """
         input_nodes: list[Node] = []
 
         for arg in fx_node.args:
@@ -206,6 +209,13 @@ class GraphConverter:
                 if arg not in self.fx_to_ir:
                     raise ConversionError(f"Input node {arg.name} not yet converted (topological order issue)")
                 input_nodes.append(self.fx_to_ir[arg])
+            elif isinstance(arg, (list, tuple)):
+                # Handle operations like concat/stack that take lists of tensors
+                for item in arg:
+                    if isinstance(item, fx.Node):
+                        if item not in self.fx_to_ir:
+                            raise ConversionError(f"Input node {item.name} not yet converted (topological order issue)")
+                        input_nodes.append(self.fx_to_ir[item])
             # Skip non-Node arguments (constants, etc.)
 
         return input_nodes
@@ -307,10 +317,74 @@ class GraphConverter:
             if "max" in attributes:
                 attributes["max"] = attributes["max"]
 
-        elif op_type in [OperationType.TRANSPOSE, OperationType.PERMUTE]:
-            # Transpose/permute: extract dimensions
+        elif op_type == OperationType.TRANSPOSE:
+            # Transpose: extract dim0 and dim1
+            if len(fx_node.args) >= 3:
+                # torch.transpose(input, dim0, dim1) or input.transpose(dim0, dim1)
+                attributes["dim0"] = fx_node.args[1] if fx_node.op == "call_function" else fx_node.args[0]
+                attributes["dim1"] = fx_node.args[2] if fx_node.op == "call_function" else fx_node.args[1]
+            elif "dim0" not in attributes and "dim1" not in attributes:
+                # Check if they're in kwargs
+                if "dim0" in fx_node.kwargs:
+                    attributes["dim0"] = fx_node.kwargs["dim0"]
+                if "dim1" in fx_node.kwargs:
+                    attributes["dim1"] = fx_node.kwargs["dim1"]
+
+        elif op_type == OperationType.PERMUTE:
+            # Permute: extract dims tuple/list
             if len(fx_node.args) > 1:
-                attributes["dims"] = fx_node.args[1:]
+                # permute(dims) where dims can be tuple or varargs
+                dims_arg = fx_node.args[1] if fx_node.op == "call_function" else fx_node.args[0]
+                if isinstance(dims_arg, (tuple, list)):
+                    attributes["dims"] = dims_arg
+                else:
+                    # Varargs case: gather all positional args as dims
+                    attributes["dims"] = fx_node.args[1:] if fx_node.op == "call_function" else fx_node.args
+
+        elif op_type == OperationType.GETITEM:
+            # Getitem: extract the index/slice
+            if len(fx_node.args) >= 2:
+                # operator.getitem(tensor, item) - item is args[1]
+                attributes["item"] = fx_node.args[1]
+
+        elif op_type in [OperationType.SELECT]:
+            # Select: extract dim and index
+            if len(fx_node.args) >= 3:
+                # torch.select(input, dim, index) or tensor.select(dim, index)
+                if fx_node.op == "call_function":
+                    attributes["dim"] = fx_node.args[1]
+                    attributes["index"] = fx_node.args[2]
+                else:  # call_method
+                    attributes["dim"] = fx_node.args[0]
+                    attributes["index"] = fx_node.args[1]
+
+        elif op_type in [OperationType.CONCAT, OperationType.STACK]:
+            # Concat/stack: extract dim
+            if "dim" in attributes:
+                pass  # Already extracted from kwargs
+            elif len(fx_node.args) > 1 and isinstance(fx_node.args[1], int):
+                # If second arg is an int, it's the dim
+                attributes["dim"] = fx_node.args[1]
+
+        elif op_type in [OperationType.VIEW, OperationType.RESHAPE]:
+            # View/reshape: extract target shape
+            if len(fx_node.args) > 1:
+                # view/reshape(shape) where shape can be tuple or varargs
+                if fx_node.op == "call_function":
+                    # torch.reshape(tensor, shape) - shape starts at index 1
+                    shape_arg = fx_node.args[1] if len(fx_node.args) == 2 else fx_node.args[1:]
+                else:  # call_method
+                    # tensor.view(shape) or tensor.reshape(shape)
+                    # First arg is the tensor node, shape args start at index 1
+                    shape_arg = fx_node.args[1] if len(fx_node.args) == 2 else fx_node.args[1:]
+
+                if isinstance(shape_arg, (tuple, list)):
+                    attributes["shape"] = tuple(s for s in shape_arg if isinstance(s, int))
+                elif isinstance(shape_arg, int):
+                    # Single dimension provided
+                    attributes["shape"] = (shape_arg,)
+                else:
+                    attributes["shape"] = tuple(shape_arg)
 
         return attributes
 

@@ -81,8 +81,12 @@ TORCH_OP_MAPPING: dict[Callable[..., Any] | str, OperationType] = {
     torch.Tensor.mean: OperationType.MEAN,
     torch.max: OperationType.MAX,
     torch.Tensor.max: OperationType.MAX,
+    torch.amax: OperationType.MAX,
+    torch.Tensor.amax: OperationType.MAX,
     torch.min: OperationType.MIN,
     torch.Tensor.min: OperationType.MIN,
+    torch.amin: OperationType.MIN,
+    torch.Tensor.amin: OperationType.MIN,
     # Structural
     torch.cat: OperationType.CONCAT,
     torch.concat: OperationType.CONCAT,
@@ -146,6 +150,10 @@ def get_operation_type(target: Any) -> OperationType | None:
     if isinstance(target, str):
         # Handle method calls like "relu", "transpose", etc.
         method_mapping = {
+            "add": OperationType.ADD,
+            "sub": OperationType.SUB,
+            "mul": OperationType.MUL,
+            "div": OperationType.DIV,
             "relu": OperationType.RELU,
             "sigmoid": OperationType.SIGMOID,
             "tanh": OperationType.TANH,
@@ -153,10 +161,13 @@ def get_operation_type(target: Any) -> OperationType | None:
             "permute": OperationType.PERMUTE,
             "reshape": OperationType.RESHAPE,
             "flatten": OperationType.FLATTEN,
+            "view": OperationType.VIEW,
             "sum": OperationType.SUM,
             "mean": OperationType.MEAN,
             "max": OperationType.MAX,
             "min": OperationType.MIN,
+            "amax": OperationType.MAX,
+            "amin": OperationType.MIN,
             "gather": OperationType.GATHER,
             "exp": OperationType.EXP,
             "log": OperationType.LOG,
