@@ -1,6 +1,7 @@
 """
 Tests for tensor metadata classes.
 """
+
 from dataclasses import FrozenInstanceError
 
 import pytest

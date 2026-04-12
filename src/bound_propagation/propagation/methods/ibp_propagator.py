@@ -32,7 +32,9 @@ class IBPPropagator(BoundPropagator):
 
     def _ensure_node_kind_annotations(self) -> None:
         """Ensure node-level input/output kind annotations exist for dispatch."""
-        missing_operation_annotation = any(node.is_operation and node.input_signature is None for node in self.graph.nodes)
+        missing_operation_annotation = any(
+            node.is_operation and node.input_signature is None for node in self.graph.nodes
+        )
         if missing_operation_annotation:
             raise ValueError("All OPERATION and OUTPUT nodes must have input_signature annotations for IBP dispatch")
 
@@ -92,7 +94,9 @@ class IBPPropagator(BoundPropagator):
                 case NodeType.CONSTANT | NodeType.PARAMETER:
                     bounds[node.id] = node.value
                 case NodeType.OPERATION | NodeType.OUTPUT:
-                    input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number] = [bounds[inp.id] for inp in node.inputs]
+                    input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number] = [
+                        bounds[inp.id] for inp in node.inputs
+                    ]
                     strategy = self._bound_strategies[node.id]
                     bounds[node.id] = strategy.propagate_forwards(node, input_bounds)
                 case _:

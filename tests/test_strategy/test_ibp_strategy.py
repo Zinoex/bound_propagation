@@ -342,7 +342,9 @@ class TestIBPError:
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
 
         # Create LinearBounds instead of IntervalBounds
-        linear_bounds = LinearBounds.from_interval_bounds(IntervalBounds(region, torch.tensor([0.0]), torch.tensor([1.0])))
+        linear_bounds = LinearBounds.from_interval_bounds(
+            IntervalBounds(region, torch.tensor([0.0]), torch.tensor([1.0]))
+        )
 
         node = create_test_node(OperationType.ADD)
         config = StrategyConfig()

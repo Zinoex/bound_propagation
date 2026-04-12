@@ -25,7 +25,14 @@ class TestOperationType:
 
     def test_elementwise_arithmetic_operations(self):
         """Test elementwise arithmetic operations."""
-        arithmetic_ops = [OperationType.ADD, OperationType.SUB, OperationType.MUL, OperationType.DIV, OperationType.POW, OperationType.NEG]
+        arithmetic_ops = [
+            OperationType.ADD,
+            OperationType.SUB,
+            OperationType.MUL,
+            OperationType.DIV,
+            OperationType.POW,
+            OperationType.NEG,
+        ]
 
         for op in arithmetic_ops:
             assert op.is_elementwise is True
@@ -186,7 +193,9 @@ class TestOperationProperties:
     def test_mutually_exclusive_categories(self):
         """Test that operations belong to exactly one category."""
         for op_type in OperationType:
-            categories_count = sum([op_type.is_linear, op_type.is_reduction, op_type.is_structural, op_type.is_derivative])
+            categories_count = sum(
+                [op_type.is_linear, op_type.is_reduction, op_type.is_structural, op_type.is_derivative]
+            )
 
             # Elementwise can overlap, but others should be mutually exclusive
             # Each non-elementwise op should be in exactly one other category

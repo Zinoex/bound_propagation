@@ -295,7 +295,11 @@ class Graph:
                 input_signatures[node.id] = signature
                 node.input_signature = signature
 
-                output_signature = AbstractValueType.CONSTANT if signature and all(kind == AbstractValueType.CONSTANT for kind in signature) else AbstractValueType.ABSTRACT
+                output_signature = (
+                    AbstractValueType.CONSTANT
+                    if signature and all(kind == AbstractValueType.CONSTANT for kind in signature)
+                    else AbstractValueType.ABSTRACT
+                )
 
             output_signatures[node.id] = output_signature
             node.output_signature = output_signature

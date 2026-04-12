@@ -50,7 +50,10 @@ class IBPSubConstantRight(ForwardIBPStrategy):
         c = input_bounds[1]
 
         if not isinstance(x, IntervalBounds) or isinstance(c, IntervalBounds):
-            raise TypeError("IBPSubConstantRight requires the first input to be IntervalBounds and the second input to be torch.Tensor or Number")
+            raise TypeError(
+                "IBPSubConstantRight requires the first input to be IntervalBounds "
+                "and the second input to be torch.Tensor or Number"
+            )
 
         lower = x.lower - c
         upper = x.upper - c
@@ -73,7 +76,10 @@ class IBPSubConstantLeft(ForwardIBPStrategy):
         x = input_bounds[1]
 
         if not isinstance(x, IntervalBounds) or isinstance(c, IntervalBounds):
-            raise TypeError("IBPSubConstantLeft requires the second input to be IntervalBounds and the first input to be torch.Tensor or Number")
+            raise TypeError(
+                "IBPSubConstantLeft requires the second input to be IntervalBounds "
+                "and the first input to be torch.Tensor or Number"
+            )
 
         lower = c - x.upper
         upper = c - x.lower

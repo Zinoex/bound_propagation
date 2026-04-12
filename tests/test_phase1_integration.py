@@ -121,7 +121,9 @@ class TestPhase1Verification:
 
                     # All operation outputs should have batch dimension
                     if meta.ndim >= 1:
-                        assert meta.shape[0] == batch_size, f"Node {node.name} has wrong batch: {meta.shape[0]} != {batch_size}"
+                        assert meta.shape[0] == batch_size, (
+                            f"Node {node.name} has wrong batch: {meta.shape[0]} != {batch_size}"
+                        )
 
     def test_control_flow_rejected(self):
         """
@@ -186,7 +188,9 @@ class TestPhase1Verification:
             traced_output = fx_module(x, y)
 
             # Should match closely
-            assert torch.allclose(original_output, traced_output, rtol=1e-5, atol=1e-6), "Traced output doesn't match original"
+            assert torch.allclose(original_output, traced_output, rtol=1e-5, atol=1e-6), (
+                "Traced output doesn't match original"
+            )
 
     def test_residual_connection_structure(self):
         """Test that residual connections are properly represented in IR."""

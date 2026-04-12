@@ -35,12 +35,26 @@ class TestNode:
     @pytest.fixture
     def input_node(self, sample_metadata):
         """Sample input node."""
-        return Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT, name="input_0")
+        return Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=sample_metadata,
+            node_type=NodeType.INPUT,
+            name="input_0",
+        )
 
     @pytest.fixture
     def operation_node(self, sample_metadata, input_node):
         """Sample operation node."""
-        return Node(id=1, op_type=OperationType.RELU, inputs=[input_node], output_metadata=sample_metadata, node_type=NodeType.OPERATION, name="relu_1")
+        return Node(
+            id=1,
+            op_type=OperationType.RELU,
+            inputs=[input_node],
+            output_metadata=sample_metadata,
+            node_type=NodeType.OPERATION,
+            name="relu_1",
+        )
 
     def test_basic_creation(self, sample_metadata):
         """Test basic node creation."""
@@ -78,25 +92,39 @@ class TestNode:
         assert input_node.is_input is True
         assert operation_node.is_input is False
 
-        constant_node = Node(id=2, op_type=OperationType.CONSTANT, inputs=[], output_metadata=input_node.output_metadata, node_type=NodeType.CONSTANT)
+        constant_node = Node(
+            id=2,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=input_node.output_metadata,
+            node_type=NodeType.CONSTANT,
+        )
         assert constant_node.is_input is False
 
     def test_is_value_property_for_constant(self):
         """Test is_value property for constant nodes."""
         metadata = TensorMetadata(shape=(2, 3))
-        constant_node = Node(id=0, op_type=OperationType.CONSTANT, inputs=[], output_metadata=metadata, node_type=NodeType.CONSTANT)
+        constant_node = Node(
+            id=0, op_type=OperationType.CONSTANT, inputs=[], output_metadata=metadata, node_type=NodeType.CONSTANT
+        )
         assert constant_node.is_value is True
 
-        input_node = Node(id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=metadata, node_type=NodeType.INPUT)
+        input_node = Node(
+            id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=metadata, node_type=NodeType.INPUT
+        )
         assert input_node.is_value is False
 
     def test_is_value_property_for_parameter(self):
         """Test is_value property for parameter nodes."""
         metadata = TensorMetadata(shape=(2, 3))
-        param_node = Node(id=0, op_type=OperationType.PARAMETER, inputs=[], output_metadata=metadata, node_type=NodeType.PARAMETER)
+        param_node = Node(
+            id=0, op_type=OperationType.PARAMETER, inputs=[], output_metadata=metadata, node_type=NodeType.PARAMETER
+        )
         assert param_node.is_value is True
 
-        input_node = Node(id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=metadata, node_type=NodeType.INPUT)
+        input_node = Node(
+            id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=metadata, node_type=NodeType.INPUT
+        )
         assert input_node.is_value is False
 
     def test_is_operation_property(self, input_node, operation_node):
@@ -117,7 +145,9 @@ class TestNode:
         """Test get_output_metadata for multi-output operations."""
         meta2 = TensorMetadata(shape=(3, 4))
         meta3 = TensorMetadata(shape=(4, 5))
-        multi_output_node = Node(id=0, op_type=OperationType.SPLIT, inputs=[], output_metadata=(sample_metadata, meta2, meta3))
+        multi_output_node = Node(
+            id=0, op_type=OperationType.SPLIT, inputs=[], output_metadata=(sample_metadata, meta2, meta3)
+        )
 
         assert multi_output_node.get_output_metadata(0) == sample_metadata
         assert multi_output_node.get_output_metadata(1) == meta2
@@ -198,8 +228,12 @@ class TestNode:
 
     def test_node_with_multiple_inputs(self, sample_metadata, input_node):
         """Test node with multiple inputs."""
-        input_node2 = Node(id=10, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
-        add_node = Node(id=2, op_type=OperationType.ADD, inputs=[input_node, input_node2], output_metadata=sample_metadata)
+        input_node2 = Node(
+            id=10, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
+        add_node = Node(
+            id=2, op_type=OperationType.ADD, inputs=[input_node, input_node2], output_metadata=sample_metadata
+        )
 
         assert len(add_node.inputs) == 2
         assert input_node in add_node.inputs
@@ -207,10 +241,18 @@ class TestNode:
 
     def test_node_with_empty_inputs(self, sample_metadata):
         """Test node with no inputs (input/constant nodes)."""
-        input_node = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        input_node = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         assert len(input_node.inputs) == 0
 
-        constant_node = Node(id=1, op_type=OperationType.CONSTANT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.CONSTANT)
+        constant_node = Node(
+            id=1,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=sample_metadata,
+            node_type=NodeType.CONSTANT,
+        )
         assert len(constant_node.inputs) == 0
 
     def test_node_id_uniqueness(self, sample_metadata):
@@ -243,7 +285,9 @@ class TestNode:
 
     def test_node_name_optional(self, sample_metadata):
         """Test that node name is optional."""
-        node_with_name = Node(id=0, op_type=OperationType.RELU, inputs=[], output_metadata=sample_metadata, name="my_layer")
+        node_with_name = Node(
+            id=0, op_type=OperationType.RELU, inputs=[], output_metadata=sample_metadata, name="my_layer"
+        )
         assert node_with_name.name == "my_layer"
 
         node_without_name = Node(id=1, op_type=OperationType.RELU, inputs=[], output_metadata=sample_metadata)

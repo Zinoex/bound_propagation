@@ -45,7 +45,9 @@ class LinearRelaxation:
     def __post_init__(self):
         """Validate the relaxation structure."""
         if len(self.coeffs_lower) != len(self.coeffs_upper):
-            raise ValueError(f"Number of lower coefficients ({len(self.coeffs_lower)}) must match upper coefficients ({len(self.coeffs_upper)})")
+            raise ValueError(
+                f"Number of lower coefficients ({len(self.coeffs_lower)}) must match upper coefficients ({len(self.coeffs_upper)})"
+            )
 
         if len(self.coeffs_lower) == 0:
             raise ValueError("At least one input coefficient is required")
@@ -57,7 +59,9 @@ class LinearRelaxation:
         # Validate input shapes if provided
         if self.input_shapes is not None:
             if len(self.input_shapes) != len(self.coeffs_lower):
-                raise ValueError(f"Number of input shapes ({len(self.input_shapes)}) must match number of coefficients ({len(self.coeffs_lower)})")
+                raise ValueError(
+                    f"Number of input shapes ({len(self.input_shapes)}) must match number of coefficients ({len(self.coeffs_lower)})"
+                )
 
     @property
     def num_inputs(self) -> int:
@@ -111,7 +115,9 @@ class LinearRelaxation:
         Returns:
             True if lower and upper bounds are equal (within tolerance).
         """
-        coeffs_match = all(torch.allclose(c_l, c_u, rtol=rtol, atol=atol) for c_l, c_u in zip(self.coeffs_lower, self.coeffs_upper))
+        coeffs_match = all(
+            torch.allclose(c_l, c_u, rtol=rtol, atol=atol) for c_l, c_u in zip(self.coeffs_lower, self.coeffs_upper)
+        )
         bias_match = torch.allclose(self.bias_lower, self.bias_upper, rtol=rtol, atol=atol)
         return coeffs_match and bias_match
 

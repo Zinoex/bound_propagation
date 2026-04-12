@@ -19,7 +19,7 @@ class OperationType(StrEnum):
     - LINEAR: Linear transformations (matmul, linear layers, convolutions)
     - ELEMENTWISE: Element-wise operations (add, mul, activations)
     - REDUCTION: Operations that reduce dimensions (sum, mean, max)
-    - STRUCTURAL: Operations that reorganize tensors (concat, split, select)
+    - STRUCTURAL: Operations that reorganize tensors (concat, select)
     - DERIVATIVE: Differentiation operations (jacobian, gradient)
     """
 
@@ -29,10 +29,9 @@ class OperationType(StrEnum):
     MATMUL = "matmul"  # Matrix multiplication: y = x @ W
     LINEAR = "linear"  # Affine transformation: y = x @ W + b
     CONV2D = "conv2d"  # 2D convolution (for future support)
-    TRANSPOSE = "transpose"  # Transpose operation
 
     # ============================================================================
-    # ELEMENTWISE OPERATIONS - Arithmetic
+    # BASIC ARITHMETIC OPERATIONS
     # ============================================================================
     ADD = "add"  # Element-wise addition: y = x1 + x2
     SUB = "sub"  # Element-wise subtraction: y = x1 - x2
@@ -40,6 +39,9 @@ class OperationType(StrEnum):
     DIV = "div"  # Element-wise division: y = x1 / x2
     POW = "pow"  # Element-wise power: y = x^p
     NEG = "neg"  # Element-wise negation: y = -x
+    RECIPROCAL = "reciprocal"  # Element-wise reciprocal: y = 1/x
+    MAXIMUM = "maximum"  # Element-wise maximum: y = max(x1, x2)
+    MINIMUM = "minimum"  # Element-wise minimum: y = min(x1, x2)
 
     # ============================================================================
     # ELEMENTWISE OPERATIONS - Activations
@@ -63,7 +65,6 @@ class OperationType(StrEnum):
     # ELEMENTWISE OPERATIONS - Other
     # ============================================================================
     CLAMP = "clamp"  # Clamp values: y = min(max(x, min_val), max_val)
-    RECIPROCAL = "reciprocal"  # Reciprocal: y = 1 / x
 
     # ============================================================================
     # REDUCTION OPERATIONS
@@ -77,7 +78,7 @@ class OperationType(StrEnum):
     # STRUCTURAL OPERATIONS
     # ============================================================================
     CONCAT = "concat"  # Concatenation along a dimension
-    SPLIT = "split"  # Split tensor into multiple tensors
+    STACK = "stack"  # Stack tensors along a new dimension
     SELECT = "select"  # Select specific elements/slices
     GATHER = "gather"  # Gather elements according to indices
     RESHAPE = "reshape"  # Reshape tensor (preserves data)
@@ -85,6 +86,9 @@ class OperationType(StrEnum):
     PERMUTE = "permute"  # Permute dimensions
     UNSQUEEZE = "unsqueeze"  # Add dimension of size 1
     SQUEEZE = "squeeze"  # Remove dimensions of size 1
+    VIEW = "view"  # Reshape without copying (like PyTorch's view)
+    TRANSPOSE = "transpose"  # Transpose operation
+    GETITEM = "getitem"  # Indexing/slicing operation
 
     # ============================================================================
     # DERIVATIVE OPERATIONS
@@ -107,19 +111,9 @@ class OperationType(StrEnum):
         return _OPERATION_CATEGORIES.get(self, OperationCategory.OTHER)
 
     @property
-    def is_linear(self) -> bool:
-        """Check if this is a linear operation."""
-        return self.category == OperationCategory.LINEAR
-
-    @property
     def is_elementwise(self) -> bool:
         """Check if this is an element-wise operation."""
         return self.category == OperationCategory.ELEMENTWISE
-
-    @property
-    def is_activation(self) -> bool:
-        """Check if this is an activation function (nonlinear elementwise)."""
-        return self in _ACTIVATION_OPS
 
     @property
     def is_reduction(self) -> bool:
@@ -140,7 +134,6 @@ class OperationType(StrEnum):
 class OperationCategory(StrEnum):
     """High-level categories for operation types."""
 
-    LINEAR = "linear"
     ELEMENTWISE = "elementwise"
     REDUCTION = "reduction"
     STRUCTURAL = "structural"
@@ -151,17 +144,18 @@ class OperationCategory(StrEnum):
 # Mapping from operation types to categories
 _OPERATION_CATEGORIES: dict[OperationType, OperationCategory] = {
     # Linear
-    OperationType.MATMUL: OperationCategory.LINEAR,
-    OperationType.LINEAR: OperationCategory.LINEAR,
-    OperationType.CONV2D: OperationCategory.LINEAR,
-    OperationType.TRANSPOSE: OperationCategory.LINEAR,
-    # Elementwise - Arithmetic
-    OperationType.ADD: OperationCategory.ELEMENTWISE,
-    OperationType.SUB: OperationCategory.ELEMENTWISE,
-    OperationType.MUL: OperationCategory.ELEMENTWISE,
-    OperationType.DIV: OperationCategory.ELEMENTWISE,
+    OperationType.MATMUL: OperationCategory.OTHER,
+    OperationType.LINEAR: OperationCategory.OTHER,
+    # Basic arithmetic
+    OperationType.ADD: OperationCategory.OTHER,
+    OperationType.SUB: OperationCategory.OTHER,
+    OperationType.MUL: OperationCategory.OTHER,
+    OperationType.DIV: OperationCategory.OTHER,
     OperationType.POW: OperationCategory.ELEMENTWISE,
     OperationType.NEG: OperationCategory.ELEMENTWISE,
+    OperationType.RECIPROCAL: OperationCategory.ELEMENTWISE,
+    OperationType.MAXIMUM: OperationCategory.OTHER,
+    OperationType.MINIMUM: OperationCategory.OTHER,
     # Elementwise - Activations
     OperationType.RELU: OperationCategory.ELEMENTWISE,
     OperationType.SIGMOID: OperationCategory.ELEMENTWISE,
@@ -176,7 +170,6 @@ _OPERATION_CATEGORIES: dict[OperationType, OperationCategory] = {
     OperationType.TAN: OperationCategory.ELEMENTWISE,
     # Elementwise - Other
     OperationType.CLAMP: OperationCategory.ELEMENTWISE,
-    OperationType.RECIPROCAL: OperationCategory.ELEMENTWISE,
     # Reduction
     OperationType.SUM: OperationCategory.REDUCTION,
     OperationType.MEAN: OperationCategory.REDUCTION,
@@ -184,31 +177,18 @@ _OPERATION_CATEGORIES: dict[OperationType, OperationCategory] = {
     OperationType.MIN: OperationCategory.REDUCTION,
     # Structural
     OperationType.CONCAT: OperationCategory.STRUCTURAL,
-    OperationType.SPLIT: OperationCategory.STRUCTURAL,
+    OperationType.STACK: OperationCategory.STRUCTURAL,
     OperationType.SELECT: OperationCategory.STRUCTURAL,
-    OperationType.GATHER: OperationCategory.STRUCTURAL,
     OperationType.RESHAPE: OperationCategory.STRUCTURAL,
     OperationType.FLATTEN: OperationCategory.STRUCTURAL,
     OperationType.PERMUTE: OperationCategory.STRUCTURAL,
     OperationType.UNSQUEEZE: OperationCategory.STRUCTURAL,
     OperationType.SQUEEZE: OperationCategory.STRUCTURAL,
+    OperationType.VIEW: OperationCategory.STRUCTURAL,
+    OperationType.TRANSPOSE: OperationCategory.STRUCTURAL,
     # Derivative
     OperationType.JACOBIAN: OperationCategory.DERIVATIVE,
     OperationType.GRADIENT: OperationCategory.DERIVATIVE,
     OperationType.VJP: OperationCategory.DERIVATIVE,
     OperationType.JVP: OperationCategory.DERIVATIVE,
-}
-
-# Set of activation operations (subset of elementwise)
-_ACTIVATION_OPS: set[OperationType] = {
-    OperationType.RELU,
-    OperationType.SIGMOID,
-    OperationType.TANH,
-    OperationType.EXP,
-    OperationType.LOG,
-    OperationType.SQRT,
-    OperationType.SIN,
-    OperationType.COS,
-    OperationType.TAN,
-    OperationType.ABS,
 }

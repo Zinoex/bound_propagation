@@ -21,11 +21,21 @@ class FashionMNISTNetwork(nn.Sequential):
             img_size = 28 * 28
             classes = 10
 
-            super().__init__(nn.Linear(img_size, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, 64), nn.ReLU(), nn.Linear(64, classes))
+            super().__init__(
+                nn.Linear(img_size, 64),
+                nn.ReLU(),
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64, 64),
+                nn.ReLU(),
+                nn.Linear(64, classes),
+            )
 
 
 def construct_transform():
-    transform = transforms.Compose([transforms.PILToTensor(), transforms.ConvertImageDtype(torch.float), transforms.Lambda(torch.flatten)])
+    transform = transforms.Compose(
+        [transforms.PILToTensor(), transforms.ConvertImageDtype(torch.float), transforms.Lambda(torch.flatten)]
+    )
 
     # Identity transform - because cross entropy loss supports class indexing
     target_transform = transforms.Compose([])
@@ -38,7 +48,9 @@ def train(net, args):
     print("[TRAINING]")
 
     transform, target_transform = construct_transform()
-    train_data = datasets.FashionMNIST("../fashion_data", train=True, download=True, transform=transform, target_transform=target_transform)
+    train_data = datasets.FashionMNIST(
+        "../fashion_data", train=True, download=True, transform=transform, target_transform=target_transform
+    )
     train_loader = DataLoader(train_data, batch_size=500, shuffle=True, num_workers=8)
 
     criterion = torch.nn.CrossEntropyLoss()
@@ -67,7 +79,9 @@ def train(net, args):
             running_loss += loss.item()
             running_cross_entropy += cross_entropy.item()
             if i % 100 == 99:  # print every 100 mini-batches
-                print(f"[{epoch + 1}, {i + 1:3d}] loss: {running_loss / 100:.3f}, cross entropy: {running_cross_entropy / 100:.3f}")
+                print(
+                    f"[{epoch + 1}, {i + 1:3d}] loss: {running_loss / 100:.3f}, cross entropy: {running_cross_entropy / 100:.3f}"
+                )
                 running_loss = 0.0
                 running_cross_entropy = 0.0
 
@@ -80,7 +94,9 @@ def test(net, args):
     print("[TEST]")
 
     transform, target_transform = construct_transform()
-    test_data = datasets.FashionMNIST("../fashion_data", train=False, download=True, transform=transform, target_transform=target_transform)
+    test_data = datasets.FashionMNIST(
+        "../fashion_data", train=False, download=True, transform=transform, target_transform=target_transform
+    )
     test_loader = DataLoader(test_data, batch_size=100, shuffle=False, num_workers=8)
 
     correct = 0
@@ -163,7 +179,9 @@ def verify(net, args):
     ]
 
     transform, target_transform = construct_transform()
-    test_data = datasets.FashionMNIST("../fashion_data", train=False, download=True, transform=transform, target_transform=target_transform)
+    test_data = datasets.FashionMNIST(
+        "../fashion_data", train=False, download=True, transform=transform, target_transform=target_transform
+    )
     test_loader = DataLoader(test_data, batch_size=100, shuffle=False, num_workers=8)
 
     for method_name, method in methods:
@@ -195,7 +213,13 @@ def main(args):
 
 def parse_arguments():
     parser = ArgumentParser()
-    parser.add_argument("--device", choices=list(map(torch.device, ["cuda", "cpu"])), type=torch.device, default="cuda", help="Select device for tensor operations")
+    parser.add_argument(
+        "--device",
+        choices=list(map(torch.device, ["cuda", "cpu"])),
+        type=torch.device,
+        default="cuda",
+        help="Select device for tensor operations",
+    )
 
     return parser.parse_args()
 

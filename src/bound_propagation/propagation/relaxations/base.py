@@ -85,7 +85,9 @@ class RelaxationRegistry:
             ValueError: If a strategy is already registered for this operation.
         """
         if op_type in cls._registry:
-            raise ValueError(f"Relaxation strategy already registered for {op_type}. Existing: {cls._registry[op_type].__class__.__name__}, New: {strategy.__class__.__name__}")
+            raise ValueError(
+                f"Relaxation strategy already registered for {op_type}. Existing: {cls._registry[op_type].__class__.__name__}, New: {strategy.__class__.__name__}"
+            )
         cls._registry[op_type] = strategy
 
     @classmethod

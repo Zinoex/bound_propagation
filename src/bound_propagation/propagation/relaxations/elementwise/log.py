@@ -59,7 +59,9 @@ class LogRelaxationStrategy(RelaxationStrategy):
 
         # Check that all inputs are positive
         if torch.any(lower <= 0):
-            raise ValueError(f"Log relaxation requires positive lower bounds. Got minimum lower bound: {lower.min().item()}")
+            raise ValueError(
+                f"Log relaxation requires positive lower bounds. Got minimum lower bound: {lower.min().item()}"
+            )
 
         # Compute log at bounds
         lower_act = torch.log(lower)

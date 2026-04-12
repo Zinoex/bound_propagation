@@ -28,6 +28,8 @@ class IBPDiv(ForwardIBPStrategy):
         if not isinstance(x_bounds, IntervalBounds) or not isinstance(y_bounds, IntervalBounds):
             raise TypeError("IBPDiv requires both inputs to be IntervalBounds")
 
+        # TODO: Fix because this is not sound.
+
         # Check if divisor can be zero
         if torch.any((y_bounds.lower <= 0) & (y_bounds.upper >= 0)):
             # Division by interval containing zero - return unbounded
@@ -67,7 +69,10 @@ class IBPDivConstant(ForwardIBPStrategy):
             interval = y
             c = x
         else:
-            raise TypeError(f"IBPDivConstantStrategy requires the first input to be IntervalBounds and the second input to be torch.Tensor or Number, got {type(x)} and {type(y)}")
+            raise TypeError(
+                "IBPDivConstantStrategy requires the first input to be IntervalBounds and "
+                f"the second input to be torch.Tensor or Number, got {type(x)} and {type(y)}"
+            )
 
         if isinstance(c, torch.Tensor):
             lower = torch.where(
@@ -120,15 +125,44 @@ class IBPConstantDiv(ForwardIBPStrategy):
             c = y
             interval = x
         else:
-            raise TypeError(f"IBPConstantDiv requires the first input to be torch.Tensor or Number and the second input to be IntervalBounds, got {type(x)} and {type(y)}")
+            raise TypeError(
+                "IBPConstantDiv requires the first input to be torch.Tensor or Number and "
+                f"the second input to be IntervalBounds, got {type(x)} and {type(y)}"
+            )
 
-        if torch.any((interval.lower <= 0) & (interval.upper >= 0)):
-            return IntervalBounds.unbounded_like(interval)
+        # For c / [a, b], if
+        # - [a, b] contains 0, return [-inf, inf]
+        # - c > 0, return [c/b, c/a]
+        # - c < 0, return [c/a, c/b]
+        unbounded_mask = (interval.lower <= 0) & (interval.upper >= 0)
 
-        ll = c / interval.lower
-        lu = c / interval.upper
+        if isinstance(c, torch.Tensor):
+            lower = torch.where(
+                c >= 0,
+                c / interval.upper,
+                c / interval.lower,
+            )
+            lower = torch.where(unbounded_mask, float("-inf"), lower)
 
-        lower = torch.min(ll, lu)
-        upper = torch.max(ll, lu)
+            upper = torch.where(
+                c >= 0,
+                c / interval.lower,
+                c / interval.upper,
+            )
+            upper = torch.where(unbounded_mask, float("inf"), upper)
 
-        return IntervalBounds(lower, upper)
+            return IntervalBounds(lower, upper)
+        elif isinstance(c, torch.types.Number):
+            if c == 0:
+                zero = torch.zeros_like(interval.lower)
+                return IntervalBounds(zero, zero)
+
+            lower = c / interval.upper
+            lower = torch.where(unbounded_mask, float("-inf"), lower)
+
+            upper = c / interval.lower
+            upper = torch.where(unbounded_mask, float("inf"), upper)
+
+            return IntervalBounds(lower, upper)
+        else:
+            raise TypeError(f"Constant input must be torch.Tensor or Number, got {type(c)}")

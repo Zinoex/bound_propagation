@@ -77,7 +77,9 @@ class BoundPropagationTracer(fx.Tracer):
 
         if unsupported_nodes:
             details = "\n  - " + "\n  - ".join(unsupported_nodes)
-            raise UnsupportedOperationError("Traced graph contains unsupported operations. Only mapped operations are accepted:" + details)
+            raise UnsupportedOperationError(
+                "Traced graph contains unsupported operations. Only mapped operations are accepted:" + details
+            )
 
     def _get_module_type(self, node: fx.Node) -> type[torch.nn.Module] | None:
         """Resolve module type for a call_module node."""

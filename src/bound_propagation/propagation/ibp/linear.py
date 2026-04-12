@@ -49,10 +49,14 @@ class IBPLinear(ForwardIBPStrategy):
             neg_mask = w_row < 0
 
             # Lower: pos*lower + neg*upper
-            lower_out[i] = torch.sum(w_row[pos_mask] * x_bounds.lower[pos_mask]) + torch.sum(w_row[neg_mask] * x_bounds.upper[neg_mask])
+            lower_out[i] = torch.sum(w_row[pos_mask] * x_bounds.lower[pos_mask]) + torch.sum(
+                w_row[neg_mask] * x_bounds.upper[neg_mask]
+            )
 
             # Upper: pos*upper + neg*lower
-            upper_out[i] = torch.sum(w_row[pos_mask] * x_bounds.upper[pos_mask]) + torch.sum(w_row[neg_mask] * x_bounds.lower[neg_mask])
+            upper_out[i] = torch.sum(w_row[pos_mask] * x_bounds.upper[pos_mask]) + torch.sum(
+                w_row[neg_mask] * x_bounds.lower[neg_mask]
+            )
 
         # Add bias if present
         if bias is not None:

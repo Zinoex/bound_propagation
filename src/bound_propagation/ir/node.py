@@ -122,7 +122,9 @@ class Node:
         """
         if isinstance(self.output_metadata, tuple):
             if output_idx < 0 or output_idx >= len(self.output_metadata):
-                raise IndexError(f"Node {self.id} has {len(self.output_metadata)} outputs, but index {output_idx} requested")
+                raise IndexError(
+                    f"Node {self.id} has {len(self.output_metadata)} outputs, but index {output_idx} requested"
+                )
             metadata = self.output_metadata[output_idx]
             assert isinstance(metadata, TensorMetadata)  # type: ignore[misc]
             return metadata

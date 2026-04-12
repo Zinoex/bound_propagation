@@ -17,12 +17,16 @@ from bound_propagation.propagation.ibp import (
     ForwardIBPStrategyRegistry,
     IBPAdd,
     IBPAddWithConstant,
+    IBPConstantMatmul,
+    IBPMatmul,
+    IBPMatmulConstant,
 )
 from bound_propagation.regions import HyperRectangle
 
 
 def _meta(shape: tuple[int, ...]) -> TensorMetadata:
     return TensorMetadata(shape=shape, dtype="torch.float32")
+
 
 class TestIBPSignatureDispatch:
     def test_dispatch_uses_input_kind_signature(self) -> None:
@@ -182,6 +186,218 @@ class TestIBPSignatureDispatch:
                     )
                 ]
             )
+
+    def test_dispatch_uses_matmul_input_kind_signature(self) -> None:
+        x = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.INPUT,
+        )
+        y = Node(
+            id=1,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((2, 2)),
+            node_type=NodeType.INPUT,
+        )
+        c = Node(
+            id=2,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=_meta((2, 2)),
+            attributes={"value": torch.tensor([[1.0, -1.0], [0.5, 2.0]])},
+            node_type=NodeType.CONSTANT,
+        )
+        abstract_matmul = Node(
+            id=3,
+            op_type=OperationType.MATMUL,
+            inputs=[x, y],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.OPERATION,
+        )
+        mixed_matmul = Node(
+            id=4,
+            op_type=OperationType.MATMUL,
+            inputs=[x, c],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.OPERATION,
+        )
+        constant_left_matmul = Node(
+            id=5,
+            op_type=OperationType.MATMUL,
+            inputs=[c, x],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.OPERATION,
+        )
+
+        graph = Graph([x, y, c, abstract_matmul, mixed_matmul, constant_left_matmul])
+        graph.mark_outputs([abstract_matmul, mixed_matmul, constant_left_matmul])
+        graph.annotate_input_kinds()
+
+        propagator = IBPPropagator(graph)
+
+        assert isinstance(propagator._bound_strategies[abstract_matmul.id], IBPMatmul)
+        assert isinstance(propagator._bound_strategies[mixed_matmul.id], IBPMatmulConstant)
+        assert isinstance(propagator._bound_strategies[constant_left_matmul.id], IBPConstantMatmul)
+
+    def test_interval_constant_matmul_handles_mixed_sign_weights(self) -> None:
+        x = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.INPUT,
+        )
+        weight = Node(
+            id=1,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=_meta((2, 3)),
+            attributes={"value": torch.tensor([[1.0, -0.5, 2.0], [0.5, 1.0, -1.0]])},
+            node_type=NodeType.CONSTANT,
+        )
+        matmul = Node(
+            id=2,
+            op_type=OperationType.MATMUL,
+            inputs=[x, weight],
+            output_metadata=_meta((3,)),
+            node_type=NodeType.OPERATION,
+        )
+
+        graph = Graph([x, weight, matmul])
+        graph.mark_outputs([matmul])
+        graph.annotate_input_kinds()
+
+        propagator = IBPPropagator(graph)
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([0.0, 0.0]),
+                    upper=torch.tensor([1.0, 1.0]),
+                )
+            ]
+        )
+
+        out = outputs[0]
+        assert isinstance(out, IntervalBounds)
+        assert torch.allclose(out.lower, torch.tensor([0.0, -0.5, -1.0]))
+        assert torch.allclose(out.upper, torch.tensor([1.5, 1.0, 2.0]))
+
+    def test_constant_interval_matmul_handles_mixed_sign_weights(self) -> None:
+        weight = Node(
+            id=0,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=_meta((2, 2)),
+            attributes={"value": torch.tensor([[1.0, -2.0], [-1.0, 0.5]])},
+            node_type=NodeType.CONSTANT,
+        )
+        x = Node(
+            id=1,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.INPUT,
+        )
+        matmul = Node(
+            id=2,
+            op_type=OperationType.MATMUL,
+            inputs=[weight, x],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.OPERATION,
+        )
+
+        graph = Graph([weight, x, matmul])
+        graph.mark_outputs([matmul])
+        graph.annotate_input_kinds()
+
+        propagator = IBPPropagator(graph)
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([0.0, 1.0]),
+                    upper=torch.tensor([2.0, 3.0]),
+                )
+            ]
+        )
+
+        out = outputs[0]
+        assert isinstance(out, IntervalBounds)
+        assert torch.allclose(out.lower, torch.tensor([-6.0, -1.5]))
+        assert torch.allclose(out.upper, torch.tensor([0.0, 1.5]))
+
+    def test_interval_interval_matmul_supports_broadcasted_batches(self) -> None:
+        x = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((1, 2, 1)),
+            node_type=NodeType.INPUT,
+        )
+        y = Node(
+            id=1,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((3, 1, 2)),
+            node_type=NodeType.INPUT,
+        )
+        matmul = Node(
+            id=2,
+            op_type=OperationType.MATMUL,
+            inputs=[x, y],
+            output_metadata=_meta((3, 2, 2)),
+            node_type=NodeType.OPERATION,
+        )
+
+        graph = Graph([x, y, matmul])
+        graph.mark_outputs([matmul])
+        graph.annotate_input_kinds()
+
+        propagator = IBPPropagator(graph)
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([[[-1.0], [2.0]]]),
+                    upper=torch.tensor([[[1.0], [3.0]]]),
+                ),
+                HyperRectangle(
+                    lower=torch.tensor([
+                        [[2.0, -2.0]],
+                        [[-3.0, 1.0]],
+                        [[0.5, -1.0]],
+                    ]),
+                    upper=torch.tensor([
+                        [[4.0, -1.0]],
+                        [[-1.0, 2.0]],
+                        [[1.5, 2.0]],
+                    ]),
+                ),
+            ]
+        )
+
+        out = outputs[0]
+        assert isinstance(out, IntervalBounds)
+        expected_lower = torch.tensor(
+            [
+                [[-4.0, -2.0], [4.0, -6.0]],
+                [[-3.0, -2.0], [-9.0, 2.0]],
+                [[-1.5, -2.0], [1.0, -3.0]],
+            ]
+        )
+        expected_upper = torch.tensor(
+            [
+                [[4.0, 2.0], [12.0, -2.0]],
+                [[3.0, 2.0], [-2.0, 6.0]],
+                [[1.5, 2.0], [4.5, 6.0]],
+            ]
+        )
+
+        assert out.lower.shape == (3, 2, 2)
+        assert out.upper.shape == (3, 2, 2)
+        assert torch.allclose(out.lower, expected_lower)
+        assert torch.allclose(out.upper, expected_upper)
 
 
 class TestIBPRegistryStrictness:

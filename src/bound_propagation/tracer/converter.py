@@ -145,7 +145,9 @@ class GraphConverter:
         # Convert device string to torch.device
         device = torch.device(param.device)
 
-        metadata = TensorMetadata(shape=tuple(param.shape), dtype=str(param.dtype).removeprefix("torch."), device=device)
+        metadata = TensorMetadata(
+            shape=tuple(param.shape), dtype=str(param.dtype).removeprefix("torch."), device=device
+        )
 
         ir_node = Node(
             id=self._next_node_id(),
@@ -245,11 +247,13 @@ class GraphConverter:
         if hasattr(tensor_meta, "device"):
             device = torch.device(tensor_meta.device)
         else:
-            device = torch.device('cpu')  # Default to CPU if not specified
+            device = torch.device("cpu")  # Default to CPU if not specified
 
         return TensorMetadata(shape=shape, dtype=dtype, device=device)
 
-    def _infer_output_metadata(self, op_type: OperationType, input_nodes: list[Node], fx_node: fx.Node) -> TensorMetadata:
+    def _infer_output_metadata(
+        self, op_type: OperationType, input_nodes: list[Node], fx_node: fx.Node
+    ) -> TensorMetadata:
         """
         Infer output metadata when shape propagation not available.
 

@@ -43,8 +43,14 @@ def plot_bounds_1d(model, args):
         plt.plot([x1, x2], [y1, y1], color="blue", label="IBP lower" if i == 0 else None)
         plt.plot([x1, x2], [y2, y2], color="orange", label="IBP upper" if i == 0 else None)
 
-        y1, y2 = crown_bounds.lower[0][i, 0, 0] * x1 + crown_bounds.lower[1][i], crown_bounds.lower[0][i, 0, 0] * x2 + crown_bounds.lower[1][i]
-        y3, y4 = crown_bounds.upper[0][i, 0, 0] * x1 + crown_bounds.upper[1][i], crown_bounds.upper[0][i, 0, 0] * x2 + crown_bounds.upper[1][i]
+        y1, y2 = (
+            crown_bounds.lower[0][i, 0, 0] * x1 + crown_bounds.lower[1][i],
+            crown_bounds.lower[0][i, 0, 0] * x2 + crown_bounds.lower[1][i],
+        )
+        y3, y4 = (
+            crown_bounds.upper[0][i, 0, 0] * x1 + crown_bounds.upper[1][i],
+            crown_bounds.upper[0][i, 0, 0] * x2 + crown_bounds.upper[1][i],
+        )
 
         y1, y2 = y1.item(), y2.item()
         y3, y4 = y3.item(), y4.item()
@@ -220,7 +226,13 @@ class NoisySineDataset(TensorDataset):
 
 class Model(nn.Sequential):
     def __init__(self, dim=1):
-        super().__init__(nn.Linear(dim, 64), nn.ReLU(), nn.Linear(64, 64), Parallel(nn.ReLU(), nn.Tanh(), split_size=32), nn.Linear(64, 1))
+        super().__init__(
+            nn.Linear(dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 64),
+            Parallel(nn.ReLU(), nn.Tanh(), split_size=32),
+            nn.Linear(64, 1),
+        )
 
 
 def train(model, args, eps=0.005):
@@ -263,7 +275,13 @@ def main(args):
 
 def parse_arguments():
     parser = ArgumentParser()
-    parser.add_argument("--device", choices=list(map(torch.device, ["cuda", "cpu"])), type=torch.device, default="cuda", help="Select device for tensor operations")
+    parser.add_argument(
+        "--device",
+        choices=list(map(torch.device, ["cuda", "cpu"])),
+        type=torch.device,
+        default="cuda",
+        help="Select device for tensor operations",
+    )
     parser.add_argument("--dim", choices=[1, 2], type=int, default=1, help="Dimensionality of the noisy sine")
 
     return parser.parse_args()

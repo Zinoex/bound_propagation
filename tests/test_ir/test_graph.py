@@ -19,8 +19,17 @@ class TestGraph:
     @pytest.fixture
     def simple_graph(self, sample_metadata):
         """Create a simple linear graph: input -> relu -> output."""
-        input_node = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT, name="x")
-        relu_node = Node(id=1, op_type=OperationType.RELU, inputs=[input_node], output_metadata=sample_metadata, name="relu")
+        input_node = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=sample_metadata,
+            node_type=NodeType.INPUT,
+            name="x",
+        )
+        relu_node = Node(
+            id=1, op_type=OperationType.RELU, inputs=[input_node], output_metadata=sample_metadata, name="relu"
+        )
 
         graph = Graph([input_node, relu_node])
         graph.mark_outputs([relu_node])
@@ -29,10 +38,26 @@ class TestGraph:
     @pytest.fixture
     def multi_input_graph(self, sample_metadata):
         """Create graph with multiple inputs: x1, x2 -> add -> relu -> output."""
-        x1 = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT, name="x1")
-        x2 = Node(id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT, name="x2")
+        x1 = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=sample_metadata,
+            node_type=NodeType.INPUT,
+            name="x1",
+        )
+        x2 = Node(
+            id=1,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=sample_metadata,
+            node_type=NodeType.INPUT,
+            name="x2",
+        )
         add_node = Node(id=2, op_type=OperationType.ADD, inputs=[x1, x2], output_metadata=sample_metadata, name="add")
-        relu_node = Node(id=3, op_type=OperationType.RELU, inputs=[add_node], output_metadata=sample_metadata, name="relu")
+        relu_node = Node(
+            id=3, op_type=OperationType.RELU, inputs=[add_node], output_metadata=sample_metadata, name="relu"
+        )
 
         graph = Graph([x1, x2, add_node, relu_node])
         graph.mark_outputs([relu_node])
@@ -55,7 +80,9 @@ class TestGraph:
 
     def test_graph_creation_with_single_node(self, sample_metadata):
         """Test creating a graph with a single node."""
-        node = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        node = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
 
         graph = Graph([node])
         assert graph.num_nodes == 1
@@ -64,8 +91,12 @@ class TestGraph:
 
     def test_graph_preserves_nodes_with_duplicate_ids(self, sample_metadata):
         """Test that graph construction preserves the provided node sequence."""
-        node1 = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
-        node2 = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)  # Same ID
+        node1 = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
+        node2 = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )  # Same ID
 
         graph = Graph([node1, node2])
 
@@ -119,7 +150,9 @@ class TestGraph:
 
     def test_mark_outputs(self, sample_metadata):
         """Test marking specific nodes as outputs."""
-        x = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        x = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         y = Node(id=1, op_type=OperationType.RELU, inputs=[x], output_metadata=sample_metadata)
         z = Node(id=2, op_type=OperationType.TANH, inputs=[y], output_metadata=sample_metadata)
 
@@ -136,14 +169,18 @@ class TestGraph:
     def test_mark_outputs_with_invalid_node_raises_error(self, sample_metadata):
         """Test marking non-graph node as output raises error."""
         graph = Graph([])
-        node = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        node = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
 
         with pytest.raises(ValueError, match="not in graph"):
             graph.mark_outputs([node])
 
     def test_infer_outputs(self, sample_metadata):
         """Test automatic output inference."""
-        x = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        x = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         y = Node(id=1, op_type=OperationType.RELU, inputs=[x], output_metadata=sample_metadata)
         z = Node(id=2, op_type=OperationType.TANH, inputs=[y], output_metadata=sample_metadata)
 
@@ -156,7 +193,9 @@ class TestGraph:
 
     def test_infer_outputs_with_multiple_branches(self, sample_metadata):
         """Test output inference with multiple output branches."""
-        x = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        x = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         y1 = Node(id=1, op_type=OperationType.RELU, inputs=[x], output_metadata=sample_metadata)
         y2 = Node(id=2, op_type=OperationType.TANH, inputs=[x], output_metadata=sample_metadata)
 
@@ -230,7 +269,9 @@ class TestGraph:
 
     def test_validate_graph_with_no_outputs_infers_them(self, sample_metadata):
         """Test validation infers outputs if not specified."""
-        x = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        x = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         y = Node(id=1, op_type=OperationType.RELU, inputs=[x], output_metadata=sample_metadata)
         graph = Graph([x, y])
 
@@ -242,8 +283,12 @@ class TestGraph:
 
     def test_validate_input_node_with_inputs_raises_error(self, sample_metadata):
         """Test validation fails when input node has inputs."""
-        dummy = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
-        invalid_input = Node(id=1, op_type=OperationType.INPUT, inputs=[dummy], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        dummy = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
+        invalid_input = Node(
+            id=1, op_type=OperationType.INPUT, inputs=[dummy], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
 
         graph = Graph([dummy, invalid_input])
         graph.mark_outputs([invalid_input])
@@ -253,9 +298,15 @@ class TestGraph:
 
     def test_validate_node_with_missing_input_raises_error(self, sample_metadata):
         """Test validation fails when node references missing input."""
-        input_node = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
-        external_node = Node(id=99, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
-        node_with_external_input = Node(id=1, op_type=OperationType.RELU, inputs=[external_node], output_metadata=sample_metadata)
+        input_node = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
+        external_node = Node(
+            id=99, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
+        node_with_external_input = Node(
+            id=1, op_type=OperationType.RELU, inputs=[external_node], output_metadata=sample_metadata
+        )
 
         graph = Graph([input_node, node_with_external_input])  # external_node not in graph
         graph.mark_outputs([node_with_external_input])
@@ -325,7 +376,13 @@ class TestGraph:
         assert input_node in graph
         assert relu_node in graph
 
-        other_node = Node(id=999, op_type=OperationType.INPUT, inputs=[], output_metadata=input_node.output_metadata, node_type=NodeType.INPUT)
+        other_node = Node(
+            id=999,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=input_node.output_metadata,
+            node_type=NodeType.INPUT,
+        )
         assert other_node not in graph
 
     def test_contains_with_id(self, simple_graph):
@@ -366,7 +423,9 @@ class TestGraph:
 
     def test_topological_order_updates_when_graph_is_rebuilt(self, sample_metadata):
         """Test that rebuilding a graph with new nodes produces a new order."""
-        x = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        x = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         graph = Graph([x])
         graph.mark_outputs([x])
 
@@ -383,7 +442,9 @@ class TestGraph:
     def test_cyclic_graph_detection(self, sample_metadata):
         """Test that cyclic graphs are detected."""
         # Create a cycle: a -> b -> c -> a
-        node_a = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        node_a = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         node_b = Node(id=1, op_type=OperationType.RELU, inputs=[node_a], output_metadata=sample_metadata)
         node_c = Node(id=2, op_type=OperationType.TANH, inputs=[node_b], output_metadata=sample_metadata)
 
@@ -406,8 +467,12 @@ class TestGraph:
         #   relu  tanh
         #     \   /
         #      mul
-        x1 = Node(id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
-        x2 = Node(id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT)
+        x1 = Node(
+            id=0, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
+        x2 = Node(
+            id=1, op_type=OperationType.INPUT, inputs=[], output_metadata=sample_metadata, node_type=NodeType.INPUT
+        )
         add = Node(id=2, op_type=OperationType.ADD, inputs=[x1, x2], output_metadata=sample_metadata)
         relu = Node(id=3, op_type=OperationType.RELU, inputs=[add], output_metadata=sample_metadata)
         tanh = Node(id=4, op_type=OperationType.TANH, inputs=[add], output_metadata=sample_metadata)

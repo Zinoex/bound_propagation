@@ -35,7 +35,9 @@ class BoundResidual(BoundModule):
         return self.subnetwork.backward_relaxation(region)
 
     def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
-        residual_bounds = self.subnetwork.ibp_forward(bounds, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds)
+        residual_bounds = self.subnetwork.ibp_forward(
+            bounds, save_relaxation=save_relaxation, save_input_bounds=save_input_bounds
+        )
 
         return IntervalBounds(bounds.region, bounds.lower + residual_bounds.lower, bounds.upper + residual_bounds.upper)
 
