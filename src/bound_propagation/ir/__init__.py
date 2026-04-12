@@ -6,13 +6,12 @@ that can be analyzed with bound propagation methods.
 """
 
 from .graph import Graph
-from .metadata import DeviceType, TensorMetadata
+from .metadata import TensorMetadata
 from .node import AbstractValueType, Node, NodeType
 from .operations import OperationType
 
 __all__ = [
     "TensorMetadata",
-    "DeviceType",
     "Node",
     "NodeType",
     "AbstractValueType",

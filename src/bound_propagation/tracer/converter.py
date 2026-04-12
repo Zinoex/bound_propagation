@@ -12,7 +12,7 @@ from typing import Any, cast
 import torch
 import torch.fx as fx
 
-from ..ir import DeviceType, Graph, Node, NodeType, OperationType, TensorMetadata
+from ..ir import Graph, Node, NodeType, OperationType, TensorMetadata
 from .op_mapping import get_operation_type
 
 
@@ -142,9 +142,8 @@ class GraphConverter:
         target_str = str(fx_node.target)
         param = self._get_attribute(target_str)
 
-        # Convert device string to DeviceType
-        device_str = str(param.device).split(":")[0]  # Remove device index if present
-        device = DeviceType(device_str) if device_str in [d.value for d in DeviceType] else DeviceType.CPU
+        # Convert device string to torch.device
+        device = torch.device(param.device)
 
         metadata = TensorMetadata(shape=tuple(param.shape), dtype=str(param.dtype).replace("torch.", ""), device=device)
 
@@ -240,14 +239,13 @@ class GraphConverter:
 
         # Extract shape, dtype, device
         shape = tuple(tensor_meta.shape)
-        dtype = str(tensor_meta.dtype).replace("torch.", "")
+        dtype = str(tensor_meta.dtype)
 
         # Handle device - may be missing or have different name
         if hasattr(tensor_meta, "device"):
-            device_str = str(tensor_meta.device).split(":")[0]  # Remove device index
-            device = DeviceType(device_str) if device_str in [d.value for d in DeviceType] else DeviceType.CPU
+            device = torch.device(tensor_meta.device)
         else:
-            device = DeviceType.CPU  # Default to CPU if not specified
+            device = torch.device('cpu')  # Default to CPU if not specified
 
         return TensorMetadata(shape=shape, dtype=dtype, device=device)
 

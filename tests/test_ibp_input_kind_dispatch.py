@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.ir import (
     AbstractValueType,
     Graph,
@@ -11,113 +12,17 @@ from bound_propagation.ir import (
     OperationType,
     TensorMetadata,
 )
+from bound_propagation.propagation import IBPPropagator
 from bound_propagation.propagation.ibp import (
     ForwardIBPStrategyRegistry,
     IBPAdd,
     IBPAddWithConstant,
 )
-from bound_propagation.propagation.methods import IBPPropagator
 from bound_propagation.regions import HyperRectangle
 
 
 def _meta(shape: tuple[int, ...]) -> TensorMetadata:
-    return TensorMetadata(shape=shape, dtype="float32")
-
-
-class TestNodeValueAccess:
-    def test_constant_value_returns_tensor(self) -> None:
-        value = torch.tensor([1.0, 2.0])
-        node = Node(
-            id=0,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": value},
-            node_type=NodeType.CONSTANT,
-        )
-
-        assert torch.allclose(node.value, value)
-
-    def test_non_constant_value_raises(self) -> None:
-        node = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
-        )
-
-        with pytest.raises(ValueError, match="does not hold a constant value"):
-            _ = node.value
-
-
-class TestInputKindTraversal:
-    def test_graph_annotation_marks_signatures(self) -> None:
-        x = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
-        )
-        c1 = Node(
-            id=1,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": torch.tensor([2.0, 3.0])},
-            node_type=NodeType.CONSTANT,
-        )
-        c2 = Node(
-            id=2,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": torch.tensor([4.0, 5.0])},
-            node_type=NodeType.CONSTANT,
-        )
-        const_add = Node(
-            id=3,
-            op_type=OperationType.ADD,
-            inputs=[c1, c2],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-        mixed_add = Node(
-            id=4,
-            op_type=OperationType.ADD,
-            inputs=[x, c1],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-        out = Node(
-            id=5,
-            op_type=OperationType.MUL,
-            inputs=[mixed_add, const_add],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-
-        graph = Graph([x, c1, c2, const_add, mixed_add, out])
-        graph.mark_outputs([out])
-
-        graph.annotate_input_kinds()
-
-        assert const_add.input_signature == (
-            AbstractValueType.CONSTANT,
-            AbstractValueType.CONSTANT,
-        )
-        assert mixed_add.input_signature == (
-            AbstractValueType.ABSTRACT,
-            AbstractValueType.CONSTANT,
-        )
-        assert out.input_signature == (
-            AbstractValueType.ABSTRACT,
-            AbstractValueType.CONSTANT,
-        )
-        assert const_add.output_signature == AbstractValueType.CONSTANT
-        assert mixed_add.output_signature == AbstractValueType.ABSTRACT
-
+    return TensorMetadata(shape=shape, dtype="torch.float32")
 
 class TestIBPSignatureDispatch:
     def test_dispatch_uses_input_kind_signature(self) -> None:
@@ -220,6 +125,7 @@ class TestIBPSignatureDispatch:
         # multiply by [2,-1] -> [4,6]x[-5,-4]
         assert len(outputs) == 1
         out = outputs[0]
+        assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([4.0, -5.0]))
         assert torch.allclose(out.upper, torch.tensor([6.0, -4.0]))
 

@@ -3,8 +3,9 @@ Tests for computation graph representation.
 """
 
 import pytest
+import torch
 
-from bound_propagation.ir import DeviceType, Graph, Node, NodeType, OperationType, TensorMetadata
+from bound_propagation.ir import AbstractValueType, Graph, Node, NodeType, OperationType, TensorMetadata
 
 
 class TestGraph:
@@ -13,7 +14,7 @@ class TestGraph:
     @pytest.fixture
     def sample_metadata(self):
         """Sample tensor metadata."""
-        return TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
+        return TensorMetadata(shape=(2, 3), dtype="torch.float32", device="cpu")
 
     @pytest.fixture
     def simple_graph(self, sample_metadata):
@@ -441,3 +442,108 @@ class TestGraph:
         graph = Graph([])
         nodes = list(graph)
         assert len(nodes) == 0
+
+
+def _meta(shape: tuple[int, ...]) -> TensorMetadata:
+    return TensorMetadata(shape=shape, dtype="torch.float32")
+
+
+class TestNodeValueAccess:
+    def test_constant_value_returns_tensor(self) -> None:
+        value = torch.tensor([1.0, 2.0])
+        node = Node(
+            id=0,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            attributes={"value": value},
+            node_type=NodeType.CONSTANT,
+        )
+
+        assert torch.allclose(node.value, value)
+
+    def test_parameter_node_value_returns_tensor(self) -> None:
+        value = torch.tensor([3.14, 2.71])
+        node = Node(
+            id=0,
+            op_type=OperationType.PARAMETER,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            attributes={"value": value},
+            node_type=NodeType.PARAMETER,
+        )
+
+        assert torch.allclose(node.value, value)
+
+    def test_non_constant_value_raises(self) -> None:
+        node = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.INPUT,
+        )
+
+        with pytest.raises(ValueError, match="does not hold a constant value"):
+            _ = node.value
+
+
+class TestInputKindTraversal:
+    def test_graph_annotation_marks_signatures(self) -> None:
+        x = Node(
+            id=0,
+            op_type=OperationType.INPUT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.INPUT,
+        )
+        c1 = Node(
+            id=1,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            attributes={"value": torch.tensor([2.0, 3.0])},
+            node_type=NodeType.CONSTANT,
+        )
+        c2 = Node(
+            id=2,
+            op_type=OperationType.CONSTANT,
+            inputs=[],
+            output_metadata=_meta((2,)),
+            attributes={"value": torch.tensor([4.0, 5.0])},
+            node_type=NodeType.CONSTANT,
+        )
+        mixed_add = Node(
+            id=4,
+            op_type=OperationType.ADD,
+            inputs=[x, c1],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.OPERATION,
+        )
+        out = Node(
+            id=5,
+            op_type=OperationType.MUL,
+            inputs=[mixed_add, c2],
+            output_metadata=_meta((2,)),
+            node_type=NodeType.OPERATION,
+        )
+
+        graph = Graph([x, c1, c2, mixed_add, out])
+        graph.mark_outputs([out])
+
+        graph.annotate_input_kinds()
+
+        assert mixed_add.input_signature == (
+            AbstractValueType.ABSTRACT,
+            AbstractValueType.CONSTANT,
+        )
+        assert out.input_signature == (
+            AbstractValueType.ABSTRACT,
+            AbstractValueType.CONSTANT,
+        )
+
+        assert x.output_signature == AbstractValueType.ABSTRACT
+        assert c1.output_signature == AbstractValueType.CONSTANT
+        assert c2.output_signature == AbstractValueType.CONSTANT
+        assert mixed_add.output_signature == AbstractValueType.ABSTRACT
+        assert out.output_signature == AbstractValueType.ABSTRACT

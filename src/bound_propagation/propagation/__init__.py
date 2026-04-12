@@ -1,8 +1,10 @@
 """Propagation package exports."""
 
-from .methods import ForwardLBPPropagator, MethodPropagator
+from .methods import BackwardLBPPropagator, ForwardLBPPropagator, IBPPropagator, MethodPropagator
 
 __all__ = [
     "MethodPropagator",
     "ForwardLBPPropagator",
+    "BackwardLBPPropagator",
+    "IBPPropagator",
 ]

@@ -6,23 +6,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from bound_propagation.ir import DeviceType, TensorMetadata
-
-
-class TestDeviceType:
-    """Tests for DeviceType enum."""
-
-    def test_device_types(self):
-        """Test all device type values."""
-        assert DeviceType.CPU == "cpu"
-        assert DeviceType.CUDA == "cuda"
-        assert DeviceType.MPS == "mps"
-
-    def test_device_type_is_string(self):
-        """Test that DeviceType values are strings."""
-        assert isinstance(DeviceType.CPU, str)
-        assert isinstance(DeviceType.CUDA, str)
-        assert isinstance(DeviceType.MPS, str)
+from bound_propagation.ir import TensorMetadata
 
 
 class TestTensorMetadata:
@@ -33,15 +17,15 @@ class TestTensorMetadata:
         metadata = TensorMetadata(shape=(2, 3, 4))
         assert metadata.shape == (2, 3, 4)
         assert metadata.dtype == "float32"
-        assert metadata.device == DeviceType.CPU
+        assert metadata.device == "cpu"
         assert metadata.requires_grad is False
 
     def test_with_all_parameters(self):
         """Test metadata creation with all parameters."""
-        metadata = TensorMetadata(shape=(10, 20), dtype="float64", device=DeviceType.CUDA, requires_grad=True)
+        metadata = TensorMetadata(shape=(10, 20), dtype="float64", device="cuda", requires_grad=True)
         assert metadata.shape == (10, 20)
         assert metadata.dtype == "float64"
-        assert metadata.device == DeviceType.CUDA
+        assert metadata.device == "cuda"
         assert metadata.requires_grad is True
 
     def test_shape_conversion_to_tuple(self):
@@ -98,30 +82,30 @@ class TestTensorMetadata:
 
     def test_is_compatible_with_same_device(self):
         """Test compatibility check with matching devices."""
-        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device=DeviceType.CPU)
+        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
+        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device="cpu")
         assert meta1.is_compatible_with(meta2)
 
     def test_is_compatible_with_different_device(self):
         """Test compatibility check with different devices."""
-        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CUDA)
+        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
+        meta2 = TensorMetadata(shape=(2, 3), dtype="float32", device="cuda")
         assert not meta1.is_compatible_with(meta2)
 
     def test_is_compatible_with_matching_dtypes(self):
         """Test compatibility check with matching dtype categories."""
-        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device=DeviceType.CPU)
+        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
+        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device="cpu")
         assert meta1.is_compatible_with(meta2)
 
-        meta3 = TensorMetadata(shape=(2, 3), dtype="int32", device=DeviceType.CPU)
-        meta4 = TensorMetadata(shape=(2, 3), dtype="int64", device=DeviceType.CPU)
+        meta3 = TensorMetadata(shape=(2, 3), dtype="int32", device="cpu")
+        meta4 = TensorMetadata(shape=(2, 3), dtype="int64", device="cpu")
         assert meta3.is_compatible_with(meta4)
 
     def test_is_compatible_with_mismatched_dtype_categories(self):
         """Test compatibility check with different dtype categories."""
-        meta_float = TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
-        meta_int = TensorMetadata(shape=(2, 3), dtype="int32", device=DeviceType.CPU)
+        meta_float = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
+        meta_int = TensorMetadata(shape=(2, 3), dtype="int32", device="cpu")
         assert not meta_float.is_compatible_with(meta_int)
 
     def test_broadcast_with_same_shape(self):
@@ -169,11 +153,11 @@ class TestTensorMetadata:
 
     def test_broadcast_preserves_dtype(self):
         """Test that broadcasting preserves dtype and other properties."""
-        meta1 = TensorMetadata(shape=(2, 1), dtype="float64", device=DeviceType.CUDA, requires_grad=True)
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device=DeviceType.CUDA, requires_grad=False)
+        meta1 = TensorMetadata(shape=(2, 1), dtype="float64", device="cuda", requires_grad=True)
+        meta2 = TensorMetadata(shape=(2, 3), dtype="float64", device="cuda", requires_grad=False)
         result = meta1.broadcast_with(meta2)
         assert result.dtype == "float64"
-        assert result.device == DeviceType.CUDA
+        assert result.device == "cuda"
         # requires_grad should be True if either is True
         assert result.requires_grad is True
 
@@ -192,16 +176,16 @@ class TestTensorMetadata:
 
     def test_equality(self):
         """Test equality comparison."""
-        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
-        meta2 = TensorMetadata(shape=(2, 3), dtype="float32", device=DeviceType.CPU)
-        meta3 = TensorMetadata(shape=(2, 3), dtype="float64", device=DeviceType.CPU)
+        meta1 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
+        meta2 = TensorMetadata(shape=(2, 3), dtype="float32", device="cpu")
+        meta3 = TensorMetadata(shape=(2, 3), dtype="float64", device="cpu")
 
         assert meta1 == meta2
         assert meta1 != meta3
 
     def test_repr(self):
         """Test string representation."""
-        metadata = TensorMetadata(shape=(2, 3, 4), dtype="float32", device=DeviceType.CPU)
+        metadata = TensorMetadata(shape=(2, 3, 4), dtype="float32", device="cpu")
         repr_str = repr(metadata)
         assert "TensorMetadata" in repr_str
         assert "(2, 3, 4)" in repr_str
