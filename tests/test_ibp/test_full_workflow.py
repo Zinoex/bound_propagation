@@ -315,9 +315,9 @@ class TestIBPWorkflowNeuralNetworks:
         assert isinstance(out, IntervalBounds)
         assert out.lower.shape == (2,)
         assert out.upper.shape == (2,)
-        # With identity matrices, bounds should be [0, 1]
-        assert torch.all(out.lower >= 0.0)
-        assert torch.all(out.upper <= 1.0 + 1e-5)  # Small tolerance
+        # With identity matrices, bounds should be exactly [0, 1]
+        assert torch.allclose(out.lower, torch.zeros(2), atol=1e-5)
+        assert torch.allclose(out.upper, torch.ones(2), atol=1e-5)
 
     def test_network_with_multiple_activations(self) -> None:
         """Test IBP on network with ReLU, Sigmoid, and Tanh."""
@@ -352,11 +352,21 @@ class TestIBPWorkflowNeuralNetworks:
 
         outputs = propagator.propagate([input_region])
 
-        # Output should be bounded in [-1, 1] due to tanh
+        # Calculate exact bounds:
+        # After first matmul: [[-1,1], [-1,1], [-2,2]]
+        # After ReLU: [[0,1], [0,1], [0,2]]
+        # After sigmoid: [[0.5,0.7311], [0.5,0.7311], [0.5,0.8808]]
+        # After third matmul: [[0.5,0.7311], [0.5,0.7311]]
+        # After tanh: [[tanh(0.5),tanh(0.7311)], [tanh(0.5),tanh(0.7311)]]
+        sigmoid_1 = torch.sigmoid(torch.tensor(1.0)).item()
+        tanh_05 = torch.tanh(torch.tensor(0.5)).item()
+        tanh_sigmoid_1 = torch.tanh(torch.tensor(sigmoid_1)).item()
+        expected_lower = torch.tensor([tanh_05, tanh_05])
+        expected_upper = torch.tensor([tanh_sigmoid_1, tanh_sigmoid_1])
         out = outputs[0]
         assert isinstance(out, IntervalBounds)
-        assert torch.all(out.lower >= -1.0)
-        assert torch.all(out.upper <= 1.0)
+        assert torch.allclose(out.lower, expected_lower, atol=1e-5)
+        assert torch.allclose(out.upper, expected_upper, atol=1e-5)
 
 
 class TestIBPWorkflowComplexOperations:
@@ -393,6 +403,18 @@ class TestIBPWorkflowComplexOperations:
         assert isinstance(out, IntervalBounds)
         assert out.lower.shape == (2, 4)
         assert out.upper.shape == (2, 4)
+        # Calculate exact bounds for each output element:
+        # Input: [0,1] for all elements (2,3)
+        # Weight: [[1, 0, -1, 2], [0, 1, 0, -1], [0.5, 0.5, 0.5, 0.5]]
+        # For each row in input:
+        #   Col 0: [0,1]*1 + [0,1]*0 + [0,1]*0.5 = [0, 1.5]
+        #   Col 1: [0,1]*0 + [0,1]*1 + [0,1]*0.5 = [0, 1.5]
+        #   Col 2: [0,1]*(-1) + [0,1]*0 + [0,1]*0.5 = [-1, 0.5]
+        #   Col 3: [0,1]*2 + [0,1]*(-1) + [0,1]*0.5 = [-1, 2.5]  (min: 0*2 + 1*(-1) + 0*0.5 = -1)
+        expected_lower = torch.tensor([[0.0, 0.0, -1.0, -1.0], [0.0, 0.0, -1.0, -1.0]])
+        expected_upper = torch.tensor([[1.5, 1.5, 0.5, 2.5], [1.5, 1.5, 0.5, 2.5]])
+        assert torch.allclose(out.lower, expected_lower, atol=1e-5)
+        assert torch.allclose(out.upper, expected_upper, atol=1e-5)
 
     def test_div_operation(self) -> None:
         """Test IBP on division."""
@@ -484,11 +506,18 @@ class TestIBPWorkflowComplexOperations:
 
         outputs = propagator.propagate([input_region])
 
-        # Output should be in [0, 1] due to sigmoid
+        # Calculate exact bounds:
+        # Input: [0, 0] to [1, 1]
+        # After add: [1, 2] to [2, 3]
+        # After mul: [2, 1] to [4, 1.5]
+        # After ReLU: [2, 1] to [4, 1.5] (all positive, no change)
+        # After sigmoid: [sigmoid(2), sigmoid(1)] to [sigmoid(4), sigmoid(1.5)]
+        expected_lower = torch.sigmoid(torch.tensor([2.0, 1.0]))
+        expected_upper = torch.sigmoid(torch.tensor([4.0, 1.5]))
         out = outputs[0]
         assert isinstance(out, IntervalBounds)
-        assert torch.all(out.lower >= 0.0)
-        assert torch.all(out.upper <= 1.0)
+        assert torch.allclose(out.lower, expected_lower, atol=1e-5)
+        assert torch.allclose(out.upper, expected_upper, atol=1e-5)
 
 
 class TestIBPWorkflowBatchedInputs:
@@ -497,7 +526,7 @@ class TestIBPWorkflowBatchedInputs:
     def test_batched_matmul(self) -> None:
         """Test IBP with batched inputs through matmul."""
 
-        weight = torch.randn(3, 4)
+        weight = torch.tensor([[1.0, 0.5, -0.5, 0.25], [0.0, 1.0, 0.0, -1.0], [-0.5, 0.5, 1.0, 0.5]])
 
         def matmul_fn(x):
             # x: (5, 4), weight: (3, 4) -> output: (5, 3)
@@ -521,13 +550,41 @@ class TestIBPWorkflowBatchedInputs:
         assert isinstance(out, IntervalBounds)
         assert out.lower.shape == (5, 3)
         assert out.upper.shape == (5, 3)
+        # Calculate exact bounds for matmul with weight:
+        # weight.T = [[1, 0, -0.5], [0.5, 1, 0.5], [-0.5, 0, 1], [0.25, -1, 0.5]]
+        # For input [0,1]^4:
+        #   Col 0: [0,1]*1 + [0,1]*0.5 + [0,1]*(-0.5) + [0,1]*0.25 = [-0.5, 1.75]
+        #   Col 1: [0,1]*0 + [0,1]*1 + [0,1]*0 + [0,1]*(-1) = [-1, 1]
+        #   Col 2: [0,1]*(-0.5) + [0,1]*0.5 + [0,1]*1 + [0,1]*0.5 = [-0.5, 2.5]
+        # Min col 0: 0*1 + 0*0.5 + 1*(-0.5) + 0*0.25 = -0.5
+        # Max col 0: 1*1 + 1*0.5 + 0*(-0.5) + 1*0.25 = 1.75
+        # Min col 1: 0*0 + 0*1 + 0*0 + 1*(-1) = -1
+        # Max col 1: 0*0 + 1*1 + 0*0 + 0*(-1) = 1
+        # Min col 2: 1*(-0.5) + 0*0.5 + 0*1 + 0*0.5 = -0.5
+        # Max col 2: 0*(-0.5) + 1*0.5 + 1*1 + 1*0.5 = 2.0
+        expected_lower = torch.tensor(
+            [[-0.5, -1.0, -0.5], [-0.5, -1.0, -0.5], [-0.5, -1.0, -0.5], [-0.5, -1.0, -0.5], [-0.5, -1.0, -0.5]]
+        )
+        expected_upper = torch.tensor(
+            [[1.75, 1.0, 2.0], [1.75, 1.0, 2.0], [1.75, 1.0, 2.0], [1.75, 1.0, 2.0], [1.75, 1.0, 2.0]]
+        )
+        assert torch.allclose(out.lower, expected_lower, atol=1e-5)
+        assert torch.allclose(out.upper, expected_upper, atol=1e-5)
 
     def test_batched_complex_network(self) -> None:
         """Test IBP with batched inputs through a complex network."""
 
-        # Define weights outside the function to avoid rand inside traced code
-        w1 = torch.randn(5, 3)
-        w2 = torch.randn(2, 5)
+        # Define fixed weights instead of random
+        w1 = torch.tensor(
+            [
+                [1.0, 0.5, -0.5],
+                [0.0, 1.0, 0.0],
+                [-0.5, 0.5, 1.0],
+                [0.5, 0.0, 0.5],
+                [0.0, -0.5, 0.5],
+            ]
+        )
+        w2 = torch.tensor([[1.0, 0.0, -1.0, 0.5, 0.0], [0.0, 1.0, 0.0, -0.5, 1.0]])
 
         def complex_fn(x):
             # x: (10, 3)
@@ -555,9 +612,31 @@ class TestIBPWorkflowBatchedInputs:
         assert isinstance(out, IntervalBounds)
         assert out.lower.shape == (10, 2)
         assert out.upper.shape == (10, 2)
-        # Sigmoid output should be in [0, 1]
-        assert torch.all(out.lower >= 0.0 - 1e-5)
-        assert torch.all(out.upper <= 1.0 + 1e-5)
+
+        # Calculate exact bounds step by step:
+        # Input: [-1, -1, -1] to [1, 1, 1] for each batch element
+        # w1.T rows: [1, 0.5, -0.5], [0, 1, 0], [-0.5, 0.5, 1], [0.5, 0, 0.5], [0, -0.5, 0.5]
+        # After w1.T matmul (x @ w1.T):
+        #   Col 0: x[0]*1 + x[1]*0.5 + x[2]*(-0.5) → min: -1-0.5-0.5=-2, max: 1+0.5+0.5=2 → [-2, 2]
+        #   Col 1: x[0]*0 + x[1]*1 + x[2]*0 = x[1] → [-1, 1]
+        #   Col 2: x[0]*(-0.5) + x[1]*0.5 + x[2]*1 → min: -0.5-0.5-1=-2, max: 0.5+0.5+1=2 → [-2, 2]
+        #   Col 3: x[0]*0.5 + x[1]*0 + x[2]*0.5 → min: -0.5-0.5=-1, max: 0.5+0.5=1 → [-1, 1]
+        #   Col 4: x[0]*0 + x[1]*(-0.5) + x[2]*0.5 → min: -0.5-0.5=-1, max: 0.5+0.5=1 → [-1, 1]
+        # After ReLU: [0, 2], [0, 1], [0, 2], [0, 1], [0, 1]
+        # w2.T rows: [1, 0, -1, 0.5, 0], [0, 1, 0, -0.5, 1]
+        # After w2.T matmul (y @ w2.T):
+        #   Col 0: y[0]*1 + y[1]*0 + y[2]*(-1) + y[3]*0.5 + y[4]*0
+        #     min: 0+0+2*(-1)+0+0 = -2, max: 2+0+0+1*0.5+0 = 2.5 → [-2, 2.5]
+        #   Col 1: y[0]*0 + y[1]*1 + y[2]*0 + y[3]*(-0.5) + y[4]*1
+        #     min: 0+0+0+1*(-0.5)+0 = -0.5, max: 0+1+0+0+1 = 2 → [-0.5, 2]
+        # After sigmoid: [sigmoid(-2), sigmoid(2.5)], [sigmoid(-0.5), sigmoid(2)]
+        expected_lower = torch.sigmoid(torch.tensor([-2.0, -0.5]))
+        expected_upper = torch.sigmoid(torch.tensor([2.5, 2.0]))
+        # Repeat for all 10 batch elements
+        expected_lower = expected_lower.unsqueeze(0).repeat(10, 1)
+        expected_upper = expected_upper.unsqueeze(0).repeat(10, 1)
+        assert torch.allclose(out.lower, expected_lower, atol=1e-5)
+        assert torch.allclose(out.upper, expected_upper, atol=1e-5)
 
 
 class TestIBPWorkflowEdgeCases:
@@ -1067,11 +1146,46 @@ class TestIBPAllOperations:
         assert isinstance(out, IntervalBounds)
         assert out.lower.shape == (3,)
         assert out.upper.shape == (3,)
-        # Output should be bounded by tanh: [-1, 1]
-        assert torch.all(out.lower >= -1.0 - 1e-5)
-        assert torch.all(out.upper <= 1.0 + 1e-5)
-        # Since input is [0,1] and mostly positive ops, output should be positive-ish
-        assert torch.all(out.upper >= 0.5)
+
+        # Calculate exact bounds step by step:
+        # Input: [0, 0, 0] to [1, 1, 1]
+        # w1.T = [[1.0, 0.0, -0.5], [0.5, 1.0, 0.5], [-0.5, 0.0, 1.0]]
+        # After matmul with w1.T:
+        #   Element 0: x[0]*1 + x[1]*0.5 + x[2]*(-0.5)
+        #     Min: 0*1 + 0*0.5 + 1*(-0.5) = -0.5, Max: 1*1 + 1*0.5 + 0*(-0.5) = 1.5
+        #   Element 1: x[0]*0 + x[1]*1 + x[2]*0 = x[1]
+        #     Min: 0, Max: 1
+        #   Element 2: x[0]*(-0.5) + x[1]*0.5 + x[2]*1
+        #     Min: 1*(-0.5) + 0*0.5 + 0*1 = -0.5, Max: 0*(-0.5) + 1*0.5 + 1*1 = 1.5
+        # After ReLU: [0, 1.5], [0, 1], [0, 1.5]
+        # After add c1: [0.1, 1.6], [0.2, 1.2], [0.3, 1.8]
+        # After sigmoid, sqrt, mul, tanh...
+
+        # Compute precisely:
+        lower_after_matmul = torch.tensor([0.0, 0.0, 0.0])
+        upper_after_matmul = torch.tensor([1.5, 1.0, 1.5])
+        # After ReLU (no change, already positive)
+        # After add c1
+        lower_after_add = lower_after_matmul + c1  # [0.1, 0.2, 0.3]
+        upper_after_add = upper_after_matmul + c1  # [1.6, 1.2, 1.8]
+        # After sigmoid
+        lower_after_sigmoid = torch.sigmoid(lower_after_add)
+        upper_after_sigmoid = torch.sigmoid(upper_after_add)
+        # After add 1e-6
+        lower_after_add2 = lower_after_sigmoid + c_add
+        upper_after_add2 = upper_after_sigmoid + c_add
+        # After sqrt
+        lower_after_sqrt = torch.sqrt(lower_after_add2)
+        upper_after_sqrt = torch.sqrt(upper_after_add2)
+        # After mul c2
+        lower_after_mul = lower_after_sqrt * c2
+        upper_after_mul = upper_after_sqrt * c2
+        # After tanh
+        expected_lower = torch.tanh(lower_after_mul)
+        expected_upper = torch.tanh(upper_after_mul)
+
+        assert torch.allclose(out.lower, expected_lower, atol=1e-5)
+        assert torch.allclose(out.upper, expected_upper, atol=1e-5)
 
     def test_arithmetic_chain(self) -> None:
         """Test chaining of all arithmetic operations."""
