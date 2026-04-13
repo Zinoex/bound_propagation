@@ -117,14 +117,39 @@ def apply_linear_relaxation(
     Returns:
         LinearBounds with relaxation applied
     """
-    # Create the relaxation as LinearBounds with diagonal structure
-    relaxation = create_element_wise_relaxation_bounds(
-        bounds.region,
-        alpha_lower,
-        beta_lower,
-        alpha_upper,
-        beta_upper,
-    )
+    # Manual forward composition: y = alpha * x + beta
+    # If x has bounds W@x0 + b, then:
+    # y_lower = alpha_lower * (W_l@x0 + b_l) + beta_lower = (alpha_lower*W_l)@x0 + (alpha_lower*b_l + beta_lower)
+    # y_upper = alpha_upper * (W_u@x0 + b_u) + beta_upper = (alpha_upper*W_u)@x0 + (alpha_upper*b_u + beta_upper)
 
-    # Use forward composition to apply the relaxation
-    return bounds.forward_compose(relaxation)
+    # Flatten alpha and beta for element-wise multiplication
+    alpha_lower_flat = alpha_lower.flatten()
+    alpha_upper_flat = alpha_upper.flatten()
+    beta_lower_flat = beta_lower.flatten()
+    beta_upper_flat = beta_upper.flatten()
+
+    if bounds.linear_lower is not None and bounds.linear_upper is not None:
+        # Apply element-wise multiplication to linear coefficients
+        # Shape of linear_lower: (out_features, in_features)
+        # We want to multiply each row by the corresponding alpha
+        linear_lower = alpha_lower_flat.unsqueeze(-1) * bounds.linear_lower
+        linear_upper = alpha_upper_flat.unsqueeze(-1) * bounds.linear_upper
+    else:
+        linear_lower = None
+        linear_upper = None
+
+    # Apply to bias terms
+    bias_lower = alpha_lower.flatten() * bounds.bias_lower.flatten() + beta_lower.flatten()
+    bias_upper = alpha_upper.flatten() * bounds.bias_upper.flatten() + beta_upper.flatten()
+
+    # Reshape bias to original shape
+    bias_lower = bias_lower.view(bounds.bias_lower.shape)
+    bias_upper = bias_upper.view(bounds.bias_upper.shape)
+
+    return LinearBounds(
+        region=bounds.region,
+        linear_lower=linear_lower,
+        bias_lower=bias_lower,
+        linear_upper=linear_upper,
+        bias_upper=bias_upper,
+    )

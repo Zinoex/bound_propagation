@@ -13,59 +13,76 @@ if TYPE_CHECKING:
 
 class ForwardLBPDivStrategy(ForwardLBPStrategy):
     """
-    Forward LBP strategy for DIV operation.
+    Forward LBP strategy for DIV operation when both inputs are abstract.
 
-    For division z = x / y:
-    - If y is constant: W_l^z = W_l^x / y, b_l^z = b_l^x / y (handle sign)
-    - If y varies: concretize to intervals
+    For division z = x / y where both have linear dependencies:
+    - Concretize to intervals and compute interval division
     """
 
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[LinearBounds],
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
             raise ValueError(f"DIV requires exactly 2 inputs, got {len(input_bounds)}")
 
+        if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
+            raise TypeError("ForwardLBPDivStrategy requires both inputs to be LinearBounds")
+
         bounds_a: LinearBounds = input_bounds[0]
         bounds_b: LinearBounds = input_bounds[1]
 
-        # Check if divisor is constant
-        b_is_constant = bounds_b.linear_lower is None and bounds_b.linear_upper is None
+        # Divisor varies - concretize
+        lower_a, upper_a = bounds_a.concretize()
+        lower_b, upper_b = bounds_b.concretize()
 
-        if b_is_constant:
-            # Divide by constant
-            divisor = bounds_b.bias_lower
-            return self._divide_by_constant(bounds_a, divisor)
+        # Check for division by zero
+        if torch.any((lower_b <= 0) & (upper_b >= 0)):
+            # Division by zero possible - use safe bounds
+            lower = torch.full_like(lower_a, float("-inf"))
+            upper = torch.full_like(upper_a, float("inf"))
         else:
-            # Divisor varies - concretize
-            lower_a, upper_a = bounds_a.concretize()
-            lower_b, upper_b = bounds_b.concretize()
+            # Compute interval division
+            quotients = [
+                lower_a / lower_b,
+                lower_a / upper_b,
+                upper_a / lower_b,
+                upper_a / upper_b,
+            ]
+            lower = torch.min(torch.stack(quotients), dim=0)[0]
+            upper = torch.max(torch.stack(quotients), dim=0)[0]
 
-            # Check for division by zero
-            if torch.any((lower_b <= 0) & (upper_b >= 0)):
-                # Division by zero possible - use safe bounds
-                lower = torch.full_like(lower_a, float("-inf"))
-                upper = torch.full_like(upper_a, float("inf"))
-            else:
-                # Compute interval division
-                quotients = [
-                    lower_a / lower_b,
-                    lower_a / upper_b,
-                    upper_a / lower_b,
-                    upper_a / upper_b,
-                ]
-                lower = torch.min(torch.stack(quotients), dim=0)[0]
-                upper = torch.max(torch.stack(quotients), dim=0)[0]
+        return LinearBounds(
+            region=bounds_a.region,
+            linear_lower=None,
+            bias_lower=lower,
+            linear_upper=None,
+            bias_upper=upper,
+        )
 
-            return LinearBounds(
-                region=bounds_a.region,
-                linear_lower=None,
-                bias_lower=lower,
-                linear_upper=None,
-                bias_upper=upper,
+
+class ForwardLBPDivConstant(ForwardLBPStrategy):
+    """Forward LBP strategy for DIV when the second input (divisor) is constant: x / c."""
+
+    def propagate_forwards(
+        self,
+        node: Node,
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+    ) -> LinearBounds:
+        if len(input_bounds) != 2:
+            raise ValueError(f"DIV requires exactly 2 inputs, got {len(input_bounds)}")
+
+        x = input_bounds[0]
+        c = input_bounds[1]
+
+        if not isinstance(x, LinearBounds) or isinstance(c, LinearBounds):
+            raise TypeError(
+                "ForwardLBPDivConstant requires the first input to be LinearBounds "
+                "and the second input to be torch.Tensor or Number"
             )
+
+        return self._divide_by_constant(x, c)
 
     def _divide_by_constant(self, bounds: LinearBounds, divisor: torch.Tensor) -> LinearBounds:
         """
@@ -115,4 +132,45 @@ class ForwardLBPDivStrategy(ForwardLBPStrategy):
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+        )
+
+
+class ForwardLBPConstantDiv(ForwardLBPStrategy):
+    """Forward LBP strategy for DIV when the first input (dividend) is constant: c / x."""
+
+    def propagate_forwards(
+        self,
+        node: Node,
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+    ) -> LinearBounds:
+        if len(input_bounds) != 2:
+            raise ValueError(f"DIV requires exactly 2 inputs, got {len(input_bounds)}")
+
+        c = input_bounds[0]
+        x = input_bounds[1]
+
+        if not isinstance(x, LinearBounds) or isinstance(c, LinearBounds):
+            raise TypeError(
+                "ForwardLBPConstantDiv requires the second input to be LinearBounds "
+                "and the first input to be torch.Tensor or Number"
+            )
+
+        # c / x: concretize x and compute interval division
+        lower_x, upper_x = x.concretize()
+
+        # Check for division by zero
+        if torch.any((lower_x <= 0) & (upper_x >= 0)):
+            lower = torch.full_like(lower_x, float("-inf"))
+            upper = torch.full_like(upper_x, float("inf"))
+        else:
+            quotients = [c / lower_x, c / upper_x]
+            lower = torch.min(torch.stack(quotients), dim=0)[0]
+            upper = torch.max(torch.stack(quotients), dim=0)[0]
+
+        return LinearBounds(
+            region=x.region,
+            linear_lower=None,
+            bias_lower=lower,
+            linear_upper=None,
+            bias_upper=upper,
         )

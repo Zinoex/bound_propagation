@@ -13,36 +13,108 @@ if TYPE_CHECKING:
 
 class ForwardLBPMatmulStrategy(ForwardLBPStrategy):
     """
-    Forward LBP strategy for MATMUL operation.
+    Forward LBP strategy for MATMUL when both inputs are abstract.
 
-    For matrix multiplication z = x @ y:
-    - If y is constant: exact linear transformation
-    - If both vary: concretize to intervals(?)
+    For matrix multiplication z = x @ y where both have linear dependencies:
+    - Not yet supported, should concretize to intervals
     """
 
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[LinearBounds],
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
             raise ValueError(f"MATMUL requires exactly 2 inputs, got {len(input_bounds)}")
 
-        bounds_a: LinearBounds = input_bounds[0]
-        bounds_b: LinearBounds = input_bounds[1]
+        if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
+            raise TypeError("ForwardLBPMatmulStrategy requires both inputs to be LinearBounds")
 
-        # Check if second operand is constant (common case: x @ W)
-        b_is_constant = bounds_b.linear_lower is None and bounds_b.linear_upper is None
+        # Both vary - need to concretize
+        raise NotImplementedError(
+            "LBP matmul with two varying operands not yet supported. Use constant weights or switch to IBP method."
+        )
 
-        if b_is_constant:
-            # y is constant: z = x @ W
-            weight = bounds_b.bias_lower  # The constant weight matrix
-            return self._matmul_by_constant(bounds_a, weight)
-        else:
-            # Both vary - need to concretize
-            raise NotImplementedError(
-                "LBP matmul with two varying operands not yet supported. Use constant weights or switch to IBP method."
+
+class ForwardLBPMatmulConstant(ForwardLBPStrategy):
+    """Forward LBP strategy for MATMUL when the second input is constant: x @ W."""
+
+    def propagate_forwards(
+        self,
+        node: Node,
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+    ) -> LinearBounds:
+        if len(input_bounds) != 2:
+            raise ValueError(f"MATMUL requires exactly 2 inputs, got {len(input_bounds)}")
+
+        x = input_bounds[0]
+        weight = input_bounds[1]
+
+        if not isinstance(x, LinearBounds) or not isinstance(weight, torch.Tensor):
+            raise TypeError(
+                "ForwardLBPMatmulConstant requires the first input to be LinearBounds "
+                "and the second input to be torch.Tensor"
             )
+
+        return self._matmul_by_constant(x, weight)
+
+
+class ForwardLBPConstantMatmul(ForwardLBPStrategy):
+    """Forward LBP strategy for MATMUL when the first input is constant: W @ x."""
+
+    def propagate_forwards(
+        self,
+        node: Node,
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+    ) -> LinearBounds:
+        if len(input_bounds) != 2:
+            raise ValueError(f"MATMUL requires exactly 2 inputs, got {len(input_bounds)}")
+
+        weight = input_bounds[0]
+        x = input_bounds[1]
+
+        if not isinstance(weight, torch.Tensor) or not isinstance(x, LinearBounds):
+            raise TypeError(
+                "ForwardLBPConstantMatmul requires the first input to be torch.Tensor "
+                "and the second input to be LinearBounds"
+            )
+
+        # W @ x: need different computation
+        # z = W @ x, where x has linear bounds
+        weight_pos = torch.clamp(weight, min=0)
+        weight_neg = torch.clamp(weight, max=0)
+
+        # Lower bound
+        if x.linear_lower is not None and x.linear_upper is not None:
+            linear_lower = weight_pos @ x.linear_lower + weight_neg @ x.linear_upper
+        elif x.linear_lower is not None:
+            linear_lower = weight_pos @ x.linear_lower + weight_neg @ x.linear_lower
+        elif x.linear_upper is not None:
+            linear_lower = weight_pos @ x.linear_upper + weight_neg @ x.linear_upper
+        else:
+            linear_lower = None
+
+        bias_lower = weight_pos @ x.bias_lower + weight_neg @ x.bias_upper
+
+        # Upper bound
+        if x.linear_lower is not None and x.linear_upper is not None:
+            linear_upper = weight_pos @ x.linear_upper + weight_neg @ x.linear_lower
+        elif x.linear_upper is not None:
+            linear_upper = weight_pos @ x.linear_upper + weight_neg @ x.linear_upper
+        elif x.linear_lower is not None:
+            linear_upper = weight_pos @ x.linear_lower + weight_neg @ x.linear_lower
+        else:
+            linear_upper = None
+
+        bias_upper = weight_pos @ x.bias_upper + weight_neg @ x.bias_lower
+
+        return LinearBounds(
+            region=x.region,
+            linear_lower=linear_lower,
+            bias_lower=bias_lower,
+            linear_upper=linear_upper,
+            bias_upper=bias_upper,
+        )
 
     def _matmul_by_constant(self, bounds: LinearBounds, weight: torch.Tensor) -> LinearBounds:
         """

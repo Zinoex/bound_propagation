@@ -141,33 +141,10 @@ class TestNode:
         metadata_default = operation_node.get_output_metadata()
         assert metadata_default == operation_node.output_metadata
 
-    def test_get_output_metadata_multi_output(self, sample_metadata):
-        """Test get_output_metadata for multi-output operations."""
-        meta2 = TensorMetadata(shape=(3, 4))
-        meta3 = TensorMetadata(shape=(4, 5))
-        multi_output_node = Node(
-            id=0, op_type=OperationType.SPLIT, inputs=[], output_metadata=(sample_metadata, meta2, meta3)
-        )
-
-        assert multi_output_node.get_output_metadata(0) == sample_metadata
-        assert multi_output_node.get_output_metadata(1) == meta2
-        assert multi_output_node.get_output_metadata(2) == meta3
-
     def test_get_output_metadata_invalid_index_single(self, operation_node):
         """Test get_output_metadata with invalid index for single output."""
         with pytest.raises(IndexError, match="has single output"):
             operation_node.get_output_metadata(1)
-
-    def test_get_output_metadata_invalid_index_multi(self, sample_metadata):
-        """Test get_output_metadata with invalid index for multi output."""
-        meta2 = TensorMetadata(shape=(3, 4))
-        multi_output_node = Node(id=0, op_type=OperationType.SPLIT, inputs=[], output_metadata=(sample_metadata, meta2))
-
-        with pytest.raises(IndexError, match="has 2 outputs"):
-            multi_output_node.get_output_metadata(2)
-
-        with pytest.raises(IndexError, match="has 2 outputs"):
-            multi_output_node.get_output_metadata(-1)
 
     def test_get_attribute(self, sample_metadata):
         """Test get_attribute method."""

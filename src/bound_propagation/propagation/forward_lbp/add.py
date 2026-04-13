@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch
+
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
@@ -23,7 +25,7 @@ class ForwardLBPAddStrategy(ForwardLBPStrategy):
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[LinearBounds],
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         """
         Compute forward LBP bounds for addition.
@@ -31,13 +33,15 @@ class ForwardLBPAddStrategy(ForwardLBPStrategy):
         Args:
             node: The ADD node
             input_bounds: List of two LinearBounds for the operands
-            config: Strategy configuration
 
         Returns:
             LinearBounds for the sum
         """
         if len(input_bounds) != 2:
             raise ValueError(f"ADD requires exactly 2 inputs, got {len(input_bounds)}")
+
+        if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
+            raise TypeError("ForwardLBPAddStrategy requires both inputs to be LinearBounds")
 
         bounds_a: LinearBounds = input_bounds[0]
         bounds_b: LinearBounds = input_bounds[1]
@@ -70,5 +74,42 @@ class ForwardLBPAddStrategy(ForwardLBPStrategy):
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
+            bias_upper=bias_upper,
+        )
+
+
+class ForwardLBPAddWithConstant(ForwardLBPStrategy):
+    """Forward LBP strategy for ADD when at least one input is constant."""
+
+    def propagate_forwards(
+        self,
+        node: Node,
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+    ) -> LinearBounds:
+        if len(input_bounds) != 2:
+            raise ValueError(f"ADD requires exactly 2 inputs, got {len(input_bounds)}")
+
+        left = input_bounds[0]
+        right = input_bounds[1]
+
+        if isinstance(left, LinearBounds):
+            x, c = left, right
+        elif isinstance(right, LinearBounds):
+            x, c = right, left
+        else:
+            raise TypeError(
+                f"ForwardLBPAddWithConstant requires one input to be LinearBounds and the other to be "
+                f"torch.Tensor or Number, got {type(left)} and {type(right)}"
+            )
+
+        # Adding a constant: just add to bias terms
+        bias_lower = x.bias_lower + c
+        bias_upper = x.bias_upper + c
+
+        return LinearBounds(
+            region=x.region,
+            linear_lower=x.linear_lower,
+            bias_lower=bias_lower,
+            linear_upper=x.linear_upper,
             bias_upper=bias_upper,
         )

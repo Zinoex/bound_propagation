@@ -13,57 +13,83 @@ if TYPE_CHECKING:
 
 class ForwardLBPMulStrategy(ForwardLBPStrategy):
     """
-    Forward LBP strategy for MUL operation.
+    Forward LBP strategy for MUL operation when both inputs are abstract.
 
-    For multiplication z = x * y:
-    - If y is constant: W_l^z = y * W_l^x, b_l^z = y * b_l^x (handle sign)
-    - If both vary: concretize to intervals(?)
+    For multiplication z = x * y where both have linear dependencies:
+    - Concretize to intervals and compute interval product
     """
 
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[LinearBounds],
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
             raise ValueError(f"MUL requires exactly 2 inputs, got {len(input_bounds)}")
 
+        if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
+            raise TypeError("ForwardLBPMulStrategy requires both inputs to be LinearBounds")
+
         bounds_a: LinearBounds = input_bounds[0]
         bounds_b: LinearBounds = input_bounds[1]
 
-        # Check if one operand is constant (no linear dependency)
-        a_is_constant = bounds_a.linear_lower is None and bounds_a.linear_upper is None
-        b_is_constant = bounds_b.linear_lower is None and bounds_b.linear_upper is None
+        # Both have linear dependencies - concretize and convert back
+        lower_a, upper_a = bounds_a.concretize()
+        lower_b, upper_b = bounds_b.concretize()
 
-        if b_is_constant:
-            # y is constant: z = x * c
-            return self._multiply_by_constant(bounds_a, bounds_b.bias_lower)
-        elif a_is_constant:
-            # x is constant: z = c * y
-            return self._multiply_by_constant(bounds_b, bounds_a.bias_lower)
+        # Compute interval product
+        products = [
+            lower_a * lower_b,
+            lower_a * upper_b,
+            upper_a * lower_b,
+            upper_a * upper_b,
+        ]
+        lower = torch.min(torch.stack(products), dim=0)[0]
+        upper = torch.max(torch.stack(products), dim=0)[0]
+
+        # Return as constant LinearBounds
+        return LinearBounds(
+            region=bounds_a.region,
+            linear_lower=None,
+            bias_lower=lower,
+            linear_upper=None,
+            bias_upper=upper,
+        )
+
+
+class ForwardLBPMulWithConstant(ForwardLBPStrategy):
+    """
+    Forward LBP strategy for MUL when at least one input is constant.
+
+    For multiplication z = x * c:
+    - If c >= 0: W_l^z = c * W_l^x, b_l^z = c * b_l^x
+    - If c < 0: bounds flip (lower becomes upper, upper becomes lower)
+    """
+
+    def propagate_forwards(
+        self,
+        node: Node,
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+    ) -> LinearBounds:
+        if len(input_bounds) != 2:
+            raise ValueError(f"MUL requires exactly 2 inputs, got {len(input_bounds)}")
+
+        left = input_bounds[0]
+        right = input_bounds[1]
+
+        if isinstance(left, LinearBounds):
+            bounds, constant = left, right
+        elif isinstance(right, LinearBounds):
+            bounds, constant = right, left
         else:
-            # Both have linear dependencies - concretize and convert back
-            lower_a, upper_a = bounds_a.concretize()
-            lower_b, upper_b = bounds_b.concretize()
-
-            # Compute interval product
-            products = [
-                lower_a * lower_b,
-                lower_a * upper_b,
-                upper_a * lower_b,
-                upper_a * upper_b,
-            ]
-            lower = torch.min(torch.stack(products), dim=0)[0]
-            upper = torch.max(torch.stack(products), dim=0)[0]
-
-            # Return as constant LinearBounds
-            return LinearBounds(
-                region=bounds_a.region,
-                linear_lower=None,
-                bias_lower=lower,
-                linear_upper=None,
-                bias_upper=upper,
+            raise TypeError(
+                f"ForwardLBPMulWithConstant requires one input to be LinearBounds and the other to be "
+                f"torch.Tensor or Number, got {type(left)} and {type(right)}"
             )
+
+        return self._multiply_by_constant(bounds, constant)
+
+        return self._multiply_by_constant(bounds, constant)
 
     def _multiply_by_constant(self, bounds: LinearBounds, constant: torch.Tensor) -> LinearBounds:
         """

@@ -2,26 +2,53 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from ...ir import AbstractValueType
+
 if TYPE_CHECKING:
     from ...ir import OperationType
     from .base import ForwardLBPStrategy
 
 
 class ForwardLBPStrategyRegistry:
-    """
-    Registry for forward linear bounding strategies.
-    """
+    """Registry for forward LBP strategies."""
 
     def __init__(self):
-        self._registry: dict[OperationType, ForwardLBPStrategy] = {}
+        self._registry: dict[tuple[OperationType, tuple[AbstractValueType, ...]], ForwardLBPStrategy] = {}
 
-    def register(self, op_type: OperationType, strategy: ForwardLBPStrategy):
-        self._registry[op_type] = strategy
+    def register(
+        self,
+        operation_type: OperationType,
+        strategy: ForwardLBPStrategy,
+        abstract_signature: tuple[AbstractValueType, ...],
+    ):
+        key = (operation_type, abstract_signature)
+        if key in self._registry:
+            raise ValueError(
+                f"Strategy for operation type '{operation_type}' and signature={abstract_signature} "
+                "is already registered."
+            )
+        self._registry[key] = strategy
 
-    def get_strategy(self, op_type: OperationType):
-        if op_type not in self._registry:
-            raise ValueError(f"No strategy registered for op type {op_type}")
-        return self._registry[op_type]
+    def get_strategy(
+        self,
+        operation_type: OperationType,
+        signature: tuple[AbstractValueType, ...],
+    ) -> ForwardLBPStrategy:
+        key = (operation_type, signature)
+        strategy = self._registry.get(key)
+        if strategy is not None:
+            return strategy
+
+        # Fallback: For variable-arity operations (e.g., concat, stack),
+        # if registered with (ABSTRACT,), match any tuple of all ABSTRACT values
+
+        if all(s == AbstractValueType.ABSTRACT for s in signature):
+            fallback_key = (operation_type, (AbstractValueType.ABSTRACT,))
+            strategy = self._registry.get(fallback_key)
+            if strategy is not None:
+                return strategy
+
+        raise ValueError(f"No strategy registered for operation type '{operation_type}' with signature={signature}.")
 
     @classmethod
     def default_registry(cls) -> ForwardLBPStrategyRegistry:
@@ -33,7 +60,12 @@ class ForwardLBPStrategyRegistry:
         return cls._default_instance
 
     @classmethod
-    def register_default(cls, op_type: OperationType, strategy: ForwardLBPStrategy):
+    def register_default(
+        cls,
+        operation_type: OperationType,
+        strategy: ForwardLBPStrategy,
+        signature: tuple[AbstractValueType, ...],
+    ):
         """Helper to register a default strategy for an operation type."""
         registry = cls.default_registry()
-        registry.register(op_type, strategy)
+        registry.register(operation_type, strategy, signature)
