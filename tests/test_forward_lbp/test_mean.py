@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.mean import ForwardLBPMeanStrategy
+from bound_propagation.propagation.forward_lbp.mean import ForwardLBPMean
 from bound_propagation.regions import HyperRectangle
 
 
@@ -52,7 +52,7 @@ def test_mean_along_last_dim() -> None:
     )
 
     # Mean along last dimension (dim=-1 or dim=1)
-    strategy = ForwardLBPMeanStrategy()
+    strategy = ForwardLBPMean()
 
     # Create mock node with dim attribute
     class MockNode:
@@ -94,7 +94,7 @@ def test_mean_all_elements() -> None:
         bias_upper=torch.zeros(4),
     )
 
-    strategy = ForwardLBPMeanStrategy()
+    strategy = ForwardLBPMean()
 
     class MockNode:
         def __init__(self):
@@ -132,7 +132,7 @@ def test_mean_with_keepdim() -> None:
         bias_upper=torch.zeros(2, 3),
     )
 
-    strategy = ForwardLBPMeanStrategy()
+    strategy = ForwardLBPMean()
 
     class MockNode:
         def __init__(self):

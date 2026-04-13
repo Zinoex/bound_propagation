@@ -41,7 +41,7 @@ class ForwardLBPAdd(ForwardLBPStrategy):
             raise ValueError(f"add requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
-            raise TypeError("ForwardLBPAddStrategy requires both inputs to be LinearBounds")
+            raise TypeError("ForwardLBPAdd requires both inputs to be LinearBounds")
 
         bounds_a = input_bounds[0]
         bounds_b = input_bounds[1]

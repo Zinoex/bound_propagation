@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPSumStrategy(ForwardLBPStrategy):
+class ForwardLBPSum(ForwardLBPStrategy):
     """Forward LBP strategy for SUM operation."""
 
     def propagate_forwards(
@@ -20,10 +20,10 @@ class ForwardLBPSumStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"SUM requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"sum requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPSumStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPSum requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

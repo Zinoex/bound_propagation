@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPMinimumStrategy(ForwardLBPStrategy):
+class ForwardLBPMinimum(ForwardLBPStrategy):
     """Forward LBP strategy for MINIMUM operation (element-wise min of two abstract inputs)."""
 
     def propagate_forwards(
@@ -20,10 +20,10 @@ class ForwardLBPMinimumStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MINIMUM requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"minimum requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
-            raise TypeError("ForwardLBPMinimumStrategy requires both inputs to be LinearBounds")
+            raise TypeError("ForwardLBPMinimum requires both inputs to be LinearBounds")
 
         bounds_a = input_bounds[0]
         bounds_b = input_bounds[1]
@@ -55,7 +55,7 @@ class ForwardLBPMinimumWithConstant(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MINIMUM requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"minimum requires exactly 2 inputs, got {len(input_bounds)}")
 
         left = input_bounds[0]
         right = input_bounds[1]

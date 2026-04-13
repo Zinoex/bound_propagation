@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPSelectStrategy(ForwardLBPStrategy):
+class ForwardLBPSelect(ForwardLBPStrategy):
     """Forward LBP strategy for SELECT operation."""
 
     def propagate_forwards(
@@ -20,10 +20,10 @@ class ForwardLBPSelectStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"SELECT requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"select requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPSelectStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPSelect requires input to be LinearBounds")
 
         bounds = input_bounds[0]
         dim = node.attributes.get("dim", 0)

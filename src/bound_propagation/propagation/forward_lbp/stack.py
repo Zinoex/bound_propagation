@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPStackStrategy(ForwardLBPStrategy):
+class ForwardLBPStack(ForwardLBPStrategy):
     """Forward LBP strategy for STACK operation."""
 
     def propagate_forwards(
@@ -20,14 +20,12 @@ class ForwardLBPStackStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) < 1:
-            raise ValueError(f"STACK requires at least 1 input, got {len(input_bounds)}")
+            raise ValueError(f"stack requires at least 1 input, got {len(input_bounds)}")
 
         # Check all inputs are LinearBounds
         for i, inp in enumerate(input_bounds):
             if not isinstance(inp, LinearBounds):
-                raise TypeError(
-                    f"ForwardLBPStackStrategy requires all inputs to be LinearBounds, but input {i} is {type(inp)}"
-                )
+                raise TypeError(f"ForwardLBPStack requires all inputs to be LinearBounds, but input {i} is {type(inp)}")
 
         bounds_list = cast(list[LinearBounds], input_bounds)
         dim = node.attributes.get("dim", 0)

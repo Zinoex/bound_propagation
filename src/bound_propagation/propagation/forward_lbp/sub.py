@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPSubStrategy(ForwardLBPStrategy):
+class ForwardLBPSub(ForwardLBPStrategy):
     """
     Forward LBP strategy for SUB operation.
 
@@ -28,10 +28,10 @@ class ForwardLBPSubStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"SUB requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"sub requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
-            raise TypeError("ForwardLBPSubStrategy requires both inputs to be LinearBounds")
+            raise TypeError("ForwardLBPSub requires both inputs to be LinearBounds")
 
         bounds_a: LinearBounds = input_bounds[0]
         bounds_b: LinearBounds = input_bounds[1]
@@ -77,7 +77,7 @@ class ForwardLBPSubConstantRight(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"SUB requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"sub requires exactly 2 inputs, got {len(input_bounds)}")
 
         x = input_bounds[0]
         c = input_bounds[1]
@@ -110,7 +110,7 @@ class ForwardLBPSubConstantLeft(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"SUB requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"sub requires exactly 2 inputs, got {len(input_bounds)}")
 
         c = input_bounds[0]
         x = input_bounds[1]

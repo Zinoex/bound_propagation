@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPMaximumStrategy(ForwardLBPStrategy):
+class ForwardLBPMaximum(ForwardLBPStrategy):
     """Forward LBP strategy for MAXIMUM operation (element-wise max of two abstract inputs)."""
 
     def propagate_forwards(
@@ -20,10 +20,10 @@ class ForwardLBPMaximumStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MAXIMUM requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"maximum requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
-            raise TypeError("ForwardLBPMaximumStrategy requires both inputs to be LinearBounds")
+            raise TypeError("ForwardLBPMaximum requires both inputs to be LinearBounds")
 
         bounds_a: LinearBounds = input_bounds[0]
         bounds_b: LinearBounds = input_bounds[1]
@@ -55,7 +55,7 @@ class ForwardLBPMaximumWithConstant(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MAXIMUM requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"maximum requires exactly 2 inputs, got {len(input_bounds)}")
 
         left = input_bounds[0]
         right = input_bounds[1]

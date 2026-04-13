@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPReluStrategy(ForwardLBPStrategy):
+class ForwardLBPRelu(ForwardLBPStrategy):
     """
     Forward LBP strategy for RELU operation.
 
@@ -31,10 +31,10 @@ class ForwardLBPReluStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"RELU requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"relu requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPReluStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPRelu requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

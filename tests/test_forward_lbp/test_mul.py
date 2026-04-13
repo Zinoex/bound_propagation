@@ -4,7 +4,7 @@ import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.mul import (
-    ForwardLBPMulStrategy,
+    ForwardLBPMul,
     ForwardLBPMulWithConstant,
 )
 from bound_propagation.regions import HyperRectangle
@@ -46,7 +46,7 @@ def test_mul_abstract_abstract_concretizes() -> None:
         bias_upper=torch.tensor([0.0, 0.0]),
     )
 
-    strategy = ForwardLBPMulStrategy()
+    strategy = ForwardLBPMul()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
 
     # Should have no linear dependency (concretized)

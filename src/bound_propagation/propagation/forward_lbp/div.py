@@ -28,7 +28,7 @@ class ForwardLBPDiv(ForwardLBPStrategy):
             raise ValueError(f"div requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
-            raise TypeError("ForwardLBPDivStrategy requires both inputs to be LinearBounds")
+            raise TypeError("ForwardLBPDiv requires both inputs to be LinearBounds")
 
         bounds_a = input_bounds[0]
         bounds_b = input_bounds[1]

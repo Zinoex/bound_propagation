@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPSigmoidStrategy(ForwardLBPStrategy):
+class ForwardLBPSigmoid(ForwardLBPStrategy):
     """
     Forward LBP strategy for SIGMOID operation.
 
@@ -26,10 +26,10 @@ class ForwardLBPSigmoidStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"SIGMOID requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"sigmoid requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPSigmoidStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPSigmoid requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

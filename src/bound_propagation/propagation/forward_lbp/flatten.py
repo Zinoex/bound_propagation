@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPFlattenStrategy(ForwardLBPStrategy):
+class ForwardLBPFlatten(ForwardLBPStrategy):
     """
     Forward LBP strategy for FLATTEN operation.
 
@@ -28,7 +28,7 @@ class ForwardLBPFlattenStrategy(ForwardLBPStrategy):
             raise ValueError(f"flatten requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPFlattenStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPFlatten requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

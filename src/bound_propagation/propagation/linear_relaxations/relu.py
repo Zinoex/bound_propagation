@@ -26,27 +26,19 @@ def compute_relu_alpha_beta(
 
     # Determine regimes
     zero_width = torch.isclose(lower, upper, atol=zero_threshold)
-    negative = (~zero_width) & (upper <= 0)
+    # negative = (~zero_width) & (upper <= 0)
     positive = (~zero_width) & (lower >= 0)
     crossing = (~zero_width) & (lower < 0) & (upper > 0)
 
     # Zero-width: use the value itself
-    alpha_lower[zero_width] = 0
     beta_lower[zero_width] = torch.relu(lower[zero_width])
-    alpha_upper[zero_width] = 0
     beta_upper[zero_width] = torch.relu(upper[zero_width])
 
     # Negative regime: output is always 0
-    alpha_lower[negative] = 0
-    beta_lower[negative] = 0
-    alpha_upper[negative] = 0
-    beta_upper[negative] = 0
 
     # Positive regime: output is identity
     alpha_lower[positive] = 1
-    beta_lower[positive] = 0
     alpha_upper[positive] = 1
-    beta_upper[positive] = 0
 
     # Crossing regime: use linear relaxation
     l_cross = lower[crossing]

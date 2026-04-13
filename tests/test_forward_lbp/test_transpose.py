@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.transpose import ForwardLBPTransposeStrategy
+from bound_propagation.propagation.forward_lbp.transpose import ForwardLBPTranspose
 from bound_propagation.regions import HyperRectangle
 
 
@@ -26,7 +26,7 @@ def test_transpose_2d() -> None:
         bias_upper=torch.zeros(2, 2),
     )
 
-    strategy = ForwardLBPTransposeStrategy()
+    strategy = ForwardLBPTranspose()
 
     class MockNode:
         def __init__(self):
@@ -69,7 +69,7 @@ def test_transpose_3d() -> None:
         bias_upper=torch.zeros(2, 2, 2),
     )
 
-    strategy = ForwardLBPTransposeStrategy()
+    strategy = ForwardLBPTranspose()
 
     class MockNode:
         def __init__(self):
@@ -106,7 +106,7 @@ def test_transpose_identity() -> None:
         bias_upper=torch.zeros(2, 2),
     )
 
-    strategy = ForwardLBPTransposeStrategy()
+    strategy = ForwardLBPTranspose()
 
     class MockNode:
         def __init__(self):
@@ -140,7 +140,7 @@ def test_transpose_with_bias() -> None:
         bias_upper=torch.tensor([[2.0, 3.0], [4.0, 5.0]]),
     )
 
-    strategy = ForwardLBPTransposeStrategy()
+    strategy = ForwardLBPTranspose()
 
     class MockNode:
         def __init__(self):

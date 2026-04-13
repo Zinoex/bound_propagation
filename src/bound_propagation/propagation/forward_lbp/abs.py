@@ -25,7 +25,7 @@ class ForwardLBPAbs(ForwardLBPStrategy):
             raise ValueError(f"abs requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPAbsStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPAbs requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

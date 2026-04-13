@@ -29,14 +29,14 @@ class ForwardLBPExp(ForwardLBPStrategy):
             raise ValueError(f"exp requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPExpStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPExp requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 
         # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()
 
-        # Compute alpha/beta parameters for cos relaxation
+        # Compute alpha/beta parameters for exp relaxation
         alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
 
         # Apply the linear relaxation to the bounds

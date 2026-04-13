@@ -4,9 +4,9 @@ import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.sub import (
+    ForwardLBPSub,
     ForwardLBPSubConstantLeft,
     ForwardLBPSubConstantRight,
-    ForwardLBPSubStrategy,
 )
 from bound_propagation.regions import HyperRectangle
 
@@ -47,7 +47,7 @@ def test_sub_abstract_abstract() -> None:
         bias_upper=torch.tensor([0.0]),
     )
 
-    strategy = ForwardLBPSubStrategy()
+    strategy = ForwardLBPSub()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
 
     # Linear: [2, 0] - [0, 1] = [2, -1]

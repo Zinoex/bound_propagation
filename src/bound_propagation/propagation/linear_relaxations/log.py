@@ -34,4 +34,11 @@ def compute_log_alpha_beta(
     alpha_upper = torch.where(zero_width, 0, 1 / midpoint)
     beta_upper = torch.where(zero_width, log_upper, torch.log(midpoint) - alpha_upper * midpoint)
 
+    # Invalid regime: log is undefined for non-positive inputs, so we can set those bounds to nan
+    invalid = lower <= 0
+    alpha_lower[invalid] = float("nan")
+    beta_lower[invalid] = float("nan")
+    alpha_upper[invalid] = float("nan")
+    beta_upper[invalid] = float("nan")
+
     return alpha_lower, beta_lower, alpha_upper, beta_upper

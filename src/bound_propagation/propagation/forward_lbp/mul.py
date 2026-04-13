@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPMulStrategy(ForwardLBPStrategy):
+class ForwardLBPMul(ForwardLBPStrategy):
     """
     Forward LBP strategy for MUL operation when both inputs are abstract.
 
@@ -25,10 +25,10 @@ class ForwardLBPMulStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MUL requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"mul requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
-            raise TypeError("ForwardLBPMulStrategy requires both inputs to be LinearBounds")
+            raise TypeError("ForwardLBPMul requires both inputs to be LinearBounds")
 
         bounds_a = input_bounds[0]
         bounds_b = input_bounds[1]
@@ -72,7 +72,7 @@ class ForwardLBPMulWithConstant(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MUL requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"mul requires exactly 2 inputs, got {len(input_bounds)}")
 
         left = input_bounds[0]
         right = input_bounds[1]
@@ -86,8 +86,6 @@ class ForwardLBPMulWithConstant(ForwardLBPStrategy):
                 f"ForwardLBPMulWithConstant requires one input to be LinearBounds and the other to be "
                 f"torch.Tensor or Number, got {type(left)} and {type(right)}"
             )
-
-        return self._multiply_by_constant(bounds, constant)
 
         return self._multiply_by_constant(bounds, constant)
 

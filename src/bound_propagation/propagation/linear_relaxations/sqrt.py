@@ -10,20 +10,17 @@ def compute_sqrt_alpha_beta(
     Compute alpha/beta parameters for sqrt linear relaxation.
 
     sqrt is concave, so:
-    - Upper bound: secant line connecting (lower, sqrt(lower)) and (upper, sqrt(upper))
-    - Lower bound: tangent line at a suitable point (midpoint)
+    - Lower bound: secant line connecting (lower, sqrt(lower)) and (upper, sqrt(upper))
+    - Upper bound: tangent line at midpoint
 
     Args:
-        lower: Lower bounds of pre-activation (must be >= 0)
-        upper: Upper bounds of pre-activation (must be >= 0)
+        lower: Lower bounds of pre-activation
+        upper: Upper bounds of pre-activation
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
     """
-    if torch.any(lower < 0):
-        raise ValueError("sqrt requires non-negative lower bounds")
-
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
     alpha_upper = torch.zeros_like(lower)
@@ -39,36 +36,40 @@ def compute_sqrt_alpha_beta(
     def sqrt_derivative(x):
         # d/dx sqrt(x) = 1/(2*sqrt(x))
         # Handle zero case
-        return torch.where(x > 0, 1.0 / (2.0 * torch.sqrt(x)), torch.zeros_like(x))
+        return torch.where(x > 0, 1.0 / (2.0 * torch.sqrt(x)), 0)
+
+    # Midpoint for tangent line
+    midpoint = (lower + upper) * 0.5
+    midpoint_act = torch.sqrt(midpoint)
+    midpoint_prime = sqrt_derivative(midpoint)
 
     # Slope of secant line
-    slope = torch.where(
-        zero_width,
-        torch.zeros_like(lower),
-        (upper_act - lower_act) / torch.clamp(upper - lower, min=1e-8),
-    )
+    slope = (upper_act - lower_act) / (upper - lower)
 
     # Zero-width case: use the value itself
-    alpha_lower[zero_width] = 0
     beta_lower[zero_width] = lower_act[zero_width]
-    alpha_upper[zero_width] = 0
     beta_upper[zero_width] = upper_act[zero_width]
 
     # Non-zero width cases
     non_zero = ~zero_width
 
-    # sqrt is concave everywhere
-    # For concave functions:
-    # - Secant line lies BELOW the curve (use for lower bound)
-    # - Tangent line lies ABOVE the curve (use for upper bound)
+    # sqrt is concave everywhere (for x > 0):
+    # - Lower bound: secant line
+    # - Upper bound: tangent line at midpoint
 
     # Lower bound: secant line
     alpha_lower[non_zero] = slope[non_zero]
     beta_lower[non_zero] = lower_act[non_zero] - slope[non_zero] * lower[non_zero]
 
-    # Upper bound: tangent at upper point (steepest tangent for tightest upper bound)
-    upper_prime = sqrt_derivative(upper)
-    alpha_upper[non_zero] = upper_prime[non_zero]
-    beta_upper[non_zero] = upper_act[non_zero] - upper_prime[non_zero] * upper[non_zero]
+    # Upper bound: tangent at midpoint
+    alpha_upper[non_zero] = midpoint_prime[non_zero]
+    beta_upper[non_zero] = midpoint_act[non_zero] - midpoint_prime[non_zero] * midpoint[non_zero]
+
+    # Invalid regime: sqrt is undefined for negative inputs
+    invalid = lower < 0
+    alpha_lower[invalid] = float("nan")
+    beta_lower[invalid] = float("nan")
+    alpha_upper[invalid] = float("nan")
+    beta_upper[invalid] = float("nan")
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper

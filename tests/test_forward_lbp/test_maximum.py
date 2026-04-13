@@ -4,7 +4,7 @@ import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.maximum import (
-    ForwardLBPMaximumStrategy,
+    ForwardLBPMaximum,
     ForwardLBPMaximumWithConstant,
 )
 from bound_propagation.regions import HyperRectangle
@@ -46,7 +46,7 @@ def test_maximum_abstract_abstract_concretizes() -> None:
         bias_upper=torch.tensor([0.0, 0.0]),
     )
 
-    strategy = ForwardLBPMaximumStrategy()
+    strategy = ForwardLBPMaximum()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
 
     # Should concretize (lose linear dependency)

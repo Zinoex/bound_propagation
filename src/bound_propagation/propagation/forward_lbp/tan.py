@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPTanStrategy(ForwardLBPStrategy):
+class ForwardLBPTan(ForwardLBPStrategy):
     """Forward LBP strategy for TAN operation using linear relaxation."""
 
     def propagate_forwards(
@@ -22,10 +22,10 @@ class ForwardLBPTanStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"TAN requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"tan requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPTanStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPTan requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

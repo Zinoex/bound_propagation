@@ -9,6 +9,14 @@ def compute_sigmoid_alpha_beta(
     """
     Compute alpha/beta parameters for sigmoid linear relaxation.
 
+    Sigmoid has an inflection point at x=0 (convex for x<0, concave for x>0).
+
+    For intervals that cross zero:
+    - Upper bound: Use secant if sigmoid'(upper) >= secant_slope, else tangent at upper
+    - Lower bound: Use secant if sigmoid'(lower) >= secant_slope, else tangent at lower
+
+    This ensures sound bounds while preferring simpler secant when valid.
+
     Args:
         lower: Lower bounds of pre-activation
         upper: Upper bounds of pre-activation
@@ -33,9 +41,6 @@ def compute_sigmoid_alpha_beta(
         s = torch.sigmoid(x)
         return s * (1 - s)
 
-    lower_prime = sigmoid_derivative(lower)
-    upper_prime = sigmoid_derivative(upper)
-
     # Midpoint for tangent line
     d = (lower + upper) * 0.5
     d_act = torch.sigmoid(d)
@@ -45,9 +50,7 @@ def compute_sigmoid_alpha_beta(
     slope = torch.where(zero_width, torch.zeros_like(lower), (upper_act - lower_act) / (upper - lower))
 
     # Zero-width case: use the value itself
-    alpha_lower[zero_width] = 0
     beta_lower[zero_width] = lower_act[zero_width]
-    alpha_upper[zero_width] = 0
     beta_upper[zero_width] = upper_act[zero_width]
 
     # Non-zero width cases
@@ -59,34 +62,52 @@ def compute_sigmoid_alpha_beta(
     crossing = non_zero & (lower < 0) & (upper > 0)
 
     # Negative regime
-    if negative.any():
-        # Upper: secant line between lower and upper
-        alpha_upper[negative] = slope[negative]
-        beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
+    # Upper: secant line between lower and upper
+    alpha_upper[negative] = slope[negative]
+    beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
 
-        # Lower: tangent line at midpoint
-        alpha_lower[negative] = d_prime[negative]
-        beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
+    # Lower: tangent line at midpoint
+    alpha_lower[negative] = d_prime[negative]
+    beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
 
     # Positive regime
-    if positive.any():
-        # Upper: tangent at midpoint
-        alpha_upper[positive] = d_prime[positive]
-        beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
+    # Upper: tangent at midpoint
+    alpha_upper[positive] = d_prime[positive]
+    beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
 
-        # Lower: secant line
-        alpha_lower[positive] = slope[positive]
-        beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
+    # Lower: secant line
+    alpha_lower[positive] = slope[positive]
+    beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
 
     # Crossing regime (contains both negative and positive)
-    if crossing.any():
-        # Upper: minimum of two tangent lines at lower and upper
-        # Use tangent at lower since sigmoid is concave in crossing region typically
-        alpha_upper[crossing] = lower_prime[crossing]
-        beta_upper[crossing] = lower_act[crossing] - lower_prime[crossing] * lower[crossing]
+    lower_prime = sigmoid_derivative(lower)
+    upper_prime = sigmoid_derivative(upper)
 
-        # Lower: secant line
-        alpha_lower[crossing] = upper_prime[crossing]
-        beta_lower[crossing] = lower_act[crossing] - upper_prime[crossing] * lower[crossing]
+    # Upper bound strategy:
+    # Check if sigmoid'(upper) >= secant slope
+    # If yes, secant is a valid upper bound (simpler)
+    # Otherwise, use tangent at upper
+    use_secant_upper = upper_prime[crossing] >= slope[crossing]
+
+    # For secant case
+    alpha_upper[crossing] = torch.where(use_secant_upper, slope[crossing], upper_prime[crossing])
+    beta_upper[crossing] = torch.where(
+        use_secant_upper,
+        upper_act[crossing] - slope[crossing] * upper[crossing],
+        upper_act[crossing] - upper_prime[crossing] * upper[crossing],
+    )
+
+    # Lower bound strategy:
+    # Check if sigmoid'(lower) >= secant slope
+    # If yes, secant is a valid lower bound
+    # Otherwise, use tangent at lower
+    use_secant_lower = lower_prime[crossing] >= slope[crossing]
+
+    alpha_lower[crossing] = torch.where(use_secant_lower, slope[crossing], lower_prime[crossing])
+    beta_lower[crossing] = torch.where(
+        use_secant_lower,
+        lower_act[crossing] - slope[crossing] * lower[crossing],
+        lower_act[crossing] - lower_prime[crossing] * lower[crossing],
+    )
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper

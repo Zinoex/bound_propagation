@@ -51,9 +51,7 @@ def compute_tan_alpha_beta(
     )
 
     # Zero-width case: use the value itself
-    alpha_lower[zero_width] = 0
     beta_lower[zero_width] = lower_act[zero_width]
-    alpha_upper[zero_width] = 0
     beta_upper[zero_width] = upper_act[zero_width]
 
     # Non-zero width cases

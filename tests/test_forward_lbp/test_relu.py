@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.relu import ForwardLBPReluStrategy
+from bound_propagation.propagation.forward_lbp.relu import ForwardLBPRelu
 from bound_propagation.regions import HyperRectangle
 
 
@@ -27,7 +27,7 @@ def test_relu_positive_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([2.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPReluStrategy()
+    strategy = ForwardLBPRelu()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Linear should be preserved (identity) since all positive
@@ -49,7 +49,7 @@ def test_relu_negative_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([-5.0]), upper=torch.tensor([-2.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPReluStrategy()
+    strategy = ForwardLBPRelu()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Linear dependency lost (concretized to 0)
@@ -74,7 +74,7 @@ def test_relu_crossing_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([-2.0]), upper=torch.tensor([3.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPReluStrategy()
+    strategy = ForwardLBPRelu()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Lower bound relaxation: alpha=0
@@ -98,7 +98,7 @@ def test_relu_zero_boundary() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([4.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPReluStrategy()
+    strategy = ForwardLBPRelu()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Should preserve identity (all non-negative)
@@ -127,7 +127,7 @@ def test_relu_with_bias() -> None:
         bias_upper=torch.tensor([1.0]),
     )
 
-    strategy = ForwardLBPReluStrategy()
+    strategy = ForwardLBPRelu()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -144,7 +144,7 @@ def test_relu_multidimensional() -> None:
     region = HyperRectangle(lower=torch.tensor([-1.0, 2.0, -3.0]), upper=torch.tensor([1.0, 4.0, -1.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPReluStrategy()
+    strategy = ForwardLBPRelu()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()

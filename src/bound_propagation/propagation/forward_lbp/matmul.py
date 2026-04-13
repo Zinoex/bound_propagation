@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPMatmulStrategy(ForwardLBPStrategy):
+class ForwardLBPMatmul(ForwardLBPStrategy):
     """
     Forward LBP strategy for MATMUL when both inputs are abstract.
 
@@ -25,10 +25,10 @@ class ForwardLBPMatmulStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MATMUL requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"matmul requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
-            raise TypeError("ForwardLBPMatmulStrategy requires both inputs to be LinearBounds")
+            raise TypeError("ForwardLBPMatmul requires both inputs to be LinearBounds")
 
         # Both vary - need to concretize
         raise NotImplementedError(
@@ -68,7 +68,7 @@ class ForwardLBPConstantMatmul(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"MATMUL requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"matmul requires exactly 2 inputs, got {len(input_bounds)}")
 
         weight = input_bounds[0]
         x = input_bounds[1]

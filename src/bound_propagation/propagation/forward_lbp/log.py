@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPLogStrategy(ForwardLBPStrategy):
+class ForwardLBPLog(ForwardLBPStrategy):
     """
     Forward LBP strategy for LOG operation.
 
@@ -29,7 +29,7 @@ class ForwardLBPLogStrategy(ForwardLBPStrategy):
             raise ValueError(f"log requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPLogStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPLog requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

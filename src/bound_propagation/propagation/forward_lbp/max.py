@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPMaxStrategy(ForwardLBPStrategy):
+class ForwardLBPMax(ForwardLBPStrategy):
     """Forward LBP strategy for MAX reduction operation."""
 
     def propagate_forwards(
@@ -20,10 +20,10 @@ class ForwardLBPMaxStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"MAX requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"max requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPMaxStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPMax requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

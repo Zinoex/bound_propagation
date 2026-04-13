@@ -4,7 +4,6 @@ import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.ir import (
-    AbstractValueType,
     Graph,
     Node,
     NodeType,
@@ -12,11 +11,11 @@ from bound_propagation.ir import (
     TensorMetadata,
 )
 from bound_propagation.propagation.forward_lbp import (
-    ForwardLBPAddStrategy,
+    ForwardLBPAdd,
     ForwardLBPAddWithConstant,
+    ForwardLBPMatmul,
     ForwardLBPMatmulConstant,
-    ForwardLBPMatmulStrategy,
-    ForwardLBPMulStrategy,
+    ForwardLBPMul,
     ForwardLBPMulWithConstant,
 )
 from bound_propagation.propagation.methods import ForwardLBPPropagator
@@ -77,8 +76,8 @@ class TestForwardLBPSignatureDispatch:
 
         # mixed_add has signature (ABSTRACT, CONSTANT) -> ForwardLBPAddWithConstant
         assert isinstance(mixed_strategy, ForwardLBPAddWithConstant)
-        # abstract_add has signature (ABSTRACT, ABSTRACT) -> ForwardLBPAddStrategy
-        assert isinstance(abstract_strategy, ForwardLBPAddStrategy)
+        # abstract_add has signature (ABSTRACT, ABSTRACT) -> ForwardLBPAdd
+        assert isinstance(abstract_strategy, ForwardLBPAdd)
 
     def test_constant_abstract_vs_abstract_constant_add(self) -> None:
         """Test that both orderings of (abstract, constant) use the same strategy."""
@@ -173,7 +172,7 @@ class TestForwardLBPSignatureDispatch:
         # mul1: (ABSTRACT, CONSTANT) -> ForwardLBPMulWithConstant
         assert isinstance(propagator._bound_strategies[mul1.id], ForwardLBPMulWithConstant)
         # mul2: (ABSTRACT, ABSTRACT) -> ForwardLBPMulStrategy
-        assert isinstance(propagator._bound_strategies[mul2.id], ForwardLBPMulStrategy)
+        assert isinstance(propagator._bound_strategies[mul2.id], ForwardLBPMul)
 
     def test_matmul_signature_dispatch(self) -> None:
         """Test matmul strategy dispatch for different signatures."""
@@ -225,8 +224,8 @@ class TestForwardLBPSignatureDispatch:
 
         # matmul1: (ABSTRACT, CONSTANT) -> ForwardLBPMatmulConstant
         assert isinstance(propagator._bound_strategies[matmul1.id], ForwardLBPMatmulConstant)
-        # matmul2: (ABSTRACT, ABSTRACT) -> ForwardLBPMatmulStrategy
-        assert isinstance(propagator._bound_strategies[matmul2.id], ForwardLBPMatmulStrategy)
+        # matmul2: (ABSTRACT, ABSTRACT) -> ForwardLBPMatmul
+        assert isinstance(propagator._bound_strategies[matmul2.id], ForwardLBPMatmul)
 
     def test_computation_with_mixed_signatures(self) -> None:
         """Test end-to-end computation with mixed abstract/constant signatures."""

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.sqrt import ForwardLBPSqrtStrategy
+from bound_propagation.propagation.forward_lbp.sqrt import ForwardLBPSqrt
 from bound_propagation.regions import HyperRectangle
 
 
@@ -30,7 +30,7 @@ def test_sqrt_positive_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([4.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSqrtStrategy()
+    strategy = ForwardLBPSqrt()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Should have linear relaxation
@@ -63,7 +63,7 @@ def test_sqrt_small_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([4.0]), upper=torch.tensor([4.1]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSqrtStrategy()
+    strategy = ForwardLBPSqrt()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -82,7 +82,7 @@ def test_sqrt_zero_width_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([9.0]), upper=torch.tensor([9.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSqrtStrategy()
+    strategy = ForwardLBPSqrt()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -99,7 +99,7 @@ def test_sqrt_large_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([100.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSqrtStrategy()
+    strategy = ForwardLBPSqrt()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -125,7 +125,7 @@ def test_sqrt_with_bias() -> None:
         bias_upper=torch.tensor([9.0]),
     )
 
-    strategy = ForwardLBPSqrtStrategy()
+    strategy = ForwardLBPSqrt()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -144,7 +144,7 @@ def test_sqrt_multidimensional() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0, 9.0]), upper=torch.tensor([4.0, 16.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSqrtStrategy()
+    strategy = ForwardLBPSqrt()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()

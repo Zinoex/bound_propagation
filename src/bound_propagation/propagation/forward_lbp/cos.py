@@ -25,7 +25,7 @@ class ForwardLBPCos(ForwardLBPStrategy):
             raise ValueError(f"cos requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPCosStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPCos requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

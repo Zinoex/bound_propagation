@@ -5,7 +5,7 @@ import math
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.sin import ForwardLBPSinStrategy
+from bound_propagation.propagation.forward_lbp.sin import ForwardLBPSin
 from bound_propagation.regions import HyperRectangle
 
 
@@ -28,7 +28,7 @@ def test_sin_small_positive_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Should have linear relaxation
@@ -50,7 +50,7 @@ def test_sin_increasing_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([math.pi / 2]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -69,7 +69,7 @@ def test_sin_crossing_maximum() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi / 4]), upper=torch.tensor([3 * math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -86,7 +86,7 @@ def test_sin_full_period() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([2 * math.pi]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -104,7 +104,7 @@ def test_sin_negative_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([-math.pi / 2]), upper=torch.tensor([0.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -122,7 +122,7 @@ def test_sin_zero_width() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi / 6]), upper=torch.tensor([math.pi / 6]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -139,7 +139,7 @@ def test_sin_zero_width_rising() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi / 4]), upper=torch.tensor([math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -157,7 +157,7 @@ def test_sin_zero_width_falling() -> None:
     region = HyperRectangle(lower=torch.tensor([2 * math.pi / 3]), upper=torch.tensor([2 * math.pi / 3]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -175,7 +175,7 @@ def test_sin_concave_region_first_half() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi / 4]), upper=torch.tensor([math.pi / 2]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -197,7 +197,7 @@ def test_sin_concave_region_second_half() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi / 2]), upper=torch.tensor([3 * math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -219,7 +219,7 @@ def test_sin_convex_region_first_half() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi]), upper=torch.tensor([5 * math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -241,7 +241,7 @@ def test_sin_convex_region_second_half() -> None:
     region = HyperRectangle(lower=torch.tensor([5 * math.pi / 4]), upper=torch.tensor([3 * math.pi / 2]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -262,7 +262,7 @@ def test_sin_across_maximum_at_half_pi() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi / 4]), upper=torch.tensor([3 * math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -283,7 +283,7 @@ def test_sin_across_minimum_at_3half_pi() -> None:
     region = HyperRectangle(lower=torch.tensor([5 * math.pi / 4]), upper=torch.tensor([7 * math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -305,7 +305,7 @@ def test_sin_strictly_increasing_small() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([math.pi / 3]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -327,7 +327,7 @@ def test_sin_strictly_decreasing_small() -> None:
     region = HyperRectangle(lower=torch.tensor([2 * math.pi / 3]), upper=torch.tensor([math.pi]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -349,7 +349,7 @@ def test_sin_mixed_convexity_half_wave() -> None:
     region = HyperRectangle(lower=torch.tensor([math.pi / 2]), upper=torch.tensor([3 * math.pi / 2]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -371,7 +371,7 @@ def test_sin_negative_region_increasing() -> None:
     region = HyperRectangle(lower=torch.tensor([-math.pi / 2]), upper=torch.tensor([-math.pi / 4]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -392,7 +392,7 @@ def test_sin_large_interval_multiple_periods() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([3 * math.pi]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPSinStrategy()
+    strategy = ForwardLBPSin()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()

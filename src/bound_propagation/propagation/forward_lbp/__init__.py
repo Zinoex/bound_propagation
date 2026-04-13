@@ -5,13 +5,13 @@ from .base import ForwardLBPStrategy
 from .cat import ForwardLBPConcat
 from .clamp import ForwardLBPClamp
 from .cos import ForwardLBPCos
-from .div import ForwardLBPConstantDiv, ForwardLBPDivConstant, ForwardLBPDiv
+from .div import ForwardLBPConstantDiv, ForwardLBPDiv, ForwardLBPDivConstant
 from .exp import ForwardLBPExp
 from .flatten import ForwardLBPFlatten
 from .getitem import ForwardLBPGetItem
 from .linear import ForwardLBPLinear
 from .log import ForwardLBPLog
-from .matmul import ForwardLBPConstantMatmul, ForwardLBPMatmulConstant, ForwardLBPMatmul
+from .matmul import ForwardLBPConstantMatmul, ForwardLBPMatmul, ForwardLBPMatmulConstant
 from .max import ForwardLBPMax
 from .maximum import ForwardLBPMaximum, ForwardLBPMaximumWithConstant
 from .mean import ForwardLBPMean
@@ -29,7 +29,7 @@ from .sin import ForwardLBPSin
 from .sqrt import ForwardLBPSqrt
 from .squeeze import ForwardLBPSqueeze
 from .stack import ForwardLBPStack
-from .sub import ForwardLBPSubConstantLeft, ForwardLBPSubConstantRight, ForwardLBPSub
+from .sub import ForwardLBPSub, ForwardLBPSubConstantLeft, ForwardLBPSubConstantRight
 from .sum import ForwardLBPSum
 from .tan import ForwardLBPTan
 from .tanh import ForwardLBPTanh

@@ -23,9 +23,10 @@ def compute_exp_alpha_beta(
 
     exp_lower = torch.exp(lower)
     exp_upper = torch.exp(upper)
+    exp_mid = torch.exp(midpoint)
 
-    alpha_lower = torch.where(zero_width, 0, torch.exp(midpoint))
-    beta_lower = torch.where(zero_width, exp_lower, torch.exp(midpoint) - alpha_lower * midpoint)
+    alpha_lower = torch.where(zero_width, 0, exp_mid)
+    beta_lower = torch.where(zero_width, exp_lower, exp_mid - alpha_lower * midpoint)
 
     slope = (exp_upper - exp_lower) / (upper - lower)
 

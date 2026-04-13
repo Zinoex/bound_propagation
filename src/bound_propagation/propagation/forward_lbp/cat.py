@@ -26,7 +26,7 @@ class ForwardLBPConcat(ForwardLBPStrategy):
         for i, inp in enumerate(input_bounds):
             if not isinstance(inp, LinearBounds):
                 raise TypeError(
-                    f"ForwardLBPConcatStrategy requires all inputs to be LinearBounds, but input {i} is {type(inp)}"
+                    f"ForwardLBPConcat requires all inputs to be LinearBounds, but input {i} is {type(inp)}"
                 )
 
         bounds_list = cast(list[LinearBounds], input_bounds)

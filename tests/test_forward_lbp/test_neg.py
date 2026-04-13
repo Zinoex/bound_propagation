@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.neg import ForwardLBPNegStrategy
+from bound_propagation.propagation.forward_lbp.neg import ForwardLBPNeg
 from bound_propagation.regions import HyperRectangle
 
 
@@ -27,7 +27,7 @@ def test_neg_positive_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([2.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPNegStrategy()
+    strategy = ForwardLBPNeg()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Linear: negated identity -1
@@ -51,7 +51,7 @@ def test_neg_negative_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([-3.0]), upper=torch.tensor([-1.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPNegStrategy()
+    strategy = ForwardLBPNeg()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Linear: -1
@@ -71,7 +71,7 @@ def test_neg_crossing_zero() -> None:
     region = HyperRectangle(lower=torch.tensor([-2.0]), upper=torch.tensor([3.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPNegStrategy()
+    strategy = ForwardLBPNeg()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()
@@ -97,7 +97,7 @@ def test_neg_with_bias() -> None:
         bias_upper=torch.tensor([5.0]),
     )
 
-    strategy = ForwardLBPNegStrategy()
+    strategy = ForwardLBPNeg()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Linear: -2 (swapped because negation swaps bounds)
@@ -120,7 +120,7 @@ def test_neg_multidimensional() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0, -2.0, -1.0]), upper=torch.tensor([3.0, 4.0, 0.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPNegStrategy()
+    strategy = ForwardLBPNeg()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     # Linear: -I
@@ -140,7 +140,7 @@ def test_neg_zero_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([0.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPNegStrategy()
+    strategy = ForwardLBPNeg()
     result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
 
     lower, upper = result.concretize()

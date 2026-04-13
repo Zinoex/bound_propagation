@@ -16,6 +16,7 @@ def compute_abs_alpha_beta(
     Args:
         lower: Lower bounds of pre-activation
         upper: Upper bounds of pre-activation
+        zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)

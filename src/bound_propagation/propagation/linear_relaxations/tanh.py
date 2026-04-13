@@ -9,11 +9,18 @@ def compute_tanh_alpha_beta(
     """
     Compute alpha/beta parameters for tanh linear relaxation.
 
-    Tanh has similar structure to sigmoid but is symmetric around origin.
+    Tanh has similar structure to sigmoid: inflection point at x=0 (convex for x<0, concave for x>0).
+
+    For intervals that cross zero:
+    - Upper bound: Use secant if tanh'(upper) >= secant_slope, else tangent at upper
+    - Lower bound: Use secant if tanh'(lower) >= secant_slope, else tangent at lower
+
+    This ensures sound bounds while preferring simpler secant when valid.
 
     Args:
         lower: Lower bounds of pre-activation
         upper: Upper bounds of pre-activation
+        zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
@@ -59,24 +66,51 @@ def compute_tanh_alpha_beta(
     crossing = non_zero & (lower < 0) & (upper > 0)
 
     # Negative regime
-    alpha_upper[negative] = slope[negative]
-    beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
+    if negative.any():
+        # Upper: secant line between lower and upper
+        alpha_upper[negative] = slope[negative]
+        beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
 
-    alpha_lower[negative] = d_prime[negative]
-    beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
+        # Lower: tangent line at midpoint
+        alpha_lower[negative] = d_prime[negative]
+        beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
 
     # Positive regime
-    alpha_upper[positive] = d_prime[positive]
-    beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
+    if positive.any():
+        # Upper: tangent at midpoint
+        alpha_upper[positive] = d_prime[positive]
+        beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
 
-    alpha_lower[positive] = slope[positive]
-    beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
+        # Lower: secant line
+        alpha_lower[positive] = slope[positive]
+        beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
 
-    # Crossing regime:
-    alpha_upper[crossing] = lower_prime[crossing]
-    beta_upper[crossing] = lower_act[crossing] - lower_prime[crossing] * lower[crossing]
+    # Crossing regime (contains both negative and positive)
+    if crossing.any():
+        # Upper bound strategy:
+        # Check if tanh'(upper) >= secant slope
+        # If yes, secant is a valid upper bound (simpler)
+        # Otherwise, use tangent at upper
+        use_secant_upper = upper_prime[crossing] >= slope[crossing]
 
-    alpha_lower[crossing] = upper_prime[crossing]
-    beta_lower[crossing] = lower_act[crossing] - upper_prime[crossing] * lower[crossing]
+        alpha_upper[crossing] = torch.where(use_secant_upper, slope[crossing], upper_prime[crossing])
+        beta_upper[crossing] = torch.where(
+            use_secant_upper,
+            upper_act[crossing] - slope[crossing] * upper[crossing],
+            upper_act[crossing] - upper_prime[crossing] * upper[crossing],
+        )
+
+        # Lower bound strategy:
+        # Check if tanh'(lower) >= secant slope
+        # If yes, secant is a valid lower bound
+        # Otherwise, use tangent at lower
+        use_secant_lower = lower_prime[crossing] >= slope[crossing]
+
+        alpha_lower[crossing] = torch.where(use_secant_lower, slope[crossing], lower_prime[crossing])
+        beta_lower[crossing] = torch.where(
+            use_secant_lower,
+            lower_act[crossing] - slope[crossing] * lower[crossing],
+            lower_act[crossing] - lower_prime[crossing] * lower[crossing],
+        )
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper

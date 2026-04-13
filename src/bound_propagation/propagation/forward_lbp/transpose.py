@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPTransposeStrategy(ForwardLBPStrategy):
+class ForwardLBPTranspose(ForwardLBPStrategy):
     """Forward LBP strategy for TRANSPOSE and PERMUTE operations."""
 
     def propagate_forwards(
@@ -20,10 +20,10 @@ class ForwardLBPTransposeStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"TRANSPOSE requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"transpose requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPTransposeStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPTranspose requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 

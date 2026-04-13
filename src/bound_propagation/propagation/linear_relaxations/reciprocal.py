@@ -57,27 +57,34 @@ def compute_reciprocal_alpha_beta(
         zero_width, torch.zeros_like(lower), (upper_act - lower_act) / torch.clamp(upper - lower, min=eps)
     )
 
-    # Zero-width case: use the value itself
-    alpha_lower[zero_width] = 0
-    beta_lower[zero_width] = lower_act[zero_width]
-    alpha_upper[zero_width] = 0
-    beta_upper[zero_width] = upper_act[zero_width]
+    # Case 1: Zero-width intervals
+    # alphas = 0, beta_lower = 1/upper, beta_upper = 1/lower
+    alpha_lower[zero_width] = 0.0
+    alpha_upper[zero_width] = 0.0
+    beta_lower[zero_width] = upper_act[zero_width]
+    beta_upper[zero_width] = lower_act[zero_width]
 
-    # Crosses zero: use safe infinite bounds
-    alpha_lower[crosses_zero] = 0
+    # Case 4: Crosses zero
+    # alphas = 0, beta_lower = -inf, beta_upper = inf
+    alpha_lower[crosses_zero] = 0.0
+    alpha_upper[crosses_zero] = 0.0
     beta_lower[crosses_zero] = float("-inf")
-    alpha_upper[crosses_zero] = 0
     beta_upper[crosses_zero] = float("inf")
 
-    # All positive or all negative: 1/x is convex
-    valid = all_positive | all_negative
-    if valid.any():
-        # Upper bound: tangent at midpoint
-        alpha_upper[valid] = d_prime[valid]
-        beta_upper[valid] = d_act[valid] - d_prime[valid] * d_safe[valid]
+    # Case 2: All positive (x > 0)
+    # Upper bound: secant line
+    # Lower bound: tangent at midpoint
+    alpha_upper[all_positive] = slope[all_positive]
+    beta_upper[all_positive] = upper_act[all_positive] - slope[all_positive] * upper_safe[all_positive]
+    alpha_lower[all_positive] = d_prime[all_positive]
+    beta_lower[all_positive] = d_act[all_positive] - d_prime[all_positive] * d_safe[all_positive]
 
-        # Lower bound: secant line
-        alpha_lower[valid] = slope[valid]
-        beta_lower[valid] = upper_act[valid] - slope[valid] * upper_safe[valid]
+    # Case 3: All negative (x < 0)
+    # Upper bound: tangent at midpoint
+    # Lower bound: secant line
+    alpha_upper[all_negative] = d_prime[all_negative]
+    beta_upper[all_negative] = d_act[all_negative] - d_prime[all_negative] * d_safe[all_negative]
+    alpha_lower[all_negative] = slope[all_negative]
+    beta_lower[all_negative] = upper_act[all_negative] - slope[all_negative] * upper_safe[all_negative]
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper

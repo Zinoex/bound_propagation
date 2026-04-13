@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPTanhStrategy(ForwardLBPStrategy):
+class ForwardLBPTanh(ForwardLBPStrategy):
     """
     Forward LBP strategy for TANH operation.
 
@@ -26,10 +26,10 @@ class ForwardLBPTanhStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"TANH requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"tanh requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
-            raise TypeError("ForwardLBPTanhStrategy requires input to be LinearBounds")
+            raise TypeError("ForwardLBPTanh requires input to be LinearBounds")
 
         bounds = input_bounds[0]
 
