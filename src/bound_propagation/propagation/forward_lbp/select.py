@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
@@ -25,15 +25,15 @@ class ForwardLBPSelectStrategy(ForwardLBPStrategy):
         if not isinstance(input_bounds[0], LinearBounds):
             raise TypeError("ForwardLBPSelectStrategy requires input to be LinearBounds")
 
-        bounds: LinearBounds = input_bounds[0]
+        bounds = input_bounds[0]
         dim = node.attributes.get("dim", 0)
         index = node.attributes.get("index", 0)
 
         # Concretize and apply select
         lower, upper = bounds.concretize()
 
-        lower = torch.select(lower, dim, index)
-        upper = torch.select(upper, dim, index)
+        lower = lower.select(dim, index)
+        upper = upper.select(dim, index)
 
         return LinearBounds(
             region=bounds.region,

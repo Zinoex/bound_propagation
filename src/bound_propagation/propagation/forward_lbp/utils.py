@@ -125,8 +125,6 @@ def apply_linear_relaxation(
     # Flatten alpha and beta for element-wise multiplication
     alpha_lower_flat = alpha_lower.flatten()
     alpha_upper_flat = alpha_upper.flatten()
-    beta_lower_flat = beta_lower.flatten()
-    beta_upper_flat = beta_upper.flatten()
 
     if bounds.linear_lower is not None and bounds.linear_upper is not None:
         # Apply element-wise multiplication to linear coefficients

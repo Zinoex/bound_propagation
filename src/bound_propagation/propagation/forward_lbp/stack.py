@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import torch
 
@@ -29,7 +29,7 @@ class ForwardLBPStackStrategy(ForwardLBPStrategy):
                     f"ForwardLBPStackStrategy requires all inputs to be LinearBounds, but input {i} is {type(inp)}"
                 )
 
-        bounds_list: list[LinearBounds] = input_bounds  # type: ignore
+        bounds_list = cast(list[LinearBounds], input_bounds)
         dim = node.attributes.get("dim", 0)
 
         # Concretize all inputs and stack

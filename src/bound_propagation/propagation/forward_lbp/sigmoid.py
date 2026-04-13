@@ -8,6 +8,8 @@ from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
@@ -21,12 +23,15 @@ class ForwardLBPSigmoidStrategy(ForwardLBPStrategy):
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[LinearBounds],
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
             raise ValueError(f"SIGMOID requires exactly 1 input, got {len(input_bounds)}")
 
-        bounds: LinearBounds = input_bounds[0]
+        if not isinstance(input_bounds[0], LinearBounds):
+            raise TypeError("ForwardLBPSigmoidStrategy requires input to be LinearBounds")
+
+        bounds = input_bounds[0]
 
         # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()

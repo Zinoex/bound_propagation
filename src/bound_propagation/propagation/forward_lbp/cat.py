@@ -1,17 +1,17 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-import torch
+from typing import TYPE_CHECKING, cast
 
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
-class ForwardLBPConcatStrategy(ForwardLBPStrategy):
+class ForwardLBPConcat(ForwardLBPStrategy):
     """Forward LBP strategy for CONCAT operation."""
 
     def propagate_forwards(
@@ -20,7 +20,7 @@ class ForwardLBPConcatStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) < 1:
-            raise ValueError(f"CONCAT requires at least 1 input, got {len(input_bounds)}")
+            raise ValueError(f"cat requires at least 1 input, got {len(input_bounds)}")
 
         # Check all inputs are LinearBounds
         for i, inp in enumerate(input_bounds):
@@ -29,7 +29,7 @@ class ForwardLBPConcatStrategy(ForwardLBPStrategy):
                     f"ForwardLBPConcatStrategy requires all inputs to be LinearBounds, but input {i} is {type(inp)}"
                 )
 
-        bounds_list: list[LinearBounds] = input_bounds  # type: ignore
+        bounds_list = cast(list[LinearBounds], input_bounds)
         dim = node.attributes.get("dim", 0)
 
         # Concretize all inputs and concatenate

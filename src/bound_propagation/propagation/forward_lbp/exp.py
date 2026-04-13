@@ -2,16 +2,16 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
-class ForwardLBPExpStrategy(ForwardLBPStrategy):
+class ForwardLBPExp(ForwardLBPStrategy):
     """
     Forward LBP strategy for EXP operation.
 
@@ -21,17 +21,20 @@ class ForwardLBPExpStrategy(ForwardLBPStrategy):
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[LinearBounds],
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"EXP requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"exp requires exactly 1 input, got {len(input_bounds)}")
 
-        bounds: LinearBounds = input_bounds[0]
+        if not isinstance(input_bounds[0], LinearBounds):
+            raise TypeError("ForwardLBPExpStrategy requires input to be LinearBounds")
+
+        bounds = input_bounds[0]
 
         # Concretize and apply exp (monotonic function)
         lower, upper = bounds.concretize()
-        lower_out = torch.exp(lower)
-        upper_out = torch.exp(upper)
+        lower_out = lower.exp()
+        upper_out = upper.exp()
 
         return LinearBounds(
             region=bounds.region,

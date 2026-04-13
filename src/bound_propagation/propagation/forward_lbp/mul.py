@@ -30,8 +30,8 @@ class ForwardLBPMulStrategy(ForwardLBPStrategy):
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
             raise TypeError("ForwardLBPMulStrategy requires both inputs to be LinearBounds")
 
-        bounds_a: LinearBounds = input_bounds[0]
-        bounds_b: LinearBounds = input_bounds[1]
+        bounds_a = input_bounds[0]
+        bounds_b = input_bounds[1]
 
         # Both have linear dependencies - concretize and convert back
         lower_a, upper_a = bounds_a.concretize()
@@ -44,8 +44,8 @@ class ForwardLBPMulStrategy(ForwardLBPStrategy):
             upper_a * lower_b,
             upper_a * upper_b,
         ]
-        lower = torch.min(torch.stack(products), dim=0)[0]
-        upper = torch.max(torch.stack(products), dim=0)[0]
+        lower = torch.stack(products).min(dim=0)[0]
+        upper = torch.stack(products).max(dim=0)[0]
 
         # Return as constant LinearBounds
         return LinearBounds(

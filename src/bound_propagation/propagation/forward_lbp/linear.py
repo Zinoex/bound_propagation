@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
@@ -23,12 +23,15 @@ class ForwardLBPLinearStrategy(ForwardLBPStrategy):
     def propagate_forwards(
         self,
         node: Node,
-        input_bounds: list[LinearBounds],
+        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"LINEAR requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"linear requires exactly 1 input, got {len(input_bounds)}")
 
-        bounds: LinearBounds = input_bounds[0]
+        if not isinstance(input_bounds[0], LinearBounds):
+            raise TypeError("ForwardLBPLinearStrategy requires input to be LinearBounds")
+
+        bounds = input_bounds[0]
 
         # Get weight and bias from node attributes
         weight = node.attributes.get("weight")
@@ -42,8 +45,8 @@ class ForwardLBPLinearStrategy(ForwardLBPStrategy):
         # Upper bound: W @ W_u^x @ x0 + W @ b_u^x + b
 
         # Handle positive and negative weights separately for tight bounds
-        weight_pos = torch.clamp(weight, min=0)
-        weight_neg = torch.clamp(weight, max=0)
+        weight_pos = weight.clamp(min=0)
+        weight_neg = weight.clamp(max=0)
 
         # Lower bound computation
         if bounds.linear_lower is not None and bounds.linear_upper is not None:

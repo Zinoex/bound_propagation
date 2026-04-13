@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
@@ -25,7 +25,7 @@ class ForwardLBPMaxStrategy(ForwardLBPStrategy):
         if not isinstance(input_bounds[0], LinearBounds):
             raise TypeError("ForwardLBPMaxStrategy requires input to be LinearBounds")
 
-        bounds: LinearBounds = input_bounds[0]
+        bounds = input_bounds[0]
 
         dim = node.attributes.get("dim")
         keep_dim = node.attributes.get("keepdim", False)
@@ -34,11 +34,11 @@ class ForwardLBPMaxStrategy(ForwardLBPStrategy):
         lower, upper = bounds.concretize()
 
         if dim is not None:
-            lower = torch.max(lower, dim=dim, keepdim=keep_dim).values
-            upper = torch.max(upper, dim=dim, keepdim=keep_dim).values
+            lower = lower.max(dim=dim, keepdim=keep_dim).values
+            upper = upper.max(dim=dim, keepdim=keep_dim).values
         else:
-            lower = torch.max(lower)
-            upper = torch.max(upper)
+            lower = lower.max()
+            upper = upper.max()
 
         return LinearBounds(
             region=bounds.region,

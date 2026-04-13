@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import torch
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPAddStrategy(ForwardLBPStrategy):
+class ForwardLBPAdd(ForwardLBPStrategy):
     """
     Forward LBP strategy for ADD operation.
 
@@ -31,20 +31,20 @@ class ForwardLBPAddStrategy(ForwardLBPStrategy):
         Compute forward LBP bounds for addition.
 
         Args:
-            node: The ADD node
+            node: The add node
             input_bounds: List of two LinearBounds for the operands
 
         Returns:
             LinearBounds for the sum
         """
         if len(input_bounds) != 2:
-            raise ValueError(f"ADD requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"add requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
             raise TypeError("ForwardLBPAddStrategy requires both inputs to be LinearBounds")
 
-        bounds_a: LinearBounds = input_bounds[0]
-        bounds_b: LinearBounds = input_bounds[1]
+        bounds_a = input_bounds[0]
+        bounds_b = input_bounds[1]
 
         # Add linear coefficients
         if bounds_a.linear_lower is not None and bounds_b.linear_lower is not None:
@@ -87,7 +87,7 @@ class ForwardLBPAddWithConstant(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"ADD requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"add requires exactly 2 inputs, got {len(input_bounds)}")
 
         left = input_bounds[0]
         right = input_bounds[1]
@@ -101,6 +101,8 @@ class ForwardLBPAddWithConstant(ForwardLBPStrategy):
                 f"ForwardLBPAddWithConstant requires one input to be LinearBounds and the other to be "
                 f"torch.Tensor or Number, got {type(left)} and {type(right)}"
             )
+
+        c = cast(torch.Tensor | torch.types.Number, c)
 
         # Adding a constant: just add to bias terms
         bias_lower = x.bias_lower + c

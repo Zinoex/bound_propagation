@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
@@ -81,8 +81,8 @@ class ForwardLBPConstantMatmul(ForwardLBPStrategy):
 
         # W @ x: need different computation
         # z = W @ x, where x has linear bounds
-        weight_pos = torch.clamp(weight, min=0)
-        weight_neg = torch.clamp(weight, max=0)
+        weight_pos = weight.clamp(min=0)
+        weight_neg = weight.clamp(max=0)
 
         # Lower bound
         if x.linear_lower is not None and x.linear_upper is not None:
@@ -131,8 +131,8 @@ class ForwardLBPConstantMatmul(ForwardLBPStrategy):
         # Lower: W_l^z @ x0 + b_l^z = W_l^x @ W @ x0 + b_l^x @ W
         # Need to handle positive/negative weights for tight bounds
 
-        weight_pos = torch.clamp(weight, min=0)
-        weight_neg = torch.clamp(weight, max=0)
+        weight_pos = weight.clamp(min=0)
+        weight_neg = weight.clamp(max=0)
 
         # Lower bound
         if bounds.linear_lower is not None and bounds.linear_upper is not None:

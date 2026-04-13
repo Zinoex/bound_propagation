@@ -1,41 +1,41 @@
 from ...ir import AbstractValueType, OperationType
-from .abs import ForwardLBPAbsStrategy
-from .add import ForwardLBPAddStrategy, ForwardLBPAddWithConstant
+from .abs import ForwardLBPAbs
+from .add import ForwardLBPAdd, ForwardLBPAddWithConstant
 from .base import ForwardLBPStrategy
-from .cat import ForwardLBPConcatStrategy
-from .clamp import ForwardLBPClampStrategy
-from .cos import ForwardLBPCosStrategy
-from .div import ForwardLBPConstantDiv, ForwardLBPDivConstant, ForwardLBPDivStrategy
-from .exp import ForwardLBPExpStrategy
-from .flatten import ForwardLBPFlattenStrategy
-from .getitem import ForwardLBPGetItemStrategy
-from .linear import ForwardLBPLinearStrategy
-from .log import ForwardLBPLogStrategy
-from .matmul import ForwardLBPConstantMatmul, ForwardLBPMatmulConstant, ForwardLBPMatmulStrategy
-from .max import ForwardLBPMaxStrategy
-from .maximum import ForwardLBPMaximumStrategy, ForwardLBPMaximumWithConstant
-from .mean import ForwardLBPMeanStrategy
-from .min import ForwardLBPMinStrategy
-from .minimum import ForwardLBPMinimumStrategy, ForwardLBPMinimumWithConstant
-from .mul import ForwardLBPMulStrategy, ForwardLBPMulWithConstant
-from .neg import ForwardLBPNegStrategy
-from .reciprocal import ForwardLBPReciprocalStrategy
+from .cat import ForwardLBPConcat
+from .clamp import ForwardLBPClamp
+from .cos import ForwardLBPCos
+from .div import ForwardLBPConstantDiv, ForwardLBPDivConstant, ForwardLBPDiv
+from .exp import ForwardLBPExp
+from .flatten import ForwardLBPFlatten
+from .getitem import ForwardLBPGetItem
+from .linear import ForwardLBPLinear
+from .log import ForwardLBPLog
+from .matmul import ForwardLBPConstantMatmul, ForwardLBPMatmulConstant, ForwardLBPMatmul
+from .max import ForwardLBPMax
+from .maximum import ForwardLBPMaximum, ForwardLBPMaximumWithConstant
+from .mean import ForwardLBPMean
+from .min import ForwardLBPMin
+from .minimum import ForwardLBPMinimum, ForwardLBPMinimumWithConstant
+from .mul import ForwardLBPMul, ForwardLBPMulWithConstant
+from .neg import ForwardLBPNeg
+from .reciprocal import ForwardLBPReciprocal
 from .registry import ForwardLBPStrategyRegistry
-from .relu import ForwardLBPReluStrategy
-from .reshape import ForwardLBPReshapeStrategy
-from .select import ForwardLBPSelectStrategy
-from .sigmoid import ForwardLBPSigmoidStrategy
-from .sin import ForwardLBPSinStrategy
-from .sqrt import ForwardLBPSqrtStrategy
-from .squeeze import ForwardLBPSqueezeStrategy
-from .stack import ForwardLBPStackStrategy
-from .sub import ForwardLBPSubConstantLeft, ForwardLBPSubConstantRight, ForwardLBPSubStrategy
-from .sum import ForwardLBPSumStrategy
-from .tan import ForwardLBPTanStrategy
-from .tanh import ForwardLBPTanhStrategy
-from .transpose import ForwardLBPTransposeStrategy
-from .unsqueeze import ForwardLBPUnsqueezeStrategy
-from .view import ForwardLBPViewStrategy
+from .relu import ForwardLBPRelu
+from .reshape import ForwardLBPReshape
+from .select import ForwardLBPSelect
+from .sigmoid import ForwardLBPSigmoid
+from .sin import ForwardLBPSin
+from .sqrt import ForwardLBPSqrt
+from .squeeze import ForwardLBPSqueeze
+from .stack import ForwardLBPStack
+from .sub import ForwardLBPSubConstantLeft, ForwardLBPSubConstantRight, ForwardLBPSub
+from .sum import ForwardLBPSum
+from .tan import ForwardLBPTan
+from .tanh import ForwardLBPTanh
+from .transpose import ForwardLBPTranspose
+from .unsqueeze import ForwardLBPUnsqueeze
+from .view import ForwardLBPView
 
 __all__ = ["ForwardLBPStrategy", "ForwardLBPStrategyRegistry"]
 
@@ -46,7 +46,7 @@ def _register_strategies():
     # Arithmetic operations
     ForwardLBPStrategyRegistry.register_default(
         OperationType.ADD,
-        ForwardLBPAddStrategy(),
+        ForwardLBPAdd(),
         signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
     )
     ForwardLBPStrategyRegistry.register_default(
@@ -62,7 +62,7 @@ def _register_strategies():
 
     ForwardLBPStrategyRegistry.register_default(
         OperationType.SUB,
-        ForwardLBPSubStrategy(),
+        ForwardLBPSub(),
         signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
     )
     ForwardLBPStrategyRegistry.register_default(
@@ -78,7 +78,7 @@ def _register_strategies():
 
     ForwardLBPStrategyRegistry.register_default(
         OperationType.MUL,
-        ForwardLBPMulStrategy(),
+        ForwardLBPMul(),
         signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
     )
     ForwardLBPStrategyRegistry.register_default(
@@ -94,7 +94,7 @@ def _register_strategies():
 
     ForwardLBPStrategyRegistry.register_default(
         OperationType.DIV,
-        ForwardLBPDivStrategy(),
+        ForwardLBPDiv(),
         signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
     )
     ForwardLBPStrategyRegistry.register_default(
@@ -110,7 +110,7 @@ def _register_strategies():
 
     ForwardLBPStrategyRegistry.register_default(
         OperationType.MAXIMUM,
-        ForwardLBPMaximumStrategy(),
+        ForwardLBPMaximum(),
         signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
     )
     ForwardLBPStrategyRegistry.register_default(
@@ -126,7 +126,7 @@ def _register_strategies():
 
     ForwardLBPStrategyRegistry.register_default(
         OperationType.MINIMUM,
-        ForwardLBPMinimumStrategy(),
+        ForwardLBPMinimum(),
         signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
     )
     ForwardLBPStrategyRegistry.register_default(
@@ -142,52 +142,52 @@ def _register_strategies():
 
     # Element-wise functions
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.RELU, ForwardLBPReluStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.RELU, ForwardLBPRelu(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.SIGMOID, ForwardLBPSigmoidStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.SIGMOID, ForwardLBPSigmoid(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.TANH, ForwardLBPTanhStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.TANH, ForwardLBPTanh(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.EXP, ForwardLBPExpStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.EXP, ForwardLBPExp(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.LOG, ForwardLBPLogStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.LOG, ForwardLBPLog(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.SQRT, ForwardLBPSqrtStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.SQRT, ForwardLBPSqrt(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.RECIPROCAL, ForwardLBPReciprocalStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.RECIPROCAL, ForwardLBPReciprocal(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.NEG, ForwardLBPNegStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.NEG, ForwardLBPNeg(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.ABS, ForwardLBPAbsStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.ABS, ForwardLBPAbs(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.CLAMP, ForwardLBPClampStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.CLAMP, ForwardLBPClamp(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.COS, ForwardLBPCosStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.COS, ForwardLBPCos(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.SIN, ForwardLBPSinStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.SIN, ForwardLBPSin(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.TAN, ForwardLBPTanStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.TAN, ForwardLBPTan(), signature=(AbstractValueType.ABSTRACT,)
     )
 
     # Linear operations
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.LINEAR, ForwardLBPLinearStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.LINEAR, ForwardLBPLinear(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
         OperationType.MATMUL,
-        ForwardLBPMatmulStrategy(),
+        ForwardLBPMatmul(),
         signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
     )
     ForwardLBPStrategyRegistry.register_default(
@@ -203,51 +203,51 @@ def _register_strategies():
 
     # Reductions
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.MEAN, ForwardLBPMeanStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.MEAN, ForwardLBPMean(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.SUM, ForwardLBPSumStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.SUM, ForwardLBPSum(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.MAX, ForwardLBPMaxStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.MAX, ForwardLBPMax(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.MIN, ForwardLBPMinStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.MIN, ForwardLBPMin(), signature=(AbstractValueType.ABSTRACT,)
     )
 
     # Reshaping operations
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.RESHAPE, ForwardLBPReshapeStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.RESHAPE, ForwardLBPReshape(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.FLATTEN, ForwardLBPFlattenStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.FLATTEN, ForwardLBPFlatten(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.CONCAT, ForwardLBPConcatStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.CONCAT, ForwardLBPConcat(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.GETITEM, ForwardLBPGetItemStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.GETITEM, ForwardLBPGetItem(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.STACK, ForwardLBPStackStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.STACK, ForwardLBPStack(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.SELECT, ForwardLBPSelectStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.SELECT, ForwardLBPSelect(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.UNSQUEEZE, ForwardLBPUnsqueezeStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.UNSQUEEZE, ForwardLBPUnsqueeze(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.SQUEEZE, ForwardLBPSqueezeStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.SQUEEZE, ForwardLBPSqueeze(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.TRANSPOSE, ForwardLBPTransposeStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.TRANSPOSE, ForwardLBPTranspose(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.PERMUTE, ForwardLBPTransposeStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.PERMUTE, ForwardLBPTranspose(), signature=(AbstractValueType.ABSTRACT,)
     )
     ForwardLBPStrategyRegistry.register_default(
-        OperationType.VIEW, ForwardLBPViewStrategy(), signature=(AbstractValueType.ABSTRACT,)
+        OperationType.VIEW, ForwardLBPView(), signature=(AbstractValueType.ABSTRACT,)
     )
 
 

@@ -25,8 +25,8 @@ class ForwardLBPMinimumStrategy(ForwardLBPStrategy):
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
             raise TypeError("ForwardLBPMinimumStrategy requires both inputs to be LinearBounds")
 
-        bounds_a: LinearBounds = input_bounds[0]
-        bounds_b: LinearBounds = input_bounds[1]
+        bounds_a = input_bounds[0]
+        bounds_b = input_bounds[1]
 
         # Concretize both bounds
         lower_a, upper_a = bounds_a.concretize()

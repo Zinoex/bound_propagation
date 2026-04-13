@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
@@ -25,7 +25,7 @@ class ForwardLBPViewStrategy(ForwardLBPStrategy):
         if not isinstance(input_bounds[0], LinearBounds):
             raise TypeError("ForwardLBPViewStrategy requires input to be LinearBounds")
 
-        bounds: LinearBounds = input_bounds[0]
+        bounds = input_bounds[0]
         shape = node.attributes.get("shape")
 
         # View preserves linear structure

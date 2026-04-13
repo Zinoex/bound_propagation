@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
@@ -25,7 +25,7 @@ class ForwardLBPSumStrategy(ForwardLBPStrategy):
         if not isinstance(input_bounds[0], LinearBounds):
             raise TypeError("ForwardLBPSumStrategy requires input to be LinearBounds")
 
-        bounds: LinearBounds = input_bounds[0]
+        bounds = input_bounds[0]
 
         dim = node.attributes.get("dim")
         keep_dim = node.attributes.get("keepdim", False)
@@ -34,8 +34,8 @@ class ForwardLBPSumStrategy(ForwardLBPStrategy):
         # For simplicity, concretize and apply sum
         lower, upper = bounds.concretize()
 
-        lower = torch.sum(lower, dim, keepdim=keep_dim)
-        upper = torch.sum(upper, dim, keepdim=keep_dim)
+        lower = lower.sum(dim, keepdim=keep_dim)
+        upper = upper.sum(dim, keepdim=keep_dim)
 
         return LinearBounds(
             region=bounds.region,

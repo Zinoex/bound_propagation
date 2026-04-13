@@ -11,7 +11,7 @@ if TYPE_CHECKING:
     from ...ir import Node
 
 
-class ForwardLBPDivStrategy(ForwardLBPStrategy):
+class ForwardLBPDiv(ForwardLBPStrategy):
     """
     Forward LBP strategy for DIV operation when both inputs are abstract.
 
@@ -25,13 +25,13 @@ class ForwardLBPDivStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"DIV requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"div requires exactly 2 inputs, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds) or not isinstance(input_bounds[1], LinearBounds):
             raise TypeError("ForwardLBPDivStrategy requires both inputs to be LinearBounds")
 
-        bounds_a: LinearBounds = input_bounds[0]
-        bounds_b: LinearBounds = input_bounds[1]
+        bounds_a = input_bounds[0]
+        bounds_b = input_bounds[1]
 
         # Divisor varies - concretize
         lower_a, upper_a = bounds_a.concretize()
@@ -71,7 +71,7 @@ class ForwardLBPDivConstant(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"DIV requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"div requires exactly 2 inputs, got {len(input_bounds)}")
 
         x = input_bounds[0]
         c = input_bounds[1]
@@ -84,7 +84,7 @@ class ForwardLBPDivConstant(ForwardLBPStrategy):
 
         return self._divide_by_constant(x, c)
 
-    def _divide_by_constant(self, bounds: LinearBounds, divisor: torch.Tensor) -> LinearBounds:
+    def _divide_by_constant(self, bounds: LinearBounds, divisor: torch.Tensor | torch.types.Number) -> LinearBounds:
         """
         Divide linear bounds by a constant.
 
@@ -97,6 +97,10 @@ class ForwardLBPDivConstant(ForwardLBPStrategy):
         """
         # Similar to multiplication, but with division
         positive_mask = divisor > 0
+
+        divisor = torch.as_tensor(divisor, dtype=bounds.bias_lower.dtype, device=bounds.bias_lower.device).expand_as(
+            bounds.bias_lower
+        )
 
         # Handle linear coefficients
         if bounds.linear_lower is not None and bounds.linear_upper is not None:
@@ -144,7 +148,7 @@ class ForwardLBPConstantDiv(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 2:
-            raise ValueError(f"DIV requires exactly 2 inputs, got {len(input_bounds)}")
+            raise ValueError(f"div requires exactly 2 inputs, got {len(input_bounds)}")
 
         c = input_bounds[0]
         x = input_bounds[1]

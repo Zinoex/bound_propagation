@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from ..linear_relaxations.abs import compute_abs_alpha_beta
 from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
-class ForwardLBPAbsStrategy(ForwardLBPStrategy):
+class ForwardLBPAbs(ForwardLBPStrategy):
     """Forward LBP strategy for ABS operation using linear relaxation."""
 
     def propagate_forwards(
@@ -22,12 +22,12 @@ class ForwardLBPAbsStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"ABS requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"abs requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
             raise TypeError("ForwardLBPAbsStrategy requires input to be LinearBounds")
 
-        bounds: LinearBounds = input_bounds[0]
+        bounds = input_bounds[0]
 
         # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()

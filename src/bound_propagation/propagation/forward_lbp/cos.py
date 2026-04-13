@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from ..linear_relaxations.cos import compute_cos_alpha_beta
 from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
-class ForwardLBPCosStrategy(ForwardLBPStrategy):
+class ForwardLBPCos(ForwardLBPStrategy):
     """Forward LBP strategy for COS operation using linear relaxation."""
 
     def propagate_forwards(
@@ -22,12 +22,12 @@ class ForwardLBPCosStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"COS requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"cos requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
             raise TypeError("ForwardLBPCosStrategy requires input to be LinearBounds")
 
-        bounds: LinearBounds = input_bounds[0]
+        bounds = input_bounds[0]
 
         # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()

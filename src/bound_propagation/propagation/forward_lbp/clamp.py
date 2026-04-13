@@ -2,18 +2,18 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
-
 from ...bounds import LinearBounds
 from ..linear_relaxations.clamp import compute_clamp_alpha_beta
 from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
+    import torch
+
     from ...ir import Node
 
 
-class ForwardLBPClampStrategy(ForwardLBPStrategy):
+class ForwardLBPClamp(ForwardLBPStrategy):
     """Forward LBP strategy for CLAMP operation using linear relaxation."""
 
     def propagate_forwards(
@@ -22,16 +22,16 @@ class ForwardLBPClampStrategy(ForwardLBPStrategy):
         input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
     ) -> LinearBounds:
         if len(input_bounds) != 1:
-            raise ValueError(f"CLAMP requires exactly 1 input, got {len(input_bounds)}")
+            raise ValueError(f"clamp requires exactly 1 input, got {len(input_bounds)}")
 
         if not isinstance(input_bounds[0], LinearBounds):
             raise TypeError("ForwardLBPClampStrategy requires input to be LinearBounds")
 
-        bounds: LinearBounds = input_bounds[0]
+        bounds = input_bounds[0]
 
-        # Get clamp parameters from node metadata
-        min_val = node.metadata.get("min", None)
-        max_val = node.metadata.get("max", None)
+        # Get clamp parameters from node attributes
+        min_val = node.attributes.get("min", None)
+        max_val = node.attributes.get("max", None)
 
         # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()
