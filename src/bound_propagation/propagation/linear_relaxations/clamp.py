@@ -40,6 +40,7 @@ def compute_clamp_alpha_beta(
         upper: Upper bounds of pre-activation
         min_val: Minimum clamp value (default: -inf)
         max_val: Maximum clamp value (default: +inf)
+        zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)

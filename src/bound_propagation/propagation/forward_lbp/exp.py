@@ -3,7 +3,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
+from ..linear_relaxations.exp import compute_exp_alpha_beta
 from .base import ForwardLBPStrategy
+from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     import torch
@@ -31,15 +33,11 @@ class ForwardLBPExp(ForwardLBPStrategy):
 
         bounds = input_bounds[0]
 
-        # Concretize and apply exp (monotonic function)
+        # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()
-        lower_out = lower.exp()
-        upper_out = upper.exp()
 
-        return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,
-            bias_lower=lower_out,
-            linear_upper=None,
-            bias_upper=upper_out,
-        )
+        # Compute alpha/beta parameters for cos relaxation
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+
+        # Apply the linear relaxation to the bounds
+        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

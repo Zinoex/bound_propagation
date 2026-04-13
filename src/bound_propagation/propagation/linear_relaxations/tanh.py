@@ -4,6 +4,7 @@ import torch
 def compute_tanh_alpha_beta(
     lower: torch.Tensor,
     upper: torch.Tensor,
+    zero_threshold: float = 1e-8,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute alpha/beta parameters for tanh linear relaxation.
@@ -23,7 +24,7 @@ def compute_tanh_alpha_beta(
     beta_upper = torch.zeros_like(lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper)
+    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
 
     # Compute tanh and derivative
     lower_act = torch.tanh(lower)
@@ -58,27 +59,24 @@ def compute_tanh_alpha_beta(
     crossing = non_zero & (lower < 0) & (upper > 0)
 
     # Negative regime
-    if negative.any():
-        alpha_upper[negative] = slope[negative]
-        beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
+    alpha_upper[negative] = slope[negative]
+    beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
 
-        alpha_lower[negative] = d_prime[negative]
-        beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
+    alpha_lower[negative] = d_prime[negative]
+    beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
 
     # Positive regime
-    if positive.any():
-        alpha_upper[positive] = d_prime[positive]
-        beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
+    alpha_upper[positive] = d_prime[positive]
+    beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
 
-        alpha_lower[positive] = slope[positive]
-        beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
+    alpha_lower[positive] = slope[positive]
+    beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
 
-    # Crossing regime
-    if crossing.any():
-        alpha_upper[crossing] = lower_prime[crossing]
-        beta_upper[crossing] = lower_act[crossing] - lower_prime[crossing] * lower[crossing]
+    # Crossing regime:
+    alpha_upper[crossing] = lower_prime[crossing]
+    beta_upper[crossing] = lower_act[crossing] - lower_prime[crossing] * lower[crossing]
 
-        alpha_lower[crossing] = upper_prime[crossing]
-        beta_lower[crossing] = lower_act[crossing] - upper_prime[crossing] * lower[crossing]
+    alpha_lower[crossing] = upper_prime[crossing]
+    beta_lower[crossing] = lower_act[crossing] - upper_prime[crossing] * lower[crossing]
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper

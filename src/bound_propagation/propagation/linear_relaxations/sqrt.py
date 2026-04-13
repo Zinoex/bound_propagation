@@ -4,6 +4,7 @@ import torch
 def compute_sqrt_alpha_beta(
     lower: torch.Tensor,
     upper: torch.Tensor,
+    zero_threshold: float = 1e-8,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute alpha/beta parameters for sqrt linear relaxation.
@@ -15,6 +16,7 @@ def compute_sqrt_alpha_beta(
     Args:
         lower: Lower bounds of pre-activation (must be >= 0)
         upper: Upper bounds of pre-activation (must be >= 0)
+        zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
@@ -28,7 +30,7 @@ def compute_sqrt_alpha_beta(
     beta_upper = torch.zeros_like(lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper)
+    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
 
     # Compute sqrt values
     lower_act = torch.sqrt(lower)
@@ -38,11 +40,6 @@ def compute_sqrt_alpha_beta(
         # d/dx sqrt(x) = 1/(2*sqrt(x))
         # Handle zero case
         return torch.where(x > 0, 1.0 / (2.0 * torch.sqrt(x)), torch.zeros_like(x))
-
-    # Midpoint for tangent line
-    d = (lower + upper) * 0.5
-    d_act = torch.sqrt(d)
-    d_prime = sqrt_derivative(d)
 
     # Slope of secant line
     slope = torch.where(

@@ -4,6 +4,7 @@ import torch
 def compute_tan_alpha_beta(
     lower: torch.Tensor,
     upper: torch.Tensor,
+    zero_threshold: float = 1e-8,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute alpha/beta parameters for tan linear relaxation.
@@ -25,7 +26,7 @@ def compute_tan_alpha_beta(
     beta_upper = torch.zeros_like(lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper)
+    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
 
     # Compute tan values
     lower_act = torch.tan(lower)

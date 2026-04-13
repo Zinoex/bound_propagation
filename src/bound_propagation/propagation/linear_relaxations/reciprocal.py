@@ -2,8 +2,7 @@ import torch
 
 
 def compute_reciprocal_alpha_beta(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Compute alpha/beta parameters for reciprocal (1/x) linear relaxation.
@@ -15,6 +14,7 @@ def compute_reciprocal_alpha_beta(
     Args:
         lower: Lower bounds of pre-activation
         upper: Upper bounds of pre-activation
+        zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
@@ -25,7 +25,7 @@ def compute_reciprocal_alpha_beta(
     beta_upper = torch.zeros_like(lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper)
+    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
     crosses_zero = (lower < 0) & (upper > 0)
     all_positive = lower > 0
     all_negative = upper < 0
