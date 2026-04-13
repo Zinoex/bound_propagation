@@ -98,44 +98,34 @@ def compute_clamp_alpha_beta(
     alpha_upper[in_range] = 1
 
     # Crosses min:
-    # upper bound is line connecting (lower, clamp(lower)) and (upper, clamp(upper))
-    # lower bound has same slope but goes through (min_val, min_val)
+    # Function has corner at (min_val, min_val), can't be tightly bounded by single line
+    # Lower bound: horizontal at min_val (sound, conservative)
+    # Upper bound: horizontal at max(clamp(lower), clamp(upper)) (sound, conservative)
     lower_clamped_min, upper_clamped_min = lower_clamped[crosses_min], upper_clamped[crosses_min]
-    lower_min, upper_min = lower[crosses_min], upper[crosses_min]
-    slope = (lower_clamped_min - upper_clamped_min) / (lower_min - upper_min)
 
-    alpha_lower[crosses_min] = slope
-    beta_lower[crosses_min] = lower_clamped_min - slope * lower_min
-    alpha_upper[crosses_min] = slope
-    beta_upper[crosses_min] = upper_clamped_min - slope * upper_min
+    alpha_lower[crosses_min] = 0
+    beta_lower[crosses_min] = min_val[crosses_min] if isinstance(min_val, torch.Tensor) else min_val
+    alpha_upper[crosses_min] = 0
+    beta_upper[crosses_min] = torch.maximum(lower_clamped_min, upper_clamped_min)
 
     # Crosses max:
-    # lower bound is line connecting (lower, clamp(lower)) and (upper, clamp(upper))
-    # upper bound has same slope but goes through (max_val, max_val)
+    # Function has corner at (max_val, max_val), can't be tightly bounded by single line
+    # Lower bound: horizontal at min(clamp(lower), clamp(upper)) (sound, conservative)
+    # Upper bound: horizontal at max_val (sound, conservative)
     lower_clamped_max, upper_clamped_max = lower_clamped[crosses_max], upper_clamped[crosses_max]
-    lower_max, upper_max = lower[crosses_max], upper[crosses_max]
-    slope = (upper_clamped_max - lower_clamped_max) / (upper_max - lower_max)
 
-    alpha_lower[crosses_max] = slope
-    beta_lower[crosses_max] = lower_clamped_max - slope * lower_max
-    alpha_upper[crosses_max] = slope
-    beta_upper[crosses_max] = upper_clamped_max - slope * upper_max
+    alpha_lower[crosses_max] = 0
+    beta_lower[crosses_max] = torch.minimum(lower_clamped_max, upper_clamped_max)
+    alpha_upper[crosses_max] = 0
+    beta_upper[crosses_max] = max_val[crosses_max] if isinstance(max_val, torch.Tensor) else max_val
 
     # Crosses both:
-    # upper bound is line connecting (lower, clamp(lower)) and (max_val, max_val)
-    # lower bound is line connecting (min_val, min_val) and (upper, clamp(upper))
-    lower_clamped_both, upper_clamped_both = lower_clamped[crosses_both], upper_clamped[crosses_both]
-    lower_both, upper_both = lower[crosses_both], upper[crosses_both]
-
-    max_val = max_val[crosses_both] if isinstance(max_val, torch.Tensor) else max_val
-    slope_upper = (max_val - lower_clamped_both) / (max_val - lower_both)
-
-    min_val = min_val[crosses_both] if isinstance(min_val, torch.Tensor) else min_val
-    slope_lower = (upper_clamped_both - min_val) / (upper_both - min_val)
-
-    alpha_lower[crosses_both] = slope_lower
-    beta_lower[crosses_both] = min_val - slope_lower * min_val
-    alpha_upper[crosses_both] = slope_upper
-    beta_upper[crosses_both] = max_val - slope_upper * max_val
+    # Function has corners at both (min_val, min_val) and (max_val, max_val)
+    # Lower bound: horizontal at min_val (conservative)
+    # Upper bound: horizontal at max_val (conservative)
+    alpha_lower[crosses_both] = 0
+    beta_lower[crosses_both] = min_val[crosses_both] if isinstance(min_val, torch.Tensor) else min_val
+    alpha_upper[crosses_both] = 0
+    beta_upper[crosses_both] = max_val[crosses_both] if isinstance(max_val, torch.Tensor) else max_val
 
     return alpha_lower, beta_lower, alpha_upper, beta_upper

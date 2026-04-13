@@ -9,14 +9,8 @@ Tan has asymptotes at x = π/2 + nπ and alternates between convex and concave r
 - Concave: (0, π/2), (π, 3π/2), etc.
 """
 
-import sys
-from pathlib import Path
-
-import pytest
 import torch
 
-# Import directly from file to avoid package import issues
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from bound_propagation.propagation.linear_relaxations.tan import compute_tan_alpha_beta
 
 
@@ -245,7 +239,6 @@ class TestTanRelaxationAsymptotes:
     def test_asymptote_detection(self):
         """Test that intervals crossing asymptotes are detected correctly."""
         # π/2 ≈ 1.5708
-        import math
 
         # Crossing π/2
         lower = torch.tensor([1.5])

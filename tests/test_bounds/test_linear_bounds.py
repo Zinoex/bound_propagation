@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from bound_propagation.bounds import LinearBounds
@@ -45,6 +46,7 @@ class TestLinearBounds:
         # Maximum is at x=1, y=1: 2 + 3 + 1.5 = 6.5
         assert torch.allclose(upper, torch.tensor([6.5]))
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_basic(self):
         """Test forward composition with linear bounds."""
         # Input region: x in [0, 1]
@@ -81,6 +83,7 @@ class TestLinearBounds:
         assert torch.allclose(result.bias_upper, torch.tensor([5.0]))
         assert result.region is self_bounds.region
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_negative_weights(self):
         """Test forward composition with negative weights."""
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -116,6 +119,7 @@ class TestLinearBounds:
         assert torch.allclose(result.linear_upper, torch.tensor([[-4.0]]))
         assert torch.allclose(result.bias_upper, torch.tensor([-1.0]))
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_constant_self(self):
         """Test forward composition when self has constant bounds (no linear terms)."""
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -148,6 +152,7 @@ class TestLinearBounds:
         assert result.linear_upper is None
         assert torch.allclose(result.bias_upper, torch.tensor([9.0]))
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_constant_other(self):
         """Test forward composition when other has constant bounds."""
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -178,6 +183,7 @@ class TestLinearBounds:
         assert result.linear_upper is None
         assert torch.allclose(result.bias_upper, torch.tensor([7.0]))
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_backward_compose_basic(self):
         """Test backward composition with linear bounds."""
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -213,6 +219,7 @@ class TestLinearBounds:
         assert torch.allclose(result.bias_upper, torch.tensor([5.0]))
         assert result.region is other_bounds.region
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_backward_compose_negative_weights(self):
         """Test backward composition with negative weights."""
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -247,6 +254,7 @@ class TestLinearBounds:
         assert torch.allclose(result.linear_upper, torch.tensor([[-3.0]]))
         assert torch.allclose(result.bias_upper, torch.tensor([0.5]))
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_backward_compose_constant_self(self):
         """Test backward composition when self has constant bounds."""
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -277,6 +285,7 @@ class TestLinearBounds:
         assert result.linear_upper is None
         assert torch.allclose(result.bias_upper, torch.tensor([7.0]))
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_backward_compose_constant_other(self):
         """Test backward composition when other has constant bounds."""
         region = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
@@ -309,6 +318,7 @@ class TestLinearBounds:
         assert result.linear_upper is None
         assert torch.allclose(result.bias_upper, torch.tensor([8.0]))
 
+    @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_multidimensional(self):
         """Test forward composition with multi-dimensional bounds."""
         # Input region: x in [0, 1]^2

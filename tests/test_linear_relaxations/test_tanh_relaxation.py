@@ -5,14 +5,8 @@ These tests verify that the alpha/beta parameters computed for tanh
 linear relaxations produce valid upper and lower bounds.
 """
 
-import sys
-from pathlib import Path
-
-import pytest
 import torch
 
-# Import directly from file to avoid package import issues
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from bound_propagation.propagation.linear_relaxations.tanh import compute_tanh_alpha_beta
 
 
@@ -189,8 +183,9 @@ class TestTanhRelaxationSymmetry:
         alpha_lower_neg, beta_lower_neg, alpha_upper_neg, beta_upper_neg = compute_tanh_alpha_beta(lower_neg, upper_neg)
 
         # Verify tanh is odd: tanh(-x) = -tanh(x)
-        tanh_pos = torch.tanh(lower_pos)
-        tanh_neg = torch.tanh(lower_neg)
+        x_val = torch.tensor([1.5])
+        tanh_pos = torch.tanh(x_val)
+        tanh_neg = torch.tanh(-x_val)
         assert torch.allclose(tanh_pos, -tanh_neg, atol=1e-5)
 
         # For perfectly symmetric intervals around zero

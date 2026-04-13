@@ -5,14 +5,8 @@ These tests verify that the alpha/beta parameters computed for sqrt
 linear relaxations produce valid upper and lower bounds.
 """
 
-import sys
-from pathlib import Path
-
-import pytest
 import torch
 
-# Import directly from file to avoid package import issues
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
 from bound_propagation.propagation.linear_relaxations.sqrt import compute_sqrt_alpha_beta
 
 

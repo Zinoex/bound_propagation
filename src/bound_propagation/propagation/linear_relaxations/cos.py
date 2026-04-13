@@ -196,6 +196,21 @@ def compute_cos_alpha_beta(
     alpha_nz_upper = torch.where(only_min, 0, alpha_nz_upper)
     beta_nz_upper = torch.where(only_min, torch.maximum(cos_lower, cos_upper), beta_nz_upper)
 
+    # Check if interval contains inflection points (where convexity changes)
+    # cos has inflection points at x = π/2 + k*π for integer k (where cos'' = 0)
+    # Intervals crossing inflection points need more conservative bounds
+    k_inflection_lower = torch.ceil((lower_nz - math.pi / 2) / math.pi)
+    k_inflection_upper = torch.floor((upper_nz - math.pi / 2) / math.pi)
+    has_inflection = k_inflection_lower <= k_inflection_upper
+
+    # For intervals crossing inflection points WITHOUT extrema, use constant bounds
+    # Secant isn't sound when crossing inflection points (can be above AND below curve)
+    crosses_inflection_only = has_inflection & ~has_maximum & ~has_minimum & ~has_both_extrema
+    alpha_nz_lower = torch.where(crosses_inflection_only, 0, alpha_nz_lower)
+    beta_nz_lower = torch.where(crosses_inflection_only, torch.minimum(cos_lower, cos_upper), beta_nz_lower)
+    alpha_nz_upper = torch.where(crosses_inflection_only, 0, alpha_nz_upper)
+    beta_nz_upper = torch.where(crosses_inflection_only, torch.maximum(cos_lower, cos_upper), beta_nz_upper)
+
     # Assign back to output tensors
     alpha_lower[non_zero] = alpha_nz_lower
     beta_lower[non_zero] = beta_nz_lower

@@ -28,9 +28,9 @@ def compute_abs_alpha_beta(
 
     # Determine regimes
     zero_width = torch.isclose(lower, upper, atol=zero_threshold)
-    all_positive = lower >= 0
-    all_negative = upper <= 0
-    crosses_zero = (lower < 0) & (upper > 0)
+    all_positive = (lower >= 0) & ~zero_width
+    all_negative = (upper <= 0) & ~zero_width
+    crosses_zero = (lower < 0) & (upper > 0) & ~zero_width
 
     # Zero-width case: use the value itself
     lower_act = torch.abs(lower[zero_width])
