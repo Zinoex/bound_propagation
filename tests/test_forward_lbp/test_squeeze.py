@@ -72,4 +72,3 @@ def test_squeeze_middle_dim() -> None:
         linear_upper=torch.ones(2, 1, 3, 1),
         bias_upper=(torch.arange(6.0) + 1).view(2, 1, 3),
     )
-
