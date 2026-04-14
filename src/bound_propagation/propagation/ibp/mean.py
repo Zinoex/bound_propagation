@@ -2,34 +2,33 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPMean(ForwardIBPStrategy):
-    """IBP strategy for MEAN operation."""
+    """IBP strategy for mean."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"mean requires 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
-        if not isinstance(input_bounds[0], IntervalBounds):
+        if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPMean requires the input to be an IntervalBounds")
 
-        x_bounds: IntervalBounds = input_bounds[0]
-        dim = node.attributes.get("dim", 0)
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = args[2] if len(args) > 2 else kwargs.get("keepdim", False)
 
-        # Interval mean
-        lower = x_bounds.lower.mean(dim=dim)
-        upper = x_bounds.upper.mean(dim=dim)
+        lower = x_bounds.lower.mean(dim=dim, keepdim=keepdim)
+        upper = x_bounds.upper.mean(dim=dim, keepdim=keepdim)
 
         return IntervalBounds(lower, upper)

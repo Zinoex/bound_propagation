@@ -1,26 +1,33 @@
-from ...ir import AbstractValueType, OperationType
+import operator
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from ..registry import TargetRegistry
 from .abs import IBPAbs
-from .add import IBPAdd, IBPAddWithConstant
+from .add import IBPAdd
 from .base import ForwardIBPStrategy
 from .cat import IBPCat
 from .clamp import IBPClamp
 from .cos import IBPCos
-from .div import IBPConstantDiv, IBPDiv, IBPDivConstant
+from .div import IBPDiv
 from .exp import IBPExp
 from .flatten import IBPFlatten
 from .getitem import IBPGetItem
 from .linear import IBPLinear
 from .log import IBPLog
-from .matmul import IBPConstantMatmul, IBPMatmul, IBPMatmulConstant
+from .matmul import IBPMatmul
 from .max import IBPMax
-from .maximum import IBPMaximum, IBPMaximumWithConstant
+from .maximum import IBPMaximum
 from .mean import IBPMean
 from .min import IBPMin
-from .minimum import IBPMinimum, IBPMinimumWithConstant
-from .mul import IBPMul, IBPMulWithConstant
+from .minimum import IBPMinimum
+from .mul import IBPMul
 from .neg import IBPNeg
+from .permute import IBPPermute
+from .pow import IBPPow
 from .reciprocal import IBPReciprocal
-from .registry import ForwardIBPStrategyRegistry
 from .relu import IBPRelu
 from .reshape import IBPReshape
 from .select import IBPSelect
@@ -31,183 +38,84 @@ from .squeeze import IBPSqueeze
 from .stack import IBPStack
 from .sub import IBPSub
 from .sum import IBPSum
+from .tan import IBPTan
 from .tanh import IBPTanh
 from .transpose import IBPTranspose
 from .unsqueeze import IBPUnsqueeze
 from .view import IBPView
 
-# TODO: Figure out how to support cbrt
-
 __all__ = [
     "ForwardIBPStrategy",
-    "ForwardIBPStrategyRegistry",
+    "create_default_ibp_registry",
 ]
 
 
-def _register_ibp_strategies() -> None:
-    """Register all IBP strategies with the default IBP strategy registry."""
+def create_default_ibp_registry() -> TargetRegistry:
+    """Create a :class:`TargetRegistry` pre-populated with all built-in IBP strategies."""
+    registry = TargetRegistry()
 
-    # Arithmetic operations
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.ADD,
-        IBPAdd(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.ADD,
-        IBPAddWithConstant(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.ADD,
-        IBPAddWithConstant(),
-        signature=(AbstractValueType.CONSTANT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.SUB,
-        IBPSub(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.SUB,
-        IBPSub(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MUL,
-        IBPMul(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MUL,
-        IBPMulWithConstant(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MUL,
-        IBPMulWithConstant(),
-        signature=(AbstractValueType.CONSTANT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.DIV,
-        IBPDiv(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.DIV,
-        IBPDivConstant(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.DIV,
-        IBPConstantDiv(),
-        signature=(AbstractValueType.CONSTANT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MAXIMUM, IBPMaximum(), signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MAXIMUM,
-        IBPMaximumWithConstant(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MAXIMUM,
-        IBPMaximumWithConstant(),
-        signature=(AbstractValueType.CONSTANT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MINIMUM, IBPMinimum(), signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MINIMUM,
-        IBPMinimumWithConstant(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MINIMUM,
-        IBPMinimumWithConstant(),
-        signature=(AbstractValueType.CONSTANT, AbstractValueType.ABSTRACT),
-    )
+    # -- Arithmetic (binary, merged constant variants) ---------------------
+    registry.register_many([torch.add, operator.add], IBPAdd())
+    registry.register_many([torch.sub, operator.sub], IBPSub())
+    registry.register_many([torch.mul, operator.mul], IBPMul())
+    registry.register_many([torch.div, operator.truediv], IBPDiv())
 
-    # Element-wise functions
-    ForwardIBPStrategyRegistry.register_default(OperationType.RELU, IBPRelu(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.SIGMOID, IBPSigmoid(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(OperationType.TANH, IBPTanh(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.EXP, IBPExp(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.LOG, IBPLog(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.SQRT, IBPSqrt(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.RECIPROCAL, IBPReciprocal(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(OperationType.NEG, IBPNeg(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.ABS, IBPAbs(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.CLAMP, IBPClamp(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(OperationType.COS, IBPCos(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.SIN, IBPSin(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.TAN, IBPTanh(), signature=(AbstractValueType.ABSTRACT,))
+    registry.register(torch.maximum, IBPMaximum())
+    registry.register(torch.minimum, IBPMinimum())
 
-    # Linear operations
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.LINEAR, IBPLinear(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MATMUL,
-        IBPMatmul(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MATMUL,
-        IBPMatmulConstant(),
-        signature=(AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.MATMUL,
-        IBPConstantMatmul(),
-        signature=(AbstractValueType.CONSTANT, AbstractValueType.ABSTRACT),
-    )
+    registry.register_many([torch.neg, operator.neg], IBPNeg())
 
-    # Reductions
-    ForwardIBPStrategyRegistry.register_default(OperationType.MEAN, IBPMean(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.SUM, IBPSum(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.MAX, IBPMax(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(OperationType.MIN, IBPMin(), signature=(AbstractValueType.ABSTRACT,))
+    registry.register_many([torch.matmul, operator.matmul], IBPMatmul())
 
-    # Reshaping operations
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.RESHAPE, IBPReshape(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.FLATTEN, IBPFlatten(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(OperationType.CONCAT, IBPCat(), signature=(AbstractValueType.ABSTRACT,))
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.GETITEM, IBPGetItem(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.STACK, IBPStack(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.SELECT, IBPSelect(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.UNSQUEEZE, IBPUnsqueeze(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.SQUEEZE, IBPSqueeze(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.TRANSPOSE, IBPTranspose(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(
-        OperationType.PERMUTE, IBPTranspose(), signature=(AbstractValueType.ABSTRACT,)
-    )
-    ForwardIBPStrategyRegistry.register_default(OperationType.VIEW, IBPView(), signature=(AbstractValueType.ABSTRACT,))
+    # -- Element-wise activations ------------------------------------------
+    registry.register_many([torch.relu, F.relu, nn.ReLU], IBPRelu())
+    registry.register_many([torch.sigmoid, F.sigmoid, nn.Sigmoid], IBPSigmoid())
+    registry.register_many([torch.tanh, F.tanh, nn.Tanh], IBPTanh())
 
+    registry.register(torch.exp, IBPExp())
+    registry.register(torch.log, IBPLog())
+    registry.register(torch.sqrt, IBPSqrt())
+    registry.register(torch.reciprocal, IBPReciprocal())
+    registry.register(torch.abs, IBPAbs())
+    registry.register(torch.clamp, IBPClamp())
+    registry.register(torch.sin, IBPSin())
+    registry.register(torch.cos, IBPCos())
+    registry.register(torch.tan, IBPTan())
 
-# Register strategies on module import
-_register_ibp_strategies()
+    pow_ = IBPPow()
+    registry.register_many([torch.pow, operator.pow], pow_)
+
+    # TODO: no native cbrt; need to add custom method to torch.fx and then register here
+    # registry.register(torch.Tensor.cbrt, IBPCbrt())
+
+    # -- Linear / matmul ---------------------------------------------------
+    linear = IBPLinear()
+    registry.register_many([F.linear, nn.Linear], linear)
+
+    # -- Reductions --------------------------------------------------------
+    registry.register(torch.sum, IBPSum())
+    registry.register(torch.mean, IBPMean())
+    registry.register(torch.amax, IBPMax())
+    registry.register(torch.amin, IBPMin())
+
+    # -- Shape manipulation ------------------------------------------------
+    registry.register(torch.reshape, IBPReshape())
+    registry.register(torch.Tensor.reshape, IBPReshape())
+
+    flatten = IBPFlatten()
+    registry.register_many([torch.flatten, torch.Tensor.flatten, nn.Flatten], flatten)
+
+    registry.register(torch.cat, IBPCat())
+    registry.register(torch.stack, IBPStack())
+    registry.register(operator.getitem, IBPGetItem())
+
+    registry.register(torch.Tensor.select, IBPSelect())
+    registry.register(torch.unsqueeze, IBPUnsqueeze())
+    registry.register(torch.Tensor.unsqueeze, IBPUnsqueeze())
+    registry.register(torch.squeeze, IBPSqueeze())
+    registry.register(torch.Tensor.squeeze, IBPSqueeze())
+    registry.register(torch.Tensor.transpose, IBPTranspose())
+    registry.register(torch.Tensor.permute, IBPPermute())
+    registry.register(torch.Tensor.view, IBPView())
+
+    return registry

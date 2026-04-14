@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.clamp import ForwardLBPClamp
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -18,7 +19,6 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
         bias_upper=torch.zeros(dim),
     )
 
-
 def test_clamp_interval_within_range() -> None:
     """Test clamp when interval is already within clamp range."""
     # Region: x ∈ [3, 5]
@@ -26,13 +26,8 @@ def test_clamp_interval_within_range() -> None:
     region = HyperRectangle(lower=torch.tensor([3.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=10.0)
 
     # Should be identity (alpha=1, beta=0)
     assert torch.allclose(result.linear_lower, torch.tensor([[1.0]]))
@@ -44,7 +39,6 @@ def test_clamp_interval_within_range() -> None:
     assert torch.allclose(lower, torch.tensor([3.0]))
     assert torch.allclose(upper, torch.tensor([5.0]))
 
-
 def test_clamp_interval_below_range() -> None:
     """Test clamp when interval is completely below clamp range."""
     # Region: x ∈ [-5, -2]
@@ -52,19 +46,13 @@ def test_clamp_interval_below_range() -> None:
     region = HyperRectangle(lower=torch.tensor([-5.0]), upper=torch.tensor([-2.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=10.0)
 
     # Should be constant at 0
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([0.0]))
     assert torch.allclose(upper, torch.tensor([0.0]))
-
 
 def test_clamp_interval_above_range() -> None:
     """Test clamp when interval is completely above clamp range."""
@@ -73,19 +61,13 @@ def test_clamp_interval_above_range() -> None:
     region = HyperRectangle(lower=torch.tensor([12.0]), upper=torch.tensor([15.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=10.0)
 
     # Should be constant at 10
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([10.0]))
     assert torch.allclose(upper, torch.tensor([10.0]))
-
 
 def test_clamp_crosses_min() -> None:
     """Test clamp when interval crosses the minimum threshold."""
@@ -96,13 +78,8 @@ def test_clamp_crosses_min() -> None:
     region = HyperRectangle(lower=torch.tensor([-2.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=10.0)
 
     lower, upper = result.concretize()
     # At x=-2: clamp(-2, 0, 10) = 0
@@ -112,7 +89,6 @@ def test_clamp_crosses_min() -> None:
     assert torch.all(upper >= 4.9)
     assert torch.all(upper <= 5.1)
 
-
 def test_clamp_crosses_max() -> None:
     """Test clamp when interval crosses the maximum threshold."""
     # Region: x ∈ [3, 12]
@@ -120,13 +96,8 @@ def test_clamp_crosses_max() -> None:
     region = HyperRectangle(lower=torch.tensor([3.0]), upper=torch.tensor([12.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=10.0)
 
     lower, upper = result.concretize()
     # At x=3: clamp(3, 0, 10) = 3
@@ -136,7 +107,6 @@ def test_clamp_crosses_max() -> None:
     assert torch.all(upper >= 9.9)
     assert torch.all(upper <= 10.1)
 
-
 def test_clamp_crosses_both() -> None:
     """Test clamp when interval crosses both min and max thresholds."""
     # Region: x ∈ [-5, 15]
@@ -144,13 +114,8 @@ def test_clamp_crosses_both() -> None:
     region = HyperRectangle(lower=torch.tensor([-5.0]), upper=torch.tensor([15.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=10.0)
 
     lower, upper = result.concretize()
     # Should be [0, 10] with linear relaxations
@@ -159,7 +124,6 @@ def test_clamp_crosses_both() -> None:
     assert torch.all(upper >= 9.5)
     assert torch.all(upper <= 10.1)
 
-
 def test_clamp_only_min() -> None:
     """Test clamp with only min specified."""
     # Region: x ∈ [-2, 5]
@@ -167,20 +131,14 @@ def test_clamp_only_min() -> None:
     region = HyperRectangle(lower=torch.tensor([-2.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": None}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=None)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= -0.1)
     assert torch.all(lower <= 0.1)
     assert torch.all(upper >= 4.9)
     assert torch.all(upper <= 5.1)
-
 
 def test_clamp_only_max() -> None:
     """Test clamp with only max specified."""
@@ -189,20 +147,14 @@ def test_clamp_only_max() -> None:
     region = HyperRectangle(lower=torch.tensor([3.0]), upper=torch.tensor([12.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": None, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=None, max=10.0)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= 2.9)
     assert torch.all(lower <= 3.1)
     assert torch.all(upper >= 9.9)
     assert torch.all(upper <= 10.1)
-
 
 def test_clamp_point_interval() -> None:
     """Test clamp on a point interval."""
@@ -211,13 +163,8 @@ def test_clamp_point_interval() -> None:
     region = HyperRectangle(lower=torch.tensor([5.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
     strategy = ForwardLBPClamp()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, min=0.0, max=10.0)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([5.0]), atol=1e-6)

@@ -4,7 +4,9 @@ import torch
 
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.add import IBPAdd
-from bound_propagation.propagation.ibp.mul import IBPMul, IBPMulWithConstant
+from bound_propagation.propagation.ibp.mul import IBPMul
+
+from tests.helpers import propagate
 
 
 def _propagate_interval_interval(
@@ -17,16 +19,16 @@ def _propagate_interval_interval(
     strategy = IBPMul()
     left_bounds = IntervalBounds(lower=left_lower, upper=left_upper)
     right_bounds = IntervalBounds(lower=right_lower, upper=right_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[left_bounds, right_bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, left_bounds, right_bounds)
 
 
 def _propagate_interval_constant(
     interval_lower: torch.Tensor, interval_upper: torch.Tensor, constant: torch.Tensor | float
 ) -> IntervalBounds:
     """Propagate bounds for interval * constant operation."""
-    strategy = IBPMulWithConstant()
+    strategy = IBPMul()
     interval_bounds = IntervalBounds(lower=interval_lower, upper=interval_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[interval_bounds, constant])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, interval_bounds, constant)
 
 
 def test_mul_positive_intervals() -> None:
@@ -225,9 +227,9 @@ def test_mul_commutativity() -> None:
     strategy = IBPMul()
 
     # a * b
-    ab = strategy.propagate_forwards(None, [a, b])  # ty:ignore[invalid-argument-type]
+    ab = propagate(strategy, a, b)
     # b * a
-    ba = strategy.propagate_forwards(None, [b, a])  # ty:ignore[invalid-argument-type]
+    ba = propagate(strategy, b, a)
 
     assert torch.allclose(ab.lower, ba.lower)
     assert torch.allclose(ab.upper, ba.upper)
@@ -246,13 +248,13 @@ def test_mul_distributivity_over_addition_inclusion() -> None:
     add_strategy = IBPAdd()
 
     # a * (b + c)
-    bc = add_strategy.propagate_forwards(None, [b, c])  # ty:ignore[invalid-argument-type]
-    a_bc = mul_strategy.propagate_forwards(None, [a, bc])  # ty:ignore[invalid-argument-type]
+    bc = propagate(add_strategy, b, c)
+    a_bc = propagate(mul_strategy, a, bc)
 
     # a*b + a*c
-    ab = mul_strategy.propagate_forwards(None, [a, b])  # ty:ignore[invalid-argument-type]
-    ac = mul_strategy.propagate_forwards(None, [a, c])  # ty:ignore[invalid-argument-type]
-    ab_ac = add_strategy.propagate_forwards(None, [ab, ac])  # ty:ignore[invalid-argument-type]
+    ab = propagate(mul_strategy, a, b)
+    ac = propagate(mul_strategy, a, c)
+    ab_ac = propagate(add_strategy, ab, ac)
 
     # The results should be close (may have slight overestimation in one direction)
     # For positive values, they should be equal or very close
@@ -266,7 +268,7 @@ def test_mul_unit_interval() -> None:
     unit = IntervalBounds(torch.tensor([1.0]), torch.tensor([1.0]))
 
     strategy = IBPMul()
-    result = strategy.propagate_forwards(None, [a, unit])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, a, unit)
 
     # Should return the same interval (with broadcasting)
     assert torch.allclose(result.lower, a.lower)

@@ -3,29 +3,17 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.ir import Node, OperationType, TensorMetadata
 from bound_propagation.propagation.ibp.mean import IBPMean
 from bound_propagation.propagation.ibp.sum import IBPSum
+
+from tests.helpers import propagate
 
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor, dim: int = 0) -> IntervalBounds:
     """Propagate bounds for mean operation."""
     strategy = IBPMean()
     bounds = IntervalBounds(lower=lower, upper=upper)
-
-    # Create a simple node with mean operation
-    output_shape = _compute_output_shape(lower.shape, dim)
-    metadata = TensorMetadata(shape=output_shape, dtype=lower.dtype, device=lower.device)
-    node = Node(id=0, op_type=OperationType.MEAN, inputs=[], output_metadata=metadata, attributes={"dim": dim})
-
-    return strategy.propagate_forwards(node, input_bounds=[bounds])
-
-
-def _compute_output_shape(input_shape: tuple[int, ...], dim: int) -> tuple[int, ...]:
-    """Compute output shape after mean reduction."""
-    shape_list = list(input_shape)
-    shape_list.pop(dim)
-    return tuple(shape_list) if shape_list else ()
+    return propagate(strategy, bounds, dim=dim)
 
 
 def test_mean_positive_interval() -> None:
@@ -143,11 +131,9 @@ def test_mean_monotonicity() -> None:
     outer = IntervalBounds(torch.tensor([[1.0, 2.0]]), torch.tensor([[5.0, 6.0]]))
 
     strategy = IBPMean()
-    metadata = TensorMetadata(shape=(1,), dtype=torch.float32, device=torch.device("cpu"))
-    node = Node(id=0, op_type=OperationType.MEAN, inputs=[], output_metadata=metadata, attributes={"dim": 1})
 
-    out_inner = strategy.propagate_forwards(node, [inner])
-    out_outer = strategy.propagate_forwards(node, [outer])
+    out_inner = propagate(strategy, inner, dim=1)
+    out_outer = propagate(strategy, outer, dim=1)
 
     assert torch.all(out_outer.lower <= out_inner.lower)
     assert torch.all(out_outer.upper >= out_inner.upper)
@@ -190,15 +176,7 @@ def test_mean_relation_to_sum() -> None:
     # Compute sum
     sum_strategy = IBPSum()
     bounds = IntervalBounds(lower, upper)
-    sum_metadata = TensorMetadata(shape=(1,), dtype=lower.dtype, device=lower.device)
-    sum_node = Node(
-        id=0,
-        op_type=OperationType.SUM,
-        inputs=[],
-        output_metadata=sum_metadata,
-        attributes={"dim": 1, "keepdim": False},
-    )
-    sum_out = sum_strategy.propagate_forwards(sum_node, [bounds])
+    sum_out = propagate(sum_strategy, bounds, dim=1, keepdim=False)
 
     # mean * n should equal sum
     n = lower.shape[1]  # 3

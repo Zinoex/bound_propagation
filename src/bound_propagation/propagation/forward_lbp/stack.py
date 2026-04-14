@@ -1,46 +1,42 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPStack(ForwardLBPStrategy):
-    """Forward LBP strategy for STACK operation."""
+    """Forward LBP strategy for torch.stack."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) < 1:
-            raise ValueError(f"stack requires at least 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        tensors = args[0]
+        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
 
-        # Check all inputs are LinearBounds
-        for i, inp in enumerate(input_bounds):
-            if not isinstance(inp, LinearBounds):
-                raise TypeError(f"ForwardLBPStack requires all inputs to be LinearBounds, but input {i} is {type(inp)}")
+        bounds_list: list[LinearBounds] = []
+        for i, t in enumerate(tensors):
+            if not isinstance(t, LinearBounds):
+                raise TypeError(f"ForwardLBPStack requires all inputs to be LinearBounds, but input {i} is {type(t)}")
+            bounds_list.append(t)
 
-        bounds_list = cast(list[LinearBounds], input_bounds)
-        dim = node.attributes.get("dim", 0)
-
-        # Concretize all inputs and stack
         lowers = [b.concretize()[0] for b in bounds_list]
         uppers = [b.concretize()[1] for b in bounds_list]
-
-        lower = torch.stack(lowers, dim=dim)
-        upper = torch.stack(uppers, dim=dim)
 
         return LinearBounds(
             region=bounds_list[0].region,
             linear_lower=None,
-            bias_lower=lower,
+            bias_lower=torch.stack(lowers, dim=dim),
             linear_upper=None,
-            bias_upper=upper,
+            bias_upper=torch.stack(uppers, dim=dim),
         )

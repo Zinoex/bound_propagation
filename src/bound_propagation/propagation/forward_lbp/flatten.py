@@ -2,44 +2,39 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch.fx as fx
+
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
-    import torch
-
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPFlatten(ForwardLBPStrategy):
-    """
-    Forward LBP strategy for FLATTEN operation.
+    """Forward LBP strategy for flatten."""
 
-    Flatten converts to 1D shape without changing values.
-    Linear coefficients remain unchanged, bias terms are flattened.
-    """
-
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"flatten requires exactly 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
 
-        if not isinstance(input_bounds[0], LinearBounds):
+        if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPFlatten requires input to be LinearBounds")
 
-        bounds = input_bounds[0]
+        start_dim = args[1] if len(args) > 1 else kwargs.get("start_dim", 0)
+        end_dim = args[2] if len(args) > 2 else kwargs.get("end_dim", -1)
 
-        # Flatten bias terms
-        bias_lower = bounds.bias_lower.flatten()
-        bias_upper = bounds.bias_upper.flatten()
+        bias_lower = bounds.bias_lower.flatten(start_dim, end_dim)
+        bias_upper = bounds.bias_upper.flatten(start_dim, end_dim)
 
         return LinearBounds(
             region=bounds.region,
-            linear_lower=bounds.linear_lower,  # Same reference to input
+            linear_lower=bounds.linear_lower,
             bias_lower=bias_lower,
-            linear_upper=bounds.linear_upper,  # Same reference to input
+            linear_upper=bounds.linear_upper,
             bias_upper=bias_upper,
         )

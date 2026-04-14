@@ -6,12 +6,14 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.neg import IBPNeg
 from bound_propagation.propagation.ibp.sigmoid import IBPSigmoid
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for sigmoid operation."""
     strategy = IBPSigmoid()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_sigmoid_positive_interval() -> None:
@@ -183,8 +185,8 @@ def test_sigmoid_monotonicity() -> None:
 
     strategy = IBPSigmoid()
 
-    out_inner = strategy.propagate_forwards(None, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(None, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner)
+    out_outer = propagate(strategy, outer)
 
     assert out_outer.lower <= out_inner.lower
     assert out_outer.upper >= out_inner.upper
@@ -199,13 +201,13 @@ def test_sigmoid_symmetry_property() -> None:
     neg_strategy = IBPNeg()
 
     # sigmoid(a)
-    sig_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    sig_a = propagate(strategy, a)
 
     # -a
-    neg_a_val = neg_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a_val = propagate(neg_strategy, a)
 
     # sigmoid(-a)
-    sig_neg_a = strategy.propagate_forwards(None, [neg_a_val])  # ty:ignore[invalid-argument-type]
+    sig_neg_a = propagate(strategy, neg_a_val)
 
     # sigmoid(-x) + sigmoid(x) = 1
     sum_lower = sig_a.lower + sig_neg_a.upper  # Note: reversed for interval arithmetic

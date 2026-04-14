@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.cat import ForwardLBPConcat
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> LinearBounds:
     """Create identity linear bounds from a region with specific shape."""
@@ -17,7 +18,6 @@ def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> Linea
         linear_upper=torch.eye(dim).view(shape + (dim,)),
         bias_upper=torch.zeros(shape),
     )
-
 
 def test_cat_two_tensors_dim0() -> None:
     """Test concatenating two tensors along dimension 0."""
@@ -43,19 +43,13 @@ def test_cat_two_tensors_dim0() -> None:
         bias_upper=torch.tensor([0.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPConcat()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds1, bounds2])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, [bounds1, bounds2], dim=0)
 
     # Concretized result should be [x0, x1] = [1, 3] to [2, 4]
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0, 3.0]))
     assert torch.allclose(upper, torch.tensor([2.0, 4.0]))
-
 
 def test_cat_two_tensors_dim1() -> None:
     """Test concatenating two tensors along dimension 1."""
@@ -80,19 +74,13 @@ def test_cat_two_tensors_dim1() -> None:
         bias_upper=torch.tensor([[0.0], [0.0]]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 1}
-
-    node = MockNode()
     strategy = ForwardLBPConcat()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds1, bounds2])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, [bounds1, bounds2], dim=1)
 
     # Result should be [[x0, x0], [x1, x1]]
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([[0.0, 0.0], [2.0, 2.0]]))
     assert torch.allclose(upper, torch.tensor([[1.0, 1.0], [3.0, 3.0]]))
-
 
 def test_cat_three_tensors() -> None:
     """Test concatenating three tensors."""
@@ -122,13 +110,8 @@ def test_cat_three_tensors() -> None:
         bias_upper=torch.tensor([3.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPConcat()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds1, bounds2, bounds3])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, [bounds1, bounds2, bounds3], dim=0)
 
     # Expected: [x, x+1, x+2] to [x, x+2, x+3]
     # At x=1: [1, 2, 3] to [1, 3, 4]
@@ -136,7 +119,6 @@ def test_cat_three_tensors() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0, 2.0, 3.0]))
     assert torch.allclose(upper, torch.tensor([2.0, 4.0, 5.0]))
-
 
 def test_cat_single_tensor() -> None:
     """Test concatenating a single tensor (edge case)."""
@@ -150,13 +132,8 @@ def test_cat_single_tensor() -> None:
         bias_upper=torch.tensor([0.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPConcat()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, [bounds], dim=0)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([5.0]))

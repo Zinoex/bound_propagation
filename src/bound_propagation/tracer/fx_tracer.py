@@ -1,7 +1,8 @@
-"""PyTorch torch.fx-based tracing for arbitrary functions.
+"""PyTorch torch.fx-based tracing for bound propagation.
 
-This tracer enforces an operation allowlist based on the operation mapping used by
-the IR converter. Any operation that cannot be mapped is rejected at trace-time.
+Traces a function or module into a :class:`torch.fx.GraphModule` and
+validates that every operation is supported by the supplied
+:class:`TargetRegistry`.
 """
 
 from __future__ import annotations
@@ -12,101 +13,74 @@ from typing import Any
 import torch
 import torch.fx as fx
 
-from .op_mapping import MODULE_OP_MAPPING, is_supported_operation
+from ..propagation.registry import TargetRegistry
 
 
 class BoundPropagationTracer(fx.Tracer):
-    """
-    Custom tracer for bound propagation with mapped-operation enforcement.
+    """Custom tracer with registry-based operation validation.
 
-    This tracer extends torch.fx.Tracer to:
-    - Allow only operations present in the tracer/converter op mapping
-    - Keep mapped modules as leaf calls, while tracing through unmapped modules
-    - Fail early with actionable error messages
+    Only operations registered in the provided :class:`TargetRegistry`
+    are accepted.  Registered ``nn.Module`` types are kept as leaf calls;
+    unregistered modules are traced into so their inner operations can be
+    validated.
+
+    Args:
+        registry: The :class:`TargetRegistry` defining supported operations.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, registry: TargetRegistry) -> None:
         super().__init__()
+        self._registry = registry
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:
-        """
-        Keep only mapped module types as leaf modules.
-
-        Unmapped modules are traced into so their inner operations can be checked
-        against the same operation allowlist.
-        """
-        del module_qualified_name
-        return type(m) in MODULE_OP_MAPPING
+        """Keep standard torch.nn modules (except Sequential) and registry-registered types as leaves."""
+        if isinstance(m, torch.nn.Sequential):
+            return False
+        if m.__module__.startswith("torch.nn") or m.__module__.startswith("torch.ao.nn"):
+            return True
+        return self._registry.supports_target(type(m))
 
     def trace(
         self,
         root: Callable[..., Any] | torch.nn.Module,
         concrete_args: dict[str, Any] | None = None,
-    ) -> fx.Graph:
-        """
-        Trace a function or module and reject unsupported operations.
-
-        Args:
-            root: Function or module to trace
-            concrete_args: Arguments to make concrete (not symbolic)
+    ) -> fx.GraphModule:
+        """Trace *root* and validate all operations against the registry.
 
         Returns:
-            Traced fx.Graph
+            A :class:`torch.fx.GraphModule` ready for metadata annotation
+            and bound propagation.
 
         Raises:
-            UnsupportedOperationError: If any traced op is not mapped
+            UnsupportedOperationError: If any traced operation is not in
+                the registry.
         """
         graph = super().trace(root, concrete_args=concrete_args)
-        self._validate_supported_operations(graph)
+        graph_module = fx.GraphModule(self.root, graph)
+        self._validate_supported_operations(graph_module)
+        return graph_module
 
-        return graph
+    def _validate_supported_operations(self, graph_module: fx.GraphModule) -> None:
+        """Ensure all call nodes are supported by the registry."""
+        unsupported: list[str] = []
 
-    def _validate_supported_operations(self, graph: fx.Graph) -> None:
-        """Ensure all call nodes correspond to mapped operations."""
-        unsupported_nodes: list[str] = []
+        for node in graph_module.graph.nodes:
+            if node.op in ("call_function", "call_method", "call_module"):
+                if not self._registry.is_supported(node, graph_module):
+                    unsupported.append(f"{node.name}: {node.op} target={node.target!r}")
 
-        for node in graph.nodes:
-            if node.op in {"call_function", "call_method"}:
-                if not is_supported_operation(node.target):
-                    unsupported_nodes.append(f"{node.name}: {node.op} target={node.target!r}")
-
-            elif node.op == "call_module":
-                module_type = self._get_module_type(node)
-                if module_type is None or module_type not in MODULE_OP_MAPPING:
-                    unsupported_nodes.append(f"{node.name}: call_module target={node.target!r} type={module_type}")
-
-        if unsupported_nodes:
-            details = "\n  - " + "\n  - ".join(unsupported_nodes)
-            raise UnsupportedOperationError(
-                "Traced graph contains unsupported operations. Only mapped operations are accepted:" + details
-            )
-
-    def _get_module_type(self, node: fx.Node) -> type[torch.nn.Module] | None:
-        """Resolve module type for a call_module node."""
-        if not isinstance(self.root, torch.nn.Module):
-            return None
-
-        try:
-            module = self.root.get_submodule(str(node.target))
-        except Exception:
-            return None
-
-        return type(module)
+        if unsupported:
+            details = "\n  - " + "\n  - ".join(unsupported)
+            raise UnsupportedOperationError("Traced graph contains unsupported operations:" + details)
 
 
 class TraceError(Exception):
-    """Base exception raised for tracing/validation failures."""
-
-    ...
+    """Base exception for tracing/validation failures."""
 
 
 class UnsupportedOperationError(TraceError):
-    """Exception raised when an operation not present in op mapping is traced."""
-
-    ...
+    """Raised when a traced operation has no registered strategy."""
 
 
-class ControlFlowError(Exception):
-    """Backward-compatible alias for legacy control-flow related errors."""
-
-    ...
+class ControlFlowError(TraceError):
+    """Raised for unsupported control flow."""

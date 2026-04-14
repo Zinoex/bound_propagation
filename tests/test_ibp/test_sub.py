@@ -3,7 +3,9 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.propagation.ibp.sub import IBPSub, IBPSubConstantLeft, IBPSubConstantRight
+from bound_propagation.propagation.ibp.sub import IBPSub
+
+from tests.helpers import propagate
 
 
 def _propagate_interval_interval(
@@ -16,25 +18,25 @@ def _propagate_interval_interval(
     strategy = IBPSub()
     left_bounds = IntervalBounds(lower=left_lower, upper=left_upper)
     right_bounds = IntervalBounds(lower=right_lower, upper=right_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[left_bounds, right_bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, left_bounds, right_bounds)
 
 
 def _propagate_interval_minus_constant(
     interval_lower: torch.Tensor, interval_upper: torch.Tensor, constant: torch.Tensor | float
 ) -> IntervalBounds:
     """Propagate bounds for interval - constant operation."""
-    strategy = IBPSubConstantRight()
+    strategy = IBPSub()
     interval_bounds = IntervalBounds(lower=interval_lower, upper=interval_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[interval_bounds, constant])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, interval_bounds, constant)
 
 
 def _propagate_constant_minus_interval(
     constant: torch.Tensor | float, interval_lower: torch.Tensor, interval_upper: torch.Tensor
 ) -> IntervalBounds:
     """Propagate bounds for constant - interval operation."""
-    strategy = IBPSubConstantLeft()
+    strategy = IBPSub()
     interval_bounds = IntervalBounds(lower=interval_lower, upper=interval_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[constant, interval_bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, constant, interval_bounds)
 
 
 def test_sub_positive_intervals() -> None:
@@ -204,9 +206,9 @@ def test_sub_non_commutativity() -> None:
     strategy = IBPSub()
 
     # a - b
-    ab = strategy.propagate_forwards(None, [a, b])  # ty:ignore[invalid-argument-type]
+    ab = propagate(strategy, a, b)
     # b - a
-    ba = strategy.propagate_forwards(None, [b, a])  # ty:ignore[invalid-argument-type]
+    ba = propagate(strategy, b, a)
 
     # These should be different
     # a - b = [1, 3] - [0.5, 2] = [-1, 2.5]
@@ -224,7 +226,7 @@ def test_sub_self_contains_zero() -> None:
     a = IntervalBounds(torch.tensor([1.0, -2.0, 0.5]), torch.tensor([3.0, 1.0, 2.0]))
 
     strategy = IBPSub()
-    result = strategy.propagate_forwards(None, [a, a])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, a, a)
 
     # a - a should contain zero for all elements
     assert torch.all(result.lower <= 0.0)

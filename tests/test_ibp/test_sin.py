@@ -6,12 +6,14 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.neg import IBPNeg
 from bound_propagation.propagation.ibp.sin import IBPSin
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for sin operation."""
     strategy = IBPSin()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_sin_small_positive_interval() -> None:
@@ -118,16 +120,16 @@ def test_sin_odd_function_property() -> None:
     neg_strategy = IBPNeg()
 
     # sin(a)
-    sin_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    sin_a = propagate(strategy, a)
 
     # -a
-    neg_a_val = neg_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a_val = propagate(neg_strategy, a)
 
     # sin(-a)
-    sin_neg_a = strategy.propagate_forwards(None, [neg_a_val])  # ty:ignore[invalid-argument-type]
+    sin_neg_a = propagate(strategy, neg_a_val)
 
     # -sin(a)
-    neg_sin_a = neg_strategy.propagate_forwards(None, [sin_a])  # ty:ignore[invalid-argument-type]
+    neg_sin_a = propagate(neg_strategy, sin_a)
 
     # For small intervals, sin(-a) should be close to -sin(a)
     # Due to interval overestimation with extrema, allow some tolerance
@@ -141,8 +143,8 @@ def test_sin_monotonicity() -> None:
     outer = IntervalBounds(torch.tensor([0.1]), torch.tensor([0.5]))
 
     strategy = IBPSin()
-    out_inner = strategy.propagate_forwards(None, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(None, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner)
+    out_outer = propagate(strategy, outer)
 
     # Outer interval should contain inner interval results
     assert torch.all(out_outer.lower <= out_inner.lower)

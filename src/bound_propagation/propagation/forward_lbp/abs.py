@@ -2,38 +2,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch.fx as fx
+
 from ...bounds import LinearBounds
 from ..linear_relaxations.abs import compute_abs_alpha_beta
 from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
-    import torch
-
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPAbs(ForwardLBPStrategy):
-    """Forward LBP strategy for ABS operation using linear relaxation."""
+    """Forward LBP strategy for abs using linear relaxation."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"abs requires exactly 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
 
-        if not isinstance(input_bounds[0], LinearBounds):
+        if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPAbs requires input to be LinearBounds")
 
-        bounds = input_bounds[0]
-
-        # Concretize to get interval bounds for determining relaxation
         lower, upper = bounds.concretize()
-
-        # Compute alpha/beta parameters for abs relaxation
         alpha_lower, beta_lower, alpha_upper, beta_upper = compute_abs_alpha_beta(lower, upper)
-
-        # Apply the linear relaxation to the bounds
         return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

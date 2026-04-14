@@ -2,33 +2,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch.fx as fx
+
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
-    import torch
-
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPView(ForwardLBPStrategy):
-    """Forward LBP strategy for VIEW operation."""
+    """Forward LBP strategy for view."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"view requires exactly 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
 
-        if not isinstance(input_bounds[0], LinearBounds):
+        if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPView requires input to be LinearBounds")
 
-        bounds = input_bounds[0]
-        shape = node.attributes.get("shape")
+        shape = args[1:]
 
-        # View preserves linear structure
         linear_lower = bounds.linear_lower.view(*shape) if bounds.linear_lower is not None else None
         linear_upper = bounds.linear_upper.view(*shape) if bounds.linear_upper is not None else None
         bias_lower = bounds.bias_lower.view(*shape)

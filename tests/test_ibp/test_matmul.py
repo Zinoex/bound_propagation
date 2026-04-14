@@ -7,6 +7,8 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.matmul import IBPMatmul
 
+from tests.helpers import propagate
+
 
 def _normalize_like_matmul(
     left: torch.Tensor,
@@ -98,7 +100,7 @@ def _assert_matches_bruteforce(
     left = IntervalBounds(left_lower, left_upper)
     right = IntervalBounds(right_lower, right_upper)
 
-    actual = strategy.propagate_forwards(node=None, input_bounds=[left, right])  # ty:ignore[invalid-argument-type]
+    actual = propagate(strategy, left, right)
     expected = _bruteforce_interval_interval_matmul(left, right)
 
     assert torch.allclose(actual.lower, expected.lower, atol=1e-6)

@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.max import ForwardLBPMax
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def test_max_1d_tensor() -> None:
     """Test max reduction on 1D tensor."""
@@ -20,19 +21,13 @@ def test_max_1d_tensor() -> None:
         bias_upper=torch.tensor([2.0, 3.0, 4.0, 5.0, 6.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": None, "keepdim": False}
-
-    node = MockNode()
     strategy = ForwardLBPMax()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=None, keepdim=False)
 
     # Max of [1, 2, 3, 4, 5] to [2, 3, 4, 5, 6] is [5, 6]
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor(5.0))
     assert torch.allclose(upper, torch.tensor(6.0))
-
 
 def test_max_along_dim() -> None:
     """Test max reduction along a specific dimension."""
@@ -47,19 +42,13 @@ def test_max_along_dim() -> None:
         bias_upper=torch.tensor([[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 1, "keepdim": False}
-
-    node = MockNode()
     strategy = ForwardLBPMax()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=1, keepdim=False)
 
     # Max along dim=1: [3, 4] to [4, 7]
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([3.0, 6.0]))
     assert torch.allclose(upper, torch.tensor([4.0, 7.0]))
-
 
 def test_max_keepdim() -> None:
     """Test max reduction with keepdim=True."""
@@ -73,13 +62,8 @@ def test_max_keepdim() -> None:
         bias_upper=torch.tensor([2.0, 3.0, 4.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0, "keepdim": True}
-
-    node = MockNode()
     strategy = ForwardLBPMax()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=0, keepdim=True)
 
     lower, upper = result.concretize()
     assert lower.shape == (1,)

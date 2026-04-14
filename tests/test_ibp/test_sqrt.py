@@ -6,12 +6,14 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.sqrt import IBPSqrt
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for sqrt operation."""
     strategy = IBPSqrt()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_sqrt_positive_interval() -> None:
@@ -128,8 +130,8 @@ def test_sqrt_monotonicity() -> None:
 
     strategy = IBPSqrt()
 
-    out_inner = strategy.propagate_forwards(None, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(None, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner)
+    out_outer = propagate(strategy, outer)
 
     # sqrt([4, 9]) = [2, 3] should be contained in sqrt([1, 16]) = [1, 4]
     assert out_outer.lower <= out_inner.lower
@@ -150,7 +152,7 @@ def test_sqrt_composition_with_square() -> None:
     # sqrt(x^2)
     sqrt_strategy = IBPSqrt()
     a_squared = IntervalBounds(a_squared_lower, a_squared_upper)
-    result = sqrt_strategy.propagate_forwards(None, [a_squared])  # ty:ignore[invalid-argument-type]
+    result = propagate(sqrt_strategy, a_squared)
 
     # For positive x, this should recover the original interval
     assert torch.allclose(result.lower, a_lower, rtol=1e-5)

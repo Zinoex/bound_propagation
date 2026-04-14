@@ -5,6 +5,8 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.clamp import IBPClamp
 
+from tests.helpers import propagate
+
 
 def _propagate(
     lower: torch.Tensor, upper: torch.Tensor, clamp_min: float | None = None, clamp_max: float | None = None
@@ -12,16 +14,12 @@ def _propagate(
     """Propagate bounds for clamp operation."""
     strategy = IBPClamp()
     bounds = IntervalBounds(lower=lower, upper=upper)
-
-    # For clamp, we can just pass None as node since it uses attributes
-    # In practice, we'd need a proper node, but many IBP strategies accept None for testing
-    # Let's create a minimal mock that has attributes
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": clamp_min, "max": clamp_max}
-
-    node = MockNode()
-    return strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    kwargs: dict[str, float | None] = {}
+    if clamp_min is not None:
+        kwargs["min"] = clamp_min
+    if clamp_max is not None:
+        kwargs["max"] = clamp_max
+    return propagate(strategy, bounds, **kwargs)
 
 
 def test_clamp_both_bounds() -> None:
@@ -265,17 +263,11 @@ def test_clamp_idempotency() -> None:
     strategy = IBPClamp()
     a = IntervalBounds(torch.tensor([-5.0, 3.0, 12.0]), torch.tensor([15.0, 7.0, 20.0]))
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
-
     # clamp(a)
-    clamp_a = strategy.propagate_forwards(node, [a])  # ty:ignore[invalid-argument-type]
+    clamp_a = propagate(strategy, a, min=0.0, max=10.0)
 
     # clamp(clamp(a))
-    clamp_clamp_a = strategy.propagate_forwards(node, [clamp_a])  # ty:ignore[invalid-argument-type]
+    clamp_clamp_a = propagate(strategy, clamp_a, min=0.0, max=10.0)
 
     # Should be the same
     assert torch.allclose(clamp_a.lower, clamp_clamp_a.lower)
@@ -290,14 +282,8 @@ def test_clamp_monotonicity() -> None:
 
     strategy = IBPClamp()
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"min": 0.0, "max": 10.0}
-
-    node = MockNode()
-
-    out_inner = strategy.propagate_forwards(node, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(node, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner, min=0.0, max=10.0)
+    out_outer = propagate(strategy, outer, min=0.0, max=10.0)
 
     assert torch.all(out_outer.lower <= out_inner.lower)
     assert torch.all(out_outer.upper >= out_inner.upper)

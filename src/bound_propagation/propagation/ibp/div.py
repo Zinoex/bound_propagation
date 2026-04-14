@@ -3,166 +3,84 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPDiv(ForwardIBPStrategy):
-    """IBP strategy for DIV operation: [a, b] / [c, d]."""
+    """IBP strategy for division (all combinations of abstract/constant)."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"div requires 2 inputs, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        left, right = args[0], args[1]
 
-        x_bounds = input_bounds[0]
-        y_bounds = input_bounds[1]
+        if isinstance(left, IntervalBounds) and isinstance(right, IntervalBounds):
+            return self._interval_div_interval(left, right)
 
-        if not isinstance(x_bounds, IntervalBounds) or not isinstance(y_bounds, IntervalBounds):
-            raise TypeError("IBPDiv requires both inputs to be IntervalBounds")
+        if isinstance(left, IntervalBounds):
+            return self._interval_div_constant(left, right)
 
+        if isinstance(right, IntervalBounds):
+            return self._constant_div_interval(left, right)
+
+        raise TypeError(f"IBPDiv requires at least one IntervalBounds, got {type(left)} and {type(right)}")
+
+    @staticmethod
+    def _interval_div_interval(x: IntervalBounds, y: IntervalBounds) -> IntervalBounds:
         # TODO: Fix because this is not sound.
+        if torch.any((y.lower <= 0) & (y.upper >= 0)):
+            return IntervalBounds.unbounded_like(x)
 
-        # Check if divisor can be zero
-        if torch.any((y_bounds.lower <= 0) & (y_bounds.upper >= 0)):
-            # Division by interval containing zero - return unbounded
-            return IntervalBounds.unbounded_like(x_bounds)
+        ll = x.lower / y.lower
+        lu = x.lower / y.upper
+        ul = x.upper / y.lower
+        uu = x.upper / y.upper
 
-        # Compute all four quotients
-        ll = x_bounds.lower / y_bounds.lower
-        lu = x_bounds.lower / y_bounds.upper
-        ul = x_bounds.upper / y_bounds.lower
-        uu = x_bounds.upper / y_bounds.upper
-
-        # Take min and max
         lower = torch.min(torch.min(ll, lu), torch.min(ul, uu))
         upper = torch.max(torch.max(ll, lu), torch.max(ul, uu))
-
         return IntervalBounds(lower, upper)
 
-
-class IBPDivConstant(ForwardIBPStrategy):
-    """IBP strategy for DIV when divisor is constant."""
-
-    def propagate_forwards(
-        self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
-    ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"div requires 2 inputs, got {len(input_bounds)}")
-
-        x = input_bounds[0]
-        y = input_bounds[1]
-
-        if isinstance(x, IntervalBounds):
-            interval = x
-            c = y
-        elif isinstance(y, IntervalBounds):
-            interval = y
-            c = x
-        else:
-            raise TypeError(
-                "IBPDivConstantStrategy requires the first input to be IntervalBounds and "
-                f"the second input to be torch.Tensor or Number, got {type(x)} and {type(y)}"
-            )
-
+    @staticmethod
+    def _interval_div_constant(interval: IntervalBounds, c: torch.Tensor | torch.types.Number) -> IntervalBounds:
         if isinstance(c, torch.Tensor):
-            lower = torch.where(
-                c >= 0,
-                interval.lower / c,
-                interval.upper / c,
-            )
+            lower = torch.where(c >= 0, interval.lower / c, interval.upper / c)
             lower = torch.where(c == 0, float("-inf"), lower)
-
-            upper = torch.where(
-                c >= 0,
-                interval.upper / c,
-                interval.lower / c,
-            )
+            upper = torch.where(c >= 0, interval.upper / c, interval.lower / c)
             upper = torch.where(c == 0, float("inf"), upper)
             return IntervalBounds(lower, upper)
-        elif isinstance(c, torch.types.Number):
-            if c == 0:
-                return IntervalBounds.unbounded_like(interval)
 
-            lower = interval.lower / c
-            upper = interval.upper / c
+        if c == 0:
+            return IntervalBounds.unbounded_like(interval)
+        if c > 0:
+            return IntervalBounds(interval.lower / c, interval.upper / c)
+        return IntervalBounds(interval.upper / c, interval.lower / c)
 
-            if c < 0:
-                lower, upper = upper, lower
-
-            return IntervalBounds(lower, upper)
-        else:
-            raise TypeError(f"Constant input must be torch.Tensor or Number, got {type(c)}")
-
-
-class IBPConstantDiv(ForwardIBPStrategy):
-    """IBP strategy for DIV when dividend is constant."""
-
-    def propagate_forwards(
-        self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
-    ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"div requires 2 inputs, got {len(input_bounds)}")
-
-        x = input_bounds[0]
-        y = input_bounds[1]
-
-        if isinstance(x, (torch.Tensor, torch.types.Number)) and isinstance(y, IntervalBounds):
-            c = x
-            interval = y
-        elif isinstance(y, (torch.Tensor, torch.types.Number)) and isinstance(x, IntervalBounds):
-            c = y
-            interval = x
-        else:
-            raise TypeError(
-                "IBPConstantDiv requires the first input to be torch.Tensor or Number and "
-                f"the second input to be IntervalBounds, got {type(x)} and {type(y)}"
-            )
-
-        # For c / [a, b], if
-        # - [a, b] contains 0, return [-inf, inf]
-        # - c > 0, return [c/b, c/a]
-        # - c < 0, return [c/a, c/b]
+    @staticmethod
+    def _constant_div_interval(c: torch.Tensor | torch.types.Number, interval: IntervalBounds) -> IntervalBounds:
         unbounded_mask = (interval.lower <= 0) & (interval.upper >= 0)
 
         if isinstance(c, torch.Tensor):
-            lower = torch.where(
-                c >= 0,
-                c / interval.upper,
-                c / interval.lower,
-            )
+            lower = torch.where(c >= 0, c / interval.upper, c / interval.lower)
             lower = torch.where(unbounded_mask, float("-inf"), lower)
-
-            upper = torch.where(
-                c >= 0,
-                c / interval.lower,
-                c / interval.upper,
-            )
+            upper = torch.where(c >= 0, c / interval.lower, c / interval.upper)
             upper = torch.where(unbounded_mask, float("inf"), upper)
-
             return IntervalBounds(lower, upper)
-        elif isinstance(c, torch.types.Number):
-            if c == 0:
-                zero = torch.zeros_like(interval.lower)
-                return IntervalBounds(zero, zero)
 
-            lower = c / interval.upper
-            lower = torch.where(unbounded_mask, float("-inf"), lower)
+        if c == 0:
+            zero = torch.zeros_like(interval.lower)
+            return IntervalBounds(zero, zero)
 
-            upper = c / interval.lower
-            upper = torch.where(unbounded_mask, float("inf"), upper)
-
-            return IntervalBounds(lower, upper)
-        else:
-            raise TypeError(f"Constant input must be torch.Tensor or Number, got {type(c)}")
+        lower = c / interval.upper
+        lower = torch.where(unbounded_mask, float("-inf"), lower)
+        upper = c / interval.lower
+        upper = torch.where(unbounded_mask, float("inf"), upper)
+        return IntervalBounds(lower, upper)

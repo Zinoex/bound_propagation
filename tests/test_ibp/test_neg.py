@@ -6,12 +6,14 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.add import IBPAdd
 from bound_propagation.propagation.ibp.neg import IBPNeg
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for neg operation."""
     strategy = IBPNeg()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_neg_positive_interval() -> None:
@@ -124,10 +126,10 @@ def test_neg_involutory_property() -> None:
     a = IntervalBounds(torch.tensor([-3.0, 1.0, -5.0]), torch.tensor([4.0, 6.0, 2.0]))
 
     # -a
-    neg_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a = propagate(strategy, a)
 
     # -(-a)
-    neg_neg_a = strategy.propagate_forwards(None, [neg_a])  # ty:ignore[invalid-argument-type]
+    neg_neg_a = propagate(strategy, neg_a)
 
     # Should recover original interval
     assert torch.allclose(a.lower, neg_neg_a.lower)
@@ -155,19 +157,19 @@ def test_neg_with_addition_property() -> None:
     neg_strategy = IBPNeg()
 
     # a + b
-    a_plus_b = add_strategy.propagate_forwards(None, [a, b])  # ty:ignore[invalid-argument-type]
+    a_plus_b = propagate(add_strategy, a, b)
 
     # -(a + b)
-    neg_sum = neg_strategy.propagate_forwards(None, [a_plus_b])  # ty:ignore[invalid-argument-type]
+    neg_sum = propagate(neg_strategy, a_plus_b)
 
     # -a
-    neg_a = neg_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a = propagate(neg_strategy, a)
 
     # -b
-    neg_b = neg_strategy.propagate_forwards(None, [b])  # ty:ignore[invalid-argument-type]
+    neg_b = propagate(neg_strategy, b)
 
     # -a + -b
-    sum_neg = add_strategy.propagate_forwards(None, [neg_a, neg_b])  # ty:ignore[invalid-argument-type]
+    sum_neg = propagate(add_strategy, neg_a, neg_b)
 
     # Should be equal
     assert torch.allclose(neg_sum.lower, sum_neg.lower)

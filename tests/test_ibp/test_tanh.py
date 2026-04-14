@@ -7,12 +7,14 @@ from bound_propagation.propagation.ibp.neg import IBPNeg
 from bound_propagation.propagation.ibp.sigmoid import IBPSigmoid
 from bound_propagation.propagation.ibp.tanh import IBPTanh
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for tanh operation."""
     strategy = IBPTanh()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_tanh_positive_interval() -> None:
@@ -184,8 +186,8 @@ def test_tanh_monotonicity() -> None:
 
     strategy = IBPTanh()
 
-    out_inner = strategy.propagate_forwards(None, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(None, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner)
+    out_outer = propagate(strategy, outer)
 
     assert out_outer.lower <= out_inner.lower
     assert out_outer.upper >= out_inner.upper
@@ -200,16 +202,16 @@ def test_tanh_odd_function_property() -> None:
     neg_strategy = IBPNeg()
 
     # tanh(a)
-    tanh_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    tanh_a = propagate(strategy, a)
 
     # -a
-    neg_a = neg_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a = propagate(neg_strategy, a)
 
     # tanh(-a)
-    tanh_neg_a = strategy.propagate_forwards(None, [neg_a])  # ty:ignore[invalid-argument-type]
+    tanh_neg_a = propagate(strategy, neg_a)
 
     # -tanh(a)
-    neg_tanh_a = neg_strategy.propagate_forwards(None, [tanh_a])  # ty:ignore[invalid-argument-type]
+    neg_tanh_a = propagate(neg_strategy, tanh_a)
 
     # tanh(-x) should equal -tanh(x)
     assert torch.allclose(tanh_neg_a.lower, neg_tanh_a.lower)
@@ -237,13 +239,13 @@ def test_tanh_relation_to_sigmoid() -> None:
     sigmoid_strategy = IBPSigmoid()
 
     # tanh(a)
-    tanh_a = tanh_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    tanh_a = propagate(tanh_strategy, a)
 
     # 2*a
     two_a = IntervalBounds(2 * a.lower, 2 * a.upper)
 
     # sigmoid(2*a)
-    sig_2a = sigmoid_strategy.propagate_forwards(None, [two_a])  # ty:ignore[invalid-argument-type]
+    sig_2a = propagate(sigmoid_strategy, two_a)
 
     # 2*sigmoid(2*a) - 1
     result = IntervalBounds(2 * sig_2a.lower - 1, 2 * sig_2a.upper - 1)

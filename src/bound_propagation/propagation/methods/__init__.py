@@ -1,5 +1,4 @@
-"""
-Propagation methods package.
+"""Propagation methods package.
 
 Contains method-specific propagators (IBP, Forward LBP, Backward LBP).
 """

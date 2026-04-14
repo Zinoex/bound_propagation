@@ -3,30 +3,18 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.ir import Node, OperationType, TensorMetadata
 from bound_propagation.propagation.ibp.max import IBPMax
 from bound_propagation.propagation.ibp.min import IBPMin
 from bound_propagation.propagation.ibp.neg import IBPNeg
+
+from tests.helpers import propagate
 
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor, dim: int | None = None) -> IntervalBounds:
     """Propagate bounds for max operation."""
     strategy = IBPMax()
     bounds = IntervalBounds(lower=lower, upper=upper)
-
-    # Create a simple node with max operation
-    output_shape = _compute_output_shape(lower.shape, dim)
-    metadata = TensorMetadata(shape=output_shape, dtype=lower.dtype, device=lower.device)
-    node = Node(id=0, op_type=OperationType.MAX, inputs=[], output_metadata=metadata, attributes={"dim": dim})
-
-    return strategy.propagate_forwards(node, input_bounds=[bounds])
-
-
-def _compute_output_shape(input_shape: tuple[int, ...], dim: int | None) -> tuple[int, ...]:
-    """Compute output shape after max reduction."""
-    if dim is None:
-        return ()
-    shape_list = list(input_shape)
+    return propagate(strategy, bounds, dim=dim)
     shape_list.pop(dim)
     return tuple(shape_list) if shape_list else ()
 
@@ -176,11 +164,9 @@ def test_max_monotonicity() -> None:
     outer = IntervalBounds(torch.tensor([[2.0, 3.0]]), torch.tensor([[6.0, 7.0]]))
 
     strategy = IBPMax()
-    metadata = TensorMetadata(shape=(1,), dtype=torch.float32, device=torch.device("cpu"))
-    node = Node(id=0, op_type=OperationType.MAX, inputs=[], output_metadata=metadata, attributes={"dim": 1})
 
-    out_inner = strategy.propagate_forwards(node, [inner])
-    out_outer = strategy.propagate_forwards(node, [outer])
+    out_inner = propagate(strategy, inner, dim=1)
+    out_outer = propagate(strategy, outer, dim=1)
 
     assert torch.all(out_outer.lower <= out_inner.lower)
     assert torch.all(out_outer.upper >= out_inner.upper)
@@ -230,22 +216,18 @@ def test_max_min_duality() -> None:
 
     # max(a)
     max_strategy = IBPMax()
-    max_metadata = TensorMetadata(shape=(1,), dtype=torch.float32, device=torch.device("cpu"))
-    max_node = Node(id=0, op_type=OperationType.MAX, inputs=[], output_metadata=max_metadata, attributes={"dim": 1})
-    max_a = max_strategy.propagate_forwards(max_node, [a])
+    max_a = propagate(max_strategy, a, dim=1)
 
     # -a
     neg_strategy = IBPNeg()
-    neg_a = neg_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a = propagate(neg_strategy, a)
 
     # min(-a)
     min_strategy = IBPMin()
-    min_metadata = TensorMetadata(shape=(1,), dtype=torch.float32, device=torch.device("cpu"))
-    min_node = Node(id=0, op_type=OperationType.MIN, inputs=[], output_metadata=min_metadata, attributes={"dim": 1})
-    min_neg_a = min_strategy.propagate_forwards(min_node, [neg_a])
+    min_neg_a = propagate(min_strategy, neg_a, dim=1)
 
     # -min(-a)
-    neg_min_neg_a = neg_strategy.propagate_forwards(None, [min_neg_a])  # ty:ignore[invalid-argument-type]
+    neg_min_neg_a = propagate(neg_strategy, min_neg_a)
 
     # max(a) should equal -min(-a)
     assert torch.allclose(max_a.lower, neg_min_neg_a.lower)

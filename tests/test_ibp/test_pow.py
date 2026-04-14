@@ -5,19 +5,14 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.pow import IBPPow
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor, power: int | float | torch.Tensor) -> IntervalBounds:
     """Propagate bounds for pow operation."""
     strategy = IBPPow()
     bounds = IntervalBounds(lower=lower, upper=upper)
-
-    # Create a minimal mock node with attributes
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"power": power}
-
-    node = MockNode()
-    return strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds, power)
 
 
 def test_pow_positive_interval_odd_power() -> None:

@@ -6,12 +6,14 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.cbrt import IBPCbrt
 from bound_propagation.propagation.ibp.neg import IBPNeg
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for cbrt (cube root) operation."""
     strategy = IBPCbrt()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_cbrt_positive_interval() -> None:
@@ -158,8 +160,8 @@ def test_cbrt_monotonicity() -> None:
 
     strategy = IBPCbrt()
 
-    out_inner = strategy.propagate_forwards(None, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(None, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner)
+    out_outer = propagate(strategy, outer)
 
     # cbrt([8, 27]) = [2, 3] should be contained in cbrt([1, 64]) = [1, 4]
     assert out_outer.lower <= out_inner.lower
@@ -175,16 +177,16 @@ def test_cbrt_odd_function_property() -> None:
     neg_strategy = IBPNeg()
 
     # cbrt(a)
-    cbrt_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    cbrt_a = propagate(strategy, a)
 
     # -a
-    neg_a = neg_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a = propagate(neg_strategy, a)
 
     # cbrt(-a)
-    cbrt_neg_a = strategy.propagate_forwards(None, [neg_a])  # ty:ignore[invalid-argument-type]
+    cbrt_neg_a = propagate(strategy, neg_a)
 
     # -cbrt(a)
-    neg_cbrt_a = neg_strategy.propagate_forwards(None, [cbrt_a])  # ty:ignore[invalid-argument-type]
+    neg_cbrt_a = propagate(neg_strategy, cbrt_a)
 
     # cbrt(-a) should equal -cbrt(a)
     assert torch.allclose(cbrt_neg_a.lower, neg_cbrt_a.lower)
@@ -204,7 +206,7 @@ def test_cbrt_composition_with_cube() -> None:
     # cbrt(x^3)
     cbrt_strategy = IBPCbrt()
     a_cubed = IntervalBounds(a_cubed_lower, a_cubed_upper)
-    result = cbrt_strategy.propagate_forwards(None, [a_cubed])  # ty:ignore[invalid-argument-type]
+    result = propagate(cbrt_strategy, a_cubed)
 
     # Should recover the original interval (or be very close due to numerical precision)
     assert torch.allclose(result.lower, a_lower, rtol=1e-5)

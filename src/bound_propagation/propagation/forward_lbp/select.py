@@ -2,36 +2,33 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch.fx as fx
+
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
-    import torch
-
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPSelect(ForwardLBPStrategy):
-    """Forward LBP strategy for SELECT operation."""
+    """Forward LBP strategy for select."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"select requires exactly 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
 
-        if not isinstance(input_bounds[0], LinearBounds):
+        if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPSelect requires input to be LinearBounds")
 
-        bounds = input_bounds[0]
-        dim = node.attributes.get("dim", 0)
-        index = node.attributes.get("index", 0)
+        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
+        index = args[2] if len(args) > 2 else kwargs.get("index", 0)
 
-        # Concretize and apply select
         lower, upper = bounds.concretize()
-
         lower = lower.select(dim, index)
         upper = upper.select(dim, index)
 

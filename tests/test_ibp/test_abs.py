@@ -4,13 +4,14 @@ import torch
 
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.abs import IBPAbs
+from tests.helpers import propagate
 
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for abs operation."""
     strategy = IBPAbs()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_abs_positive_interval() -> None:
@@ -169,10 +170,10 @@ def test_abs_idempotency_property() -> None:
     a = IntervalBounds(torch.tensor([-3.0, 1.0]), torch.tensor([4.0, 6.0]))
 
     # abs(a)
-    abs_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    abs_a = propagate(strategy, a)
 
     # abs(abs(a))
-    abs_abs_a = strategy.propagate_forwards(None, [abs_a])  # ty:ignore[invalid-argument-type]
+    abs_abs_a = propagate(strategy, abs_a)
 
     assert torch.allclose(abs_a.lower, abs_abs_a.lower)
     assert torch.allclose(abs_a.upper, abs_abs_a.upper)

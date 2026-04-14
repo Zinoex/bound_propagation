@@ -3,17 +3,19 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.propagation.ibp.add import IBPAddWithConstant
+from bound_propagation.propagation.ibp.add import IBPAdd
 from bound_propagation.propagation.ibp.cos import IBPCos
 from bound_propagation.propagation.ibp.neg import IBPNeg
 from bound_propagation.propagation.ibp.sin import IBPSin
+
+from tests.helpers import propagate
 
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for cos operation."""
     strategy = IBPCos()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_cos_small_positive_interval() -> None:
@@ -187,13 +189,13 @@ def test_cos_even_function_property() -> None:
     neg_strategy = IBPNeg()
 
     # cos(a)
-    cos_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    cos_a = propagate(strategy, a)
 
     # -a
-    neg_a = neg_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    neg_a = propagate(neg_strategy, a)
 
     # cos(-a)
-    cos_neg_a = strategy.propagate_forwards(None, [neg_a])  # ty:ignore[invalid-argument-type]
+    cos_neg_a = propagate(strategy, neg_a)
 
     # cos(-a) should equal cos(a) for small intervals not containing extrema
     # Due to interval overestimation, this may not be exact, but should be close
@@ -209,17 +211,17 @@ def test_cos_relation_to_sin() -> None:
 
     cos_strategy = IBPCos()
     sin_strategy = IBPSin()
-    add_strategy = IBPAddWithConstant()
+    add_strategy = IBPAdd()
 
     # cos(a)
-    cos_a = cos_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    cos_a = propagate(cos_strategy, a)
 
     # a + π/2
     pi_over_2 = torch.pi / 2
-    a_shifted = add_strategy.propagate_forwards(None, [a, pi_over_2])  # ty:ignore[invalid-argument-type]
+    a_shifted = propagate(add_strategy, a, pi_over_2)
 
     # sin(a + π/2)
-    sin_shifted = sin_strategy.propagate_forwards(None, [a_shifted])  # ty:ignore[invalid-argument-type]
+    sin_shifted = propagate(sin_strategy, a_shifted)
 
     # Should be approximately equal
     assert torch.allclose(cos_a.lower, sin_shifted.lower, atol=1e-5)

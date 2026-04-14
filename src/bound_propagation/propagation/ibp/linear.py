@@ -3,64 +3,46 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPLinear(ForwardIBPStrategy):
-    """IBP strategy for LINEAR operation: y = x @ W^T + b."""
+    """IBP strategy for linear: y = x @ W^T + b."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"linear requires 1 input, got {len(input_bounds)}")
-
-        x_bounds = input_bounds[0]
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPLinear requires input to be IntervalBounds")
 
-        # Get weight and bias from node attributes
-        weight = node.attributes.get("weight")
-        bias = node.attributes.get("bias")
+        if node.op == "call_module":
+            module = ctx.get_module(node.target)
+            weight = module.weight
+            bias = getattr(module, "bias", None)
+        else:
+            # F.linear(input, weight, bias=None)
+            weight = args[1]
+            bias = args[2] if len(args) > 2 else kwargs.get("bias")
 
-        if weight is None:
-            raise ValueError("linear node missing weight attribute")
+        weight_pos = torch.clamp(weight, min=0)
+        weight_neg = torch.clamp(weight, max=0)
 
-        # Compute bounds for W^T @ x
-        # For each output: lower_i = sum_j (W_ij * x_j) where we choose x_j based on sign of W_ij
-        lower_out = torch.zeros(weight.shape[0], device=weight.device, dtype=weight.dtype)
-        upper_out = torch.zeros(weight.shape[0], device=weight.device, dtype=weight.dtype)
+        lower = x_bounds.lower @ weight_pos.T + x_bounds.upper @ weight_neg.T
+        upper = x_bounds.upper @ weight_pos.T + x_bounds.lower @ weight_neg.T
 
-        # For each row of weight
-        for i in range(weight.shape[0]):
-            w_row = weight[i]  # Shape: (in_features,)
-
-            # Positive weights: multiply by input bounds directly
-            # Negative weights: swap bounds
-            pos_mask = w_row >= 0
-            neg_mask = w_row < 0
-
-            # Lower: pos*lower + neg*upper
-            lower_out[i] = torch.sum(w_row[pos_mask] * x_bounds.lower[pos_mask]) + torch.sum(
-                w_row[neg_mask] * x_bounds.upper[neg_mask]
-            )
-
-            # Upper: pos*upper + neg*lower
-            upper_out[i] = torch.sum(w_row[pos_mask] * x_bounds.upper[pos_mask]) + torch.sum(
-                w_row[neg_mask] * x_bounds.lower[neg_mask]
-            )
-
-        # Add bias if present
         if bias is not None:
-            lower_out = lower_out + bias
-            upper_out = upper_out + bias
+            lower = lower + bias
+            upper = upper + bias
 
-        return IntervalBounds(lower_out, upper_out)
+        return IntervalBounds(lower, upper)

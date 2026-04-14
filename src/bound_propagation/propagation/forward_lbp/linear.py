@@ -2,55 +2,43 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch.fx as fx
+
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
-    import torch
-
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPLinear(ForwardLBPStrategy):
-    """
-    Forward LBP strategy for LINEAR operation.
+    """Forward LBP strategy for nn.Linear / F.linear."""
 
-    For linear layer y = x @ W^T + b:
-    - If x has bounds: W_l^y @ x0 + b_l^y = W @ W_l^x @ x0 + W @ b_l^x + b
-    - This is exact (no approximation needed for linear operations)
-    """
-
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"linear requires exactly 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
 
-        if not isinstance(input_bounds[0], LinearBounds):
+        if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPLinear requires input to be LinearBounds")
 
-        bounds = input_bounds[0]
+        if node.op == "call_module":
+            module = ctx.get_module(node.target)
+            weight = module.weight
+            bias = getattr(module, "bias", None)
+        else:
+            # F.linear(input, weight, bias=None)
+            weight = args[1]
+            bias = args[2] if len(args) > 2 else kwargs.get("bias")
 
-        # Get weight and bias from node attributes
-        weight = node.attributes.get("weight")
-        bias = node.attributes.get("bias")
-
-        if weight is None:
-            raise ValueError(f"LINEAR node {node.id} missing 'weight' attribute")
-
-        # Linear transformation: y = x @ W^T + b
-        # Lower bound: W @ W_l^x @ x0 + W @ b_l^x + b
-        # Upper bound: W @ W_u^x @ x0 + W @ b_u^x + b
-
-        # Handle positive and negative weights separately for tight bounds
         weight_pos = weight.clamp(min=0)
         weight_neg = weight.clamp(max=0)
 
-        # Lower bound computation
+        # Lower bound: weight_pos @ lower_coeffs + weight_neg @ upper_coeffs
         if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            # W_l^y = weight_pos @ W_l^x + weight_neg @ W_u^x
             linear_lower = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_upper
         elif bounds.linear_lower is not None:
             linear_lower = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_lower
@@ -59,14 +47,12 @@ class ForwardLBPLinear(ForwardLBPStrategy):
         else:
             linear_lower = None
 
-        # b_l^y = weight_pos @ b_l^x + weight_neg @ b_u^x + b
         bias_lower = weight_pos @ bounds.bias_lower + weight_neg @ bounds.bias_upper
         if bias is not None:
             bias_lower = bias_lower + bias
 
-        # Upper bound computation
+        # Upper bound: weight_pos @ upper_coeffs + weight_neg @ lower_coeffs
         if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            # W_u^y = weight_pos @ W_u^x + weight_neg @ W_l^x
             linear_upper = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_lower
         elif bounds.linear_upper is not None:
             linear_upper = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_upper
@@ -75,7 +61,6 @@ class ForwardLBPLinear(ForwardLBPStrategy):
         else:
             linear_upper = None
 
-        # b_u^y = weight_pos @ b_u^x + weight_neg @ b_l^x + b
         bias_upper = weight_pos @ bounds.bias_upper + weight_neg @ bounds.bias_lower
         if bias is not None:
             bias_upper = bias_upper + bias

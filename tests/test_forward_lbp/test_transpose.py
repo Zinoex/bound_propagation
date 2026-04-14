@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.transpose import ForwardLBPTranspose
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def test_transpose_2d() -> None:
     """Test transpose on 2D tensor."""
@@ -35,7 +36,7 @@ def test_transpose_2d() -> None:
 
     node = MockNode()
 
-    result = strategy.propagate_forwards(node=node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     # Linear structure should be preserved (just permuted)
     assert result.linear_lower is not None
@@ -50,7 +51,6 @@ def test_transpose_2d() -> None:
     expected_upper = torch.tensor([[2.0, 4.0], [3.0, 5.0]])
     assert torch.allclose(lower, expected_lower)
     assert torch.allclose(upper, expected_upper)
-
 
 def test_transpose_3d() -> None:
     """Test transpose on 3D tensor."""
@@ -78,7 +78,7 @@ def test_transpose_3d() -> None:
 
     node = MockNode()
 
-    result = strategy.propagate_forwards(node=node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     # Linear structure preserved
     assert result.linear_lower is not None
@@ -88,7 +88,6 @@ def test_transpose_3d() -> None:
     # Shape should be transposed: (2, 2, 2) with dims 0,2 swapped -> still (2, 2, 2)
     assert lower.shape == (2, 2, 2)
     assert upper.shape == (2, 2, 2)
-
 
 def test_transpose_identity() -> None:
     """Test transpose with same dimensions (identity)."""
@@ -115,13 +114,12 @@ def test_transpose_identity() -> None:
 
     node = MockNode()
 
-    result = strategy.propagate_forwards(node=node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Should be unchanged
     assert torch.allclose(lower, torch.ones(2, 2))
     assert torch.allclose(upper, torch.full((2, 2), 2.0))
-
 
 def test_transpose_with_bias() -> None:
     """Test transpose with non-identity linear bounds."""
@@ -142,13 +140,7 @@ def test_transpose_with_bias() -> None:
 
     strategy = ForwardLBPTranspose()
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim0": 0, "dim1": 1}
-
-    node = MockNode()
-
-    result = strategy.propagate_forwards(node=node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim0=0, dim1=1)
 
     # Bias should also be transposed
     assert torch.allclose(result.bias_lower, torch.tensor([[1.0, 3.0], [2.0, 4.0]]))

@@ -3,12 +3,13 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 def _normalize_matmul_operands(
@@ -123,69 +124,23 @@ def _matmul_interval_with_interval(left: IntervalBounds, right: IntervalBounds) 
 
 
 class IBPMatmul(ForwardIBPStrategy):
-    """IBP strategy for MATMUL operation: Z = torch.matmul(X, Y)."""
+    """IBP strategy for matmul (all combinations of abstract/constant)."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"matmul requires 2 inputs, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        left, right = args[0], args[1]
 
-        A = input_bounds[0]
-        B = input_bounds[1]
+        if isinstance(left, IntervalBounds) and isinstance(right, IntervalBounds):
+            return _matmul_interval_with_interval(left, right)
 
-        if not isinstance(A, IntervalBounds) or not isinstance(B, IntervalBounds):
-            raise TypeError(
-                "IBPMatmul requires both inputs to be IntervalBounds, but got "
-                f"{type(A)} and {type(B)}"
-            )
+        if isinstance(left, IntervalBounds) and isinstance(right, torch.Tensor):
+            return _matmul_interval_with_constant(left, right)
 
-        return _matmul_interval_with_interval(A, B)
+        if isinstance(left, torch.Tensor) and isinstance(right, IntervalBounds):
+            return _matmul_constant_with_interval(left, right)
 
-
-class IBPMatmulConstant(ForwardIBPStrategy):
-    """IBP strategy for MATMUL Z = torch.matmul(X, Y) when Y is constant."""
-
-    def propagate_forwards(
-        self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
-    ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"matmul requires 2 inputs, got {len(input_bounds)}")
-
-        x = input_bounds[0]
-        y = input_bounds[1]
-
-        if not isinstance(x, IntervalBounds) or not isinstance(y, torch.Tensor):
-            raise TypeError(
-                "IBPMatmulConstant requires the first input to be IntervalBounds and "
-                f"the second input to be torch.Tensor, got {type(x)} and {type(y)}"
-            )
-
-        return _matmul_interval_with_constant(x, y)
-
-
-class IBPConstantMatmul(ForwardIBPStrategy):
-    """IBP strategy for MATMUL Z = torch.matmul(X, Y) when X is constant."""
-
-    def propagate_forwards(
-        self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
-    ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"matmul requires 2 inputs, got {len(input_bounds)}")
-
-        x = input_bounds[0]
-        y = input_bounds[1]
-
-        if not isinstance(x, torch.Tensor) or not isinstance(y, IntervalBounds):
-            raise TypeError(
-                "IBPConstantMatmul requires the first input to be torch.Tensor and "
-                f"the second input to be IntervalBounds, got {type(x)} and {type(y)}"
-            )
-
-        return _matmul_constant_with_interval(x, y)
+        raise TypeError(f"IBPMatmul requires at least one IntervalBounds, got {type(left)} and {type(right)}")

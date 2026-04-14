@@ -1,440 +1,222 @@
+"""Tests for IBP target-based dispatch and constant handling.
+
+Tests that the TargetRegistry correctly maps fx targets to strategies,
+and that strategies correctly handle constant vs abstract inputs.
+"""
+
 from __future__ import annotations
+
+import operator
 
 import pytest
 import torch
+import torch.fx as fx
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.ir import (
-    AbstractValueType,
-    Graph,
-    Node,
-    NodeType,
-    OperationType,
-    TensorMetadata,
-)
-from bound_propagation.propagation import IBPPropagator
-from bound_propagation.propagation.ibp import (
-    ForwardIBPStrategyRegistry,
-    IBPAdd,
-    IBPAddWithConstant,
-    IBPConstantMatmul,
-    IBPMatmul,
-    IBPMatmulConstant,
-)
+from bound_propagation.propagation import IBPPropagator, TargetRegistry
+from bound_propagation.propagation.ibp import IBPAdd, IBPMatmul, IBPMul, create_default_ibp_registry
+from bound_propagation.propagation.registry import normalize_target
+from bound_propagation.passes import MetadataPass
 from bound_propagation.regions import HyperRectangle
+from bound_propagation.tracer import BoundPropagationTracer
+
+from tests.helpers import propagate
 
 
-def _meta(shape: tuple[int, ...]) -> TensorMetadata:
-    return TensorMetadata(shape=shape, dtype="torch.float32")
+class TestTargetRegistryLookup:
+    """Test that TargetRegistry lookups and normalize_target work."""
+
+    def test_register_and_get_strategy(self) -> None:
+        registry = TargetRegistry()
+        strategy = IBPAdd()
+        registry.register(torch.add, strategy)
+
+        # Build a minimal graph with a call_function node targeting torch.add
+        graph = fx.Graph()
+        x = graph.placeholder("x")
+        y = graph.placeholder("y")
+        add_node = graph.call_function(torch.add, args=(x, y))
+        graph.output(add_node)
+        gm = fx.GraphModule(torch.nn.Module(), graph)
+
+        assert registry.get_strategy(add_node, gm) is strategy
+
+    def test_lookup_missing_target_raises(self) -> None:
+        registry = TargetRegistry()
+
+        graph = fx.Graph()
+        x = graph.placeholder("x")
+        node = graph.call_function(torch.relu, args=(x,))
+        graph.output(node)
+        gm = fx.GraphModule(torch.nn.Module(), graph)
+
+        with pytest.raises(ValueError, match="No strategy registered"):
+            registry.get_strategy(node, gm)
+
+    def test_register_many_targets(self) -> None:
+        registry = TargetRegistry()
+        strategy = IBPAdd()
+        registry.register_many([torch.add, operator.add], strategy)
+
+        assert registry.supports_target(torch.add)
+        assert registry.supports_target(operator.add)
+
+    def test_duplicate_registration_raises(self) -> None:
+        registry = TargetRegistry()
+        registry.register(torch.relu, IBPAdd())
+        with pytest.raises(ValueError, match="already registered"):
+            registry.register(torch.relu, IBPAdd())
+
+    def test_normalize_target_call_function(self) -> None:
+        graph = fx.Graph()
+        x = graph.placeholder("x")
+        node = graph.call_function(torch.relu, args=(x,))
+        graph.output(node)
+        gm = fx.GraphModule(torch.nn.Module(), graph)
+
+        assert normalize_target(node, gm) is torch.relu
+
+    def test_normalize_target_call_module(self) -> None:
+        mod = torch.nn.Sequential(torch.nn.ReLU())
+        graph = fx.Graph()
+        x = graph.placeholder("x")
+        node = graph.call_module("0", args=(x,))
+        graph.output(node)
+        gm = fx.GraphModule(mod, graph)
+
+        assert normalize_target(node, gm) is torch.nn.ReLU
 
 
-class TestIBPSignatureDispatch:
-    def test_dispatch_uses_input_kind_signature(self) -> None:
-        x = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
+class TestIBPConstantHandling:
+    """Test that IBP strategies handle constant inputs correctly."""
+
+    def test_add_abstract_and_constant(self) -> None:
+        """Test IBPAdd with one abstract and one constant tensor input."""
+        bounds = IntervalBounds(
+            lower=torch.tensor([0.0, 1.0]),
+            upper=torch.tensor([1.0, 2.0]),
         )
-        c = Node(
-            id=1,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": torch.tensor([2.0, 3.0])},
-            node_type=NodeType.CONSTANT,
-        )
-        mixed_add = Node(
-            id=2,
-            op_type=OperationType.ADD,
-            inputs=[x, c],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-        abstract_add = Node(
-            id=3,
-            op_type=OperationType.ADD,
-            inputs=[mixed_add, x],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
+        constant = torch.tensor([2.0, 3.0])
 
-        graph = Graph([x, c, mixed_add, abstract_add])
-        graph.mark_outputs([abstract_add])
-        graph.annotate_input_kinds()
+        result = propagate(IBPAdd(), bounds, constant)
 
-        propagator = IBPPropagator(graph)
+        assert isinstance(result, IntervalBounds)
+        assert torch.allclose(result.lower, torch.tensor([2.0, 4.0]))
+        assert torch.allclose(result.upper, torch.tensor([3.0, 5.0]))
 
-        mixed_strategy = propagator._bound_strategies[mixed_add.id]
-        abstract_strategy = propagator._bound_strategies[abstract_add.id]
+    def test_mul_abstract_and_constant(self) -> None:
+        """Test IBPMul with one abstract and one constant tensor input."""
+        bounds = IntervalBounds(
+            lower=torch.tensor([0.0, 1.0]),
+            upper=torch.tensor([1.0, 2.0]),
+        )
+        constant = torch.tensor([2.0, -1.0])
 
-        assert isinstance(mixed_strategy, IBPAddWithConstant)
-        assert isinstance(abstract_strategy, IBPAdd)
+        result = propagate(IBPMul(), bounds, constant)
 
-    def test_abstract_constant_add_and_mul_are_computed_correctly(self) -> None:
-        x = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
-        )
-        c_add = Node(
-            id=1,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": torch.tensor([2.0, 3.0])},
-            node_type=NodeType.CONSTANT,
-        )
-        c_mul = Node(
-            id=2,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": torch.tensor([2.0, -1.0])},
-            node_type=NodeType.CONSTANT,
-        )
-        add_node = Node(
-            id=3,
-            op_type=OperationType.ADD,
-            inputs=[x, c_add],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-        mul_node = Node(
-            id=4,
-            op_type=OperationType.MUL,
-            inputs=[add_node, c_mul],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
+        assert isinstance(result, IntervalBounds)
+        assert torch.allclose(result.lower, torch.tensor([0.0, -2.0]))
+        assert torch.allclose(result.upper, torch.tensor([2.0, -1.0]))
 
-        graph = Graph([x, c_add, c_mul, add_node, mul_node])
-        graph.mark_outputs([mul_node])
-        graph.annotate_input_kinds()
 
-        propagator = IBPPropagator(graph)
-        outputs = propagator.propagate(
-            [
-                HyperRectangle(
-                    lower=torch.tensor([0.0, 1.0]),
-                    upper=torch.tensor([1.0, 2.0]),
-                )
-            ]
-        )
+class TestIBPEndToEndDispatch:
+    """Test that IBPPropagator dispatches correctly through a traced graph."""
+
+    def test_add_with_constant_dispatches_correctly(self) -> None:
+        """Test that x + constant and x + y use the same IBPAdd strategy."""
+        def fn(x):
+            return x + torch.tensor([2.0, 3.0])
+
+        registry = create_default_ibp_registry()
+        tracer = BoundPropagationTracer(registry)
+        gm = tracer.trace(fn)
+        MetadataPass(gm).run(torch.randn(2))
+
+        propagator = IBPPropagator(gm, registry)
+        outputs = propagator.propagate([
+            HyperRectangle(
+                lower=torch.tensor([0.0, 1.0]),
+                upper=torch.tensor([1.0, 2.0]),
+            )
+        ])
+
+        out = outputs[0]
+        assert isinstance(out, IntervalBounds)
+        assert torch.allclose(out.lower, torch.tensor([2.0, 4.0]))
+        assert torch.allclose(out.upper, torch.tensor([3.0, 5.0]))
+
+    def test_constant_mul_then_add(self) -> None:
+        """Test chain: (x + [2, 3]) * [2, -1]."""
+        def fn(x):
+            return (x + torch.tensor([2.0, 3.0])) * torch.tensor([2.0, -1.0])
+
+        registry = create_default_ibp_registry()
+        tracer = BoundPropagationTracer(registry)
+        gm = tracer.trace(fn)
+        MetadataPass(gm).run(torch.randn(2))
+
+        propagator = IBPPropagator(gm, registry)
+        outputs = propagator.propagate([
+            HyperRectangle(
+                lower=torch.tensor([0.0, 1.0]),
+                upper=torch.tensor([1.0, 2.0]),
+            )
+        ])
 
         # x in [0,1]x[1,2], add [2,3] -> [2,3]x[4,5]
         # multiply by [2,-1] -> [4,6]x[-5,-4]
-        assert len(outputs) == 1
         out = outputs[0]
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([4.0, -5.0]))
         assert torch.allclose(out.upper, torch.tensor([6.0, -4.0]))
 
-    def test_number_constants_are_rejected(self) -> None:
-        x = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
-        )
-        c_add = Node(
-            id=1,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": 2.0},
-            node_type=NodeType.CONSTANT,
-        )
-        c_mul = Node(
-            id=2,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            attributes={"value": -1.0},
-            node_type=NodeType.CONSTANT,
-        )
-        add_node = Node(
-            id=3,
-            op_type=OperationType.ADD,
-            inputs=[x, c_add],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-        mul_node = Node(
-            id=4,
-            op_type=OperationType.MUL,
-            inputs=[add_node, c_mul],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
+    def test_matmul_with_constant_weight(self) -> None:
+        """Test matmul dispatch with constant weight matrix."""
+        def fn(x):
+            weight = torch.tensor([[1.0, -0.5, 2.0], [0.5, 1.0, -1.0]])
+            return x @ weight
 
-        graph = Graph([x, c_add, c_mul, add_node, mul_node])
-        graph.mark_outputs([mul_node])
-        graph.annotate_input_kinds()
+        registry = create_default_ibp_registry()
+        tracer = BoundPropagationTracer(registry)
+        gm = tracer.trace(fn)
+        MetadataPass(gm).run(torch.randn(2))
 
-        propagator = IBPPropagator(graph)
-        with pytest.raises(TypeError, match="non-tensor value type"):
-            propagator.propagate(
-                [
-                    HyperRectangle(
-                        lower=torch.tensor([0.0, 1.0]),
-                        upper=torch.tensor([1.0, 2.0]),
-                    )
-                ]
+        propagator = IBPPropagator(gm, registry)
+        outputs = propagator.propagate([
+            HyperRectangle(
+                lower=torch.tensor([0.0, 0.0]),
+                upper=torch.tensor([1.0, 1.0]),
             )
-
-    def test_dispatch_uses_matmul_input_kind_signature(self) -> None:
-        x = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
-        )
-        y = Node(
-            id=1,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2, 2)),
-            node_type=NodeType.INPUT,
-        )
-        c = Node(
-            id=2,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2, 2)),
-            attributes={"value": torch.tensor([[1.0, -1.0], [0.5, 2.0]])},
-            node_type=NodeType.CONSTANT,
-        )
-        abstract_matmul = Node(
-            id=3,
-            op_type=OperationType.MATMUL,
-            inputs=[x, y],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-        mixed_matmul = Node(
-            id=4,
-            op_type=OperationType.MATMUL,
-            inputs=[x, c],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-        constant_left_matmul = Node(
-            id=5,
-            op_type=OperationType.MATMUL,
-            inputs=[c, x],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
-
-        graph = Graph([x, y, c, abstract_matmul, mixed_matmul, constant_left_matmul])
-        graph.mark_outputs([abstract_matmul, mixed_matmul, constant_left_matmul])
-        graph.annotate_input_kinds()
-
-        propagator = IBPPropagator(graph)
-
-        assert isinstance(propagator._bound_strategies[abstract_matmul.id], IBPMatmul)
-        assert isinstance(propagator._bound_strategies[mixed_matmul.id], IBPMatmulConstant)
-        assert isinstance(propagator._bound_strategies[constant_left_matmul.id], IBPConstantMatmul)
-
-    def test_interval_constant_matmul_handles_mixed_sign_weights(self) -> None:
-        x = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
-        )
-        weight = Node(
-            id=1,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2, 3)),
-            attributes={"value": torch.tensor([[1.0, -0.5, 2.0], [0.5, 1.0, -1.0]])},
-            node_type=NodeType.CONSTANT,
-        )
-        matmul = Node(
-            id=2,
-            op_type=OperationType.MATMUL,
-            inputs=[x, weight],
-            output_metadata=_meta((3,)),
-            node_type=NodeType.OPERATION,
-        )
-
-        graph = Graph([x, weight, matmul])
-        graph.mark_outputs([matmul])
-        graph.annotate_input_kinds()
-
-        propagator = IBPPropagator(graph)
-        outputs = propagator.propagate(
-            [
-                HyperRectangle(
-                    lower=torch.tensor([0.0, 0.0]),
-                    upper=torch.tensor([1.0, 1.0]),
-                )
-            ]
-        )
+        ])
 
         out = outputs[0]
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([0.0, -0.5, -1.0]))
         assert torch.allclose(out.upper, torch.tensor([1.5, 1.0, 2.0]))
 
-    def test_constant_interval_matmul_handles_mixed_sign_weights(self) -> None:
-        weight = Node(
-            id=0,
-            op_type=OperationType.CONSTANT,
-            inputs=[],
-            output_metadata=_meta((2, 2)),
-            attributes={"value": torch.tensor([[1.0, -2.0], [-1.0, 0.5]])},
-            node_type=NodeType.CONSTANT,
-        )
-        x = Node(
-            id=1,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.INPUT,
-        )
-        matmul = Node(
-            id=2,
-            op_type=OperationType.MATMUL,
-            inputs=[weight, x],
-            output_metadata=_meta((2,)),
-            node_type=NodeType.OPERATION,
-        )
+    def test_two_abstract_inputs_subtraction(self) -> None:
+        """Test propagation with two abstract inputs (x - y)."""
+        def fn(x, y):
+            return x - y
 
-        graph = Graph([weight, x, matmul])
-        graph.mark_outputs([matmul])
-        graph.annotate_input_kinds()
+        registry = create_default_ibp_registry()
+        tracer = BoundPropagationTracer(registry)
+        gm = tracer.trace(fn)
+        MetadataPass(gm).run(torch.randn(2), torch.randn(2))
 
-        propagator = IBPPropagator(graph)
-        outputs = propagator.propagate(
-            [
-                HyperRectangle(
-                    lower=torch.tensor([0.0, 1.0]),
-                    upper=torch.tensor([2.0, 3.0]),
-                )
-            ]
-        )
-
-        out = outputs[0]
-        assert isinstance(out, IntervalBounds)
-        assert torch.allclose(out.lower, torch.tensor([-6.0, -1.5]))
-        assert torch.allclose(out.upper, torch.tensor([0.0, 1.5]))
-
-    def test_interval_interval_matmul_supports_broadcasted_batches(self) -> None:
-        x = Node(
-            id=0,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((1, 2, 1)),
-            node_type=NodeType.INPUT,
-        )
-        y = Node(
-            id=1,
-            op_type=OperationType.INPUT,
-            inputs=[],
-            output_metadata=_meta((3, 1, 2)),
-            node_type=NodeType.INPUT,
-        )
-        matmul = Node(
-            id=2,
-            op_type=OperationType.MATMUL,
-            inputs=[x, y],
-            output_metadata=_meta((3, 2, 2)),
-            node_type=NodeType.OPERATION,
-        )
-
-        graph = Graph([x, y, matmul])
-        graph.mark_outputs([matmul])
-        graph.annotate_input_kinds()
-
-        propagator = IBPPropagator(graph)
-        outputs = propagator.propagate(
-            [
-                HyperRectangle(
-                    lower=torch.tensor([[[-1.0], [2.0]]]),
-                    upper=torch.tensor([[[1.0], [3.0]]]),
-                ),
-                HyperRectangle(
-                    lower=torch.tensor([
-                        [[2.0, -2.0]],
-                        [[-3.0, 1.0]],
-                        [[0.5, -1.0]],
-                    ]),
-                    upper=torch.tensor([
-                        [[4.0, -1.0]],
-                        [[-1.0, 2.0]],
-                        [[1.5, 2.0]],
-                    ]),
-                ),
-            ]
-        )
-
-        out = outputs[0]
-        assert isinstance(out, IntervalBounds)
-        expected_lower = torch.tensor(
-            [
-                [[-4.0, -2.0], [4.0, -6.0]],
-                [[-3.0, -2.0], [-9.0, 2.0]],
-                [[-1.5, -2.0], [1.0, -3.0]],
-            ]
-        )
-        expected_upper = torch.tensor(
-            [
-                [[4.0, 2.0], [12.0, -2.0]],
-                [[3.0, 2.0], [-2.0, 6.0]],
-                [[1.5, 2.0], [4.5, 6.0]],
-            ]
-        )
-
-        assert out.lower.shape == (3, 2, 2)
-        assert out.upper.shape == (3, 2, 2)
-        assert torch.allclose(out.lower, expected_lower)
-        assert torch.allclose(out.upper, expected_upper)
-
-
-class TestIBPRegistryStrictness:
-    def test_lookup_requires_exact_input_signature(self) -> None:
-        registry = ForwardIBPStrategyRegistry()
-        strategy = IBPAdd()
-        registry.register(
-            OperationType.ADD,
-            strategy,
-            abstract_signature=(
-                AbstractValueType.ABSTRACT,
-                AbstractValueType.ABSTRACT,
+        propagator = IBPPropagator(gm, registry)
+        outputs = propagator.propagate([
+            HyperRectangle(
+                lower=torch.tensor([5.0, 5.0]),
+                upper=torch.tensor([10.0, 10.0]),
             ),
-        )
+            HyperRectangle(
+                lower=torch.tensor([1.0, 2.0]),
+                upper=torch.tensor([1.0, 2.0]),
+            ),
+        ])
 
-        assert (
-            registry.get_strategy(
-                OperationType.ADD,
-                (AbstractValueType.ABSTRACT, AbstractValueType.ABSTRACT),
-            )
-            is strategy
-        )
-
-        with pytest.raises(ValueError, match="signature"):
-            registry.get_strategy(
-                OperationType.ADD,
-                (AbstractValueType.ABSTRACT, AbstractValueType.CONSTANT),
-            )
-
-    def test_default_registry_does_not_register_folded_constant_signatures(self) -> None:
-        registry = ForwardIBPStrategyRegistry.default_registry()
-
-        with pytest.raises(ValueError, match="signature"):
-            registry.get_strategy(OperationType.RELU, (AbstractValueType.CONSTANT,))
-
-        with pytest.raises(ValueError, match="signature"):
-            registry.get_strategy(
-                OperationType.ADD,
-                (AbstractValueType.CONSTANT, AbstractValueType.CONSTANT),
-            )
+        out = outputs[0]
+        assert isinstance(out, IntervalBounds)
+        assert torch.allclose(out.lower, torch.tensor([4.0, 3.0]))
+        assert torch.allclose(out.upper, torch.tensor([9.0, 8.0]))

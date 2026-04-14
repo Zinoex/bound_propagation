@@ -8,6 +8,8 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.cos import ForwardLBPCos
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -30,7 +32,7 @@ def test_cos_small_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     # Should have linear relaxation
     assert result.linear_lower is not None
@@ -53,7 +55,7 @@ def test_cos_decreasing_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # cos(π/2) ≈ 0, cos(0) = 1
@@ -73,7 +75,7 @@ def test_cos_crossing_minimum() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Should contain [-1, 0]
@@ -92,7 +94,7 @@ def test_cos_full_period() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Should contain full range [-1, 1]
@@ -112,7 +114,7 @@ def test_cos_negative_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= 0.70)
@@ -130,7 +132,7 @@ def test_cos_zero_width() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For point interval, should be tight
@@ -147,7 +149,7 @@ def test_cos_zero_width_falling() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For point interval, should be tight
@@ -165,7 +167,7 @@ def test_cos_zero_width_rising() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For point interval, should be tight
@@ -186,7 +188,7 @@ def test_cos_concave_region_first_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -211,7 +213,7 @@ def test_cos_concave_region_second_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -236,7 +238,7 @@ def test_cos_convex_region_first_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -258,7 +260,7 @@ def test_cos_convex_region_second_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -280,7 +282,7 @@ def test_cos_across_maximum_at_zero() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -301,7 +303,7 @@ def test_cos_across_maximum_at_2pi() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -322,7 +324,7 @@ def test_cos_across_minimum_at_pi() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -344,7 +346,7 @@ def test_cos_strictly_decreasing_small() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -366,7 +368,7 @@ def test_cos_strictly_increasing_small() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -388,7 +390,7 @@ def test_cos_mixed_convexity_full_wave() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -410,7 +412,7 @@ def test_cos_negative_region_decreasing() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -431,7 +433,7 @@ def test_cos_large_interval_multiple_periods() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPCos()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 

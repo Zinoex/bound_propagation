@@ -3,83 +3,49 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPMul(ForwardIBPStrategy):
-    """IBP strategy for MUL operation: [a, b] * [c, d] = [min(a * c, a * d, b * c, b * d), max(a * c, a * d, b * c, b * d)]."""
+    """IBP strategy for multiplication (abstract*abstract or abstract*constant)."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"mul requires 2 inputs, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        left, right = args[0], args[1]
 
-        if not isinstance(input_bounds[0], IntervalBounds) or not isinstance(input_bounds[1], IntervalBounds):
-            raise TypeError("IBPMul requires both inputs to be IntervalBounds")
+        if isinstance(left, IntervalBounds) and isinstance(right, IntervalBounds):
+            ll = left.lower * right.lower
+            lu = left.lower * right.upper
+            ul = left.upper * right.lower
+            uu = left.upper * right.upper
+            lower = torch.min(torch.min(ll, lu), torch.min(ul, uu))
+            upper = torch.max(torch.max(ll, lu), torch.max(ul, uu))
+            return IntervalBounds(lower, upper)
 
-        x_bounds: IntervalBounds = input_bounds[0]
-        y_bounds: IntervalBounds = input_bounds[1]
-
-        # Compute all four products
-        ll = x_bounds.lower * y_bounds.lower
-        lu = x_bounds.lower * y_bounds.upper
-        ul = x_bounds.upper * y_bounds.lower
-        uu = x_bounds.upper * y_bounds.upper
-
-        # Take min and max across all products
-        lower = torch.min(torch.min(ll, lu), torch.min(ul, uu))
-        upper = torch.max(torch.max(ll, lu), torch.max(ul, uu))
-
-        return IntervalBounds(lower, upper)
-
-
-class IBPMulWithConstant(ForwardIBPStrategy):
-    """IBP strategy for MUL when at least one input is constant."""
-
-    def propagate_forwards(
-        self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
-    ) -> IntervalBounds:
-        if len(input_bounds) != 2:
-            raise ValueError(f"mul requires 2 inputs, got {len(input_bounds)}")
-
-        x = input_bounds[0]
-        y = input_bounds[1]
-
-        if isinstance(x, IntervalBounds):
-            interval = x
-            c = y
-        elif isinstance(y, IntervalBounds):
-            interval = y
-            c = x
+        # One side is constant
+        if isinstance(left, IntervalBounds):
+            interval, c = left, right
+        elif isinstance(right, IntervalBounds):
+            interval, c = right, left
         else:
-            raise TypeError("IBPMulWithConstant requires at least one input to be IntervalBounds")
+            raise TypeError(f"IBPMul requires at least one IntervalBounds, got {type(left)} and {type(right)}")
 
         if isinstance(c, torch.Tensor):
-            lower = torch.where(
-                c >= 0,
-                interval.lower * c,
-                interval.upper * c,
-            )
-            upper = torch.where(
-                c >= 0,
-                interval.upper * c,
-                interval.lower * c,
-            )
+            lower = torch.where(c >= 0, interval.lower * c, interval.upper * c)
+            upper = torch.where(c >= 0, interval.upper * c, interval.lower * c)
             return IntervalBounds(lower, upper)
-        elif isinstance(c, torch.types.Number):
-            if c >= 0:
-                return IntervalBounds(interval.lower * c, interval.upper * c)
-            else:
-                return IntervalBounds(interval.upper * c, interval.lower * c)
-        else:
-            raise TypeError(f"Constant input must be torch.Tensor or Number, got {type(c)}")
+
+        # Scalar constant
+        if c >= 0:
+            return IntervalBounds(interval.lower * c, interval.upper * c)
+        return IntervalBounds(interval.upper * c, interval.lower * c)

@@ -2,37 +2,33 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPUnsqueeze(ForwardIBPStrategy):
-    """IBP strategy for UNSQUEEZE operation."""
+    """IBP strategy for unsqueeze."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"UNSQUEEZE requires 1 input, got {len(input_bounds)}")
-
-        x_bounds = input_bounds[0]
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPUnsqueeze requires input to be IntervalBounds")
 
-        dim = node.attributes.get("dim", None)
-
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
         if dim is None:
-            raise ValueError("UNSQUEEZE requires 'dim' attribute")
+            raise ValueError("unsqueeze requires a dim argument")
 
-        # Unsqueeze bounds
         lower = x_bounds.lower.unsqueeze(dim=dim)
         upper = x_bounds.upper.unsqueeze(dim=dim)
 

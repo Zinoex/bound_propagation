@@ -3,41 +3,35 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPReciprocal(ForwardIBPStrategy):
-    """IBP strategy for reciprocal."""
+    """IBP strategy for reciprocal: 1/[a, b]."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"reciprocal requires 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
-        x = input_bounds[0]
+        if not isinstance(x_bounds, IntervalBounds):
+            raise TypeError("IBPReciprocal requires input to be IntervalBounds")
 
-        if not isinstance(x, IntervalBounds):
-            raise TypeError(
-                f"IBPReciprocal requires the input to be IntervalBounds, got {type(x)}"
-            )
+        unbounded_mask = (x_bounds.lower <= 0) & (x_bounds.upper >= 0)
 
-        # For c / [a, b],
-        # - if [a, b] contains 0, return [-inf, inf]
-        # - else, return [c/b, c/a]
-        unbounded_mask = (x.lower <= 0) & (x.upper >= 0)
-
-        lower = 1 / x.upper
+        lower = 1 / x_bounds.upper
         lower = torch.where(unbounded_mask, float("-inf"), lower)
 
-        upper = 1 / x.lower
+        upper = 1 / x_bounds.lower
         upper = torch.where(unbounded_mask, float("inf"), upper)
 
         return IntervalBounds(lower, upper)

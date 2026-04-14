@@ -2,37 +2,36 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPView(ForwardIBPStrategy):
-    """IBP strategy for VIEW operation."""
+    """IBP strategy for view."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"view requires 1 input, got {len(input_bounds)}")
-
-        x_bounds = input_bounds[0]
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPView requires input to be IntervalBounds")
 
-        # Get target shape from node attributes
-        size = node.attributes.get("size")
-        if size is None:
-            raise ValueError("view node missing size attribute")
+        # x.view(*shape) → args[1:] are individual ints
+        # x.view(shape) → args[1] is a tuple
+        if len(args) > 2 or (len(args) == 2 and isinstance(args[1], int)):
+            size = tuple(args[1:])
+        else:
+            size = args[1]
 
-        # View bounds
         lower = x_bounds.lower.view(size)
         upper = x_bounds.upper.view(size)
 

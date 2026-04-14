@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.stack import ForwardLBPStack
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def test_stack_two_tensors() -> None:
     """Test stacking two tensors."""
@@ -30,20 +31,14 @@ def test_stack_two_tensors() -> None:
         bias_upper=torch.tensor([0.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPStack()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds1, bounds2])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, [bounds1, bounds2], dim=0)
 
     # Result should stack [x0, x1]
     lower, upper = result.concretize()
     # torch.stack([tensor([1.]), tensor([3.])], dim=0) -> tensor([[1.], [3.]])
     assert torch.allclose(lower, torch.tensor([[1.0], [3.0]]))
     assert torch.allclose(upper, torch.tensor([[2.0], [4.0]]))
-
 
 def test_stack_three_tensors() -> None:
     """Test stacking three tensors."""
@@ -73,19 +68,13 @@ def test_stack_three_tensors() -> None:
         bias_upper=torch.tensor([3.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPStack()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds1, bounds2, bounds3])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, [bounds1, bounds2, bounds3], dim=0)
 
     lower, upper = result.concretize()
     # torch.stack([tensor([1.]), tensor([2.]), tensor([3.])], dim=0) -> tensor([[1.], [2.], [3.]])
     assert torch.allclose(lower, torch.tensor([[1.0], [2.0], [3.0]]))
     assert torch.allclose(upper, torch.tensor([[2.0], [4.0], [5.0]]))
-
 
 def test_stack_dim1() -> None:
     """Test stacking along dimension 1."""
@@ -108,13 +97,8 @@ def test_stack_dim1() -> None:
         bias_upper=torch.tensor([4.0, 5.0]),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 1}
-
-    node = MockNode()
     strategy = ForwardLBPStack()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds1, bounds2])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, [bounds1, bounds2], dim=1)
 
     # Result should be (2, 2)
     lower, upper = result.concretize()

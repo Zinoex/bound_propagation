@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.select import ForwardLBPSelect
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def test_select_dim0() -> None:
     """Test select along dimension 0."""
@@ -21,13 +22,8 @@ def test_select_dim0() -> None:
         bias_upper=(torch.arange(12.0) + 1).view(3, 4),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0, "index": 1}
-
-    node = MockNode()
     strategy = ForwardLBPSelect()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=0, index=1)
 
     # Should select row 1
     lower, upper = result.concretize()
@@ -35,7 +31,6 @@ def test_select_dim0() -> None:
     assert upper.shape == (4,)
     assert torch.allclose(lower, torch.tensor([4.0, 5.0, 6.0, 7.0]))
     assert torch.allclose(upper, torch.tensor([5.0, 6.0, 7.0, 8.0]))
-
 
 def test_select_dim1() -> None:
     """Test select along dimension 1."""
@@ -50,13 +45,8 @@ def test_select_dim1() -> None:
         bias_upper=(torch.arange(12.0) + 1).view(3, 4),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 1, "index": 2}
-
-    node = MockNode()
     strategy = ForwardLBPSelect()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=1, index=2)
 
     # Should select column 2 from each row
     lower, upper = result.concretize()
@@ -64,7 +54,6 @@ def test_select_dim1() -> None:
     assert upper.shape == (3,)
     assert torch.allclose(lower, torch.tensor([2.0, 6.0, 10.0]))
     assert torch.allclose(upper, torch.tensor([3.0, 7.0, 11.0]))
-
 
 def test_select_3d() -> None:
     """Test select on 3D tensor."""
@@ -79,13 +68,8 @@ def test_select_3d() -> None:
         bias_upper=(torch.arange(24.0) + 1).view(2, 3, 4),
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 1, "index": 1}
-
-    node = MockNode()
     strategy = ForwardLBPSelect()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=1, index=1)
 
     # Should select index 1 along dim 1
     lower, upper = result.concretize()

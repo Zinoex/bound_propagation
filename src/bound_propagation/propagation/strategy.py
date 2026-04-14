@@ -1,7 +1,11 @@
-"""
-Abstract bounding strategy interface.
+"""Abstract bounding strategy interface.
 
-Defines the contract for all bounding strategies (IBP, forward, backward, LBP, etc.).
+Defines the contract for all bounding strategies (IBP, Forward LBP,
+Backward LBP / CROWN, etc.).
+
+Strategies operate directly on ``torch.fx.Node`` objects and use a
+:class:`~.context.PropagationContext` to resolve arguments and store
+results.
 """
 
 from __future__ import annotations
@@ -9,123 +13,78 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Generic, TypeVar
 
-import torch
+import torch.fx as fx
 
 from ..bounds import AbstractBounds
 
 if TYPE_CHECKING:
-    from ..ir import Node
-
-
-class BoundingStrategy(ABC):
-    @property
-    @abstractmethod
-    def method_name(self) -> str:
-        """
-        Get the name of this bounding method.
-
-        Returns:
-            Method name (e.g., "ibp", "forward", "backward")
-        """
-        pass
-
-    def __repr__(self) -> str:
-        """String representation."""
-        return f"{self.__class__.__name__}(method={self.method_name})"
-
+    from .context import PropagationContext
 
 T = TypeVar("T", bound=AbstractBounds)
 
 
+class BoundingStrategy(ABC):
+    """Marker base for all bounding strategies."""
+
+    @property
+    @abstractmethod
+    def method_name(self) -> str:
+        """Short identifier (e.g. ``"ibp"``, ``"forward_lbp"``)."""
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(method={self.method_name})"
+
+
 class ForwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
-    """
-    Abstract base class for bounding strategies.
+    """Compute output bounds from input bounds in forward order.
 
-    A bounding strategy computes bounds for a single operation node in the graph.
-    Different strategies implement different propagation methods:
-    - IBP (Interval Bound Propagation): Forward interval arithmetic
-    - Forward: Forward linear bound propagation with alpha-beta parameterization
-    - Backward: Backward linear bound propagation (LBP-style)
-
-    Each strategy is responsible for computing the output bounds of one node
-    given the input bounds of its input nodes.
-
-    The strategy pattern allows easy extension with new propagation methods
-    and mixing different methods for different operations.
+    Subclasses implement ``propagate_forward`` which receives the fx
+    node and a :class:`PropagationContext`.  The context provides
+    ``resolve_args`` to obtain concrete values or bounds for each
+    argument.
     """
 
     @abstractmethod
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[T | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> T:
-        """
-        Compute output bounds for a node.
+        """Compute output bounds for *node*.
 
         Args:
-            node: The operation node to compute bounds for
-            input_bounds: Bounds for each input to the node (in order)
-            config: Configuration for this computation
+            node: The ``torch.fx.Node`` being propagated.
+            ctx: Propagation context (bounds store, module access, …).
 
         Returns:
-            Bounds for the node's output
-
-        Raises:
-            ValueError: If the operation is not supported by this strategy
-            RuntimeError: If bound computation fails
+            Bounds for the node's output.
         """
-        pass
 
 
 class BackwardBoundingStrategy(BoundingStrategy, ABC, Generic[T]):
-    """
-    Abstract base class for backward bound propagation strategies.
+    """Propagate linear bounds backward (CROWN-style).
 
-    Backward propagation works differently from forward propagation:
-    - Forward: Given bounds on inputs, compute bounds on output
-    - Backward: Given linear bounds on output, propagate backward to compute
-                contribution to linear bounds on inputs
-
-    For an operation z = f(x, y, ...):
-    - We have linear bounds A_z, Ā_z representing how the final output depends on z
-    - We have concrete bounds for x, y (from forward pass)
-    - We compute how A_z, Ā_z translate to dependencies on each input
-
-    Example: z = x + y
-        If A_z represents "output_lower = A_z @ z + b_z"
-        Then A_x gets the same contribution: A_x += A_z
-        And A_y gets the same contribution: A_y += A_z
-
-    Example: z = relu(x)
-        Use concrete bounds on x to compute linear relaxation [α, β]
-        Propagate: A_x += α * A_z
+    For an operation ``z = f(x₁, x₂, …)`` with accumulated linear
+    bounds on *z*, the backward rule decomposes those bounds into
+    contributions to each abstract input.
     """
 
     @abstractmethod
-    def propagate_backwards(
+    def propagate_backward(
         self,
-        node: Node,
+        node: fx.Node,
         output_bounds: T,
-    ) -> list[T | None]:
-        """
-        Propagate linear bounds backward through this operation to a specific input.
+        ctx: PropagationContext,
+    ) -> dict[str, T]:
+        """Propagate *output_bounds* backward through *node*.
 
         Args:
-            node: The operation node (z = f(x, y, ...))
-            input_idx: Index of the input we're propagating to (0 for x, 1 for y, etc.)
-            output_bounds: Linear bounds for the operation output (A_z, Ā_z)
-                          Represents how the final output depends on this operation's output
-            concrete_input_bounds: Concrete bounds for all inputs (from forward pass)
-                                   Used for computing relaxations of non-linear operations
-            config: Strategy configuration
+            node: The ``torch.fx.Node`` (``z = f(…)``).
+            output_bounds: Linear bounds accumulated on *z*.
+            ctx: Propagation context (concrete bounds from forward pass, …).
 
         Returns:
-            Linear bounds representing the contribution to the specified input
-            This contribution will be accumulated: A_input += returned_bounds
-
-        Raises:
-            ValueError: If the operation is not supported or input_idx is invalid
-            RuntimeError: If propagation fails
+            Mapping from input node **name** to the linear bounds to
+            accumulate for that input.  Only abstract inputs need
+            entries; constant/parameter inputs are omitted.
         """
-        pass

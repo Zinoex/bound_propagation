@@ -6,6 +6,8 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.tanh import ForwardLBPTanh
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -27,7 +29,7 @@ def test_tanh_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPTanh()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= 0.75)
@@ -44,7 +46,7 @@ def test_tanh_negative_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPTanh()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= -1.0)
@@ -61,7 +63,7 @@ def test_tanh_mixed_sign_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPTanh()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= -0.77)
@@ -78,7 +80,7 @@ def test_tanh_at_zero() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPTanh()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([0.0]), atol=1e-6)
@@ -93,7 +95,7 @@ def test_tanh_large_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPTanh()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= 0.99)

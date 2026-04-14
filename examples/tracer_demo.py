@@ -3,17 +3,16 @@ import math
 import numpy as np
 import torch
 import torch.fx
-from torch import nn
 
 
-def f(x):
-    return x.view(3, -1)
+def f(x, y):
+    return x + y + torch.sin(x) * torch.cos(y) + torch.exp(x * y) + x**2 - y**2
 
 
 def main():
     tracer = torch.fx.Tracer()
     graph = tracer.trace(f)
-    print(graph)  # Should print 'add'
+    print(graph)
 
 
 if __name__ == "__main__":

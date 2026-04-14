@@ -3,8 +3,10 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.propagation.ibp.div import IBPDiv, IBPDivConstant
+from bound_propagation.propagation.ibp.div import IBPDiv
 from bound_propagation.propagation.ibp.mul import IBPMul
+
+from tests.helpers import propagate
 
 
 def _propagate_interval_interval(
@@ -17,25 +19,25 @@ def _propagate_interval_interval(
     strategy = IBPDiv()
     left_bounds = IntervalBounds(lower=left_lower, upper=left_upper)
     right_bounds = IntervalBounds(lower=right_lower, upper=right_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[left_bounds, right_bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, left_bounds, right_bounds)
 
 
 def _propagate_interval_div_constant(
     interval_lower: torch.Tensor, interval_upper: torch.Tensor, constant: torch.Tensor | float
 ) -> IntervalBounds:
     """Propagate bounds for interval / constant operation."""
-    strategy = IBPDivConstant()
+    strategy = IBPDiv()
     interval_bounds = IntervalBounds(lower=interval_lower, upper=interval_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[interval_bounds, constant])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, interval_bounds, constant)
 
 
 def _propagate_constant_div_interval(
     constant: torch.Tensor | float, interval_lower: torch.Tensor, interval_upper: torch.Tensor
 ) -> IntervalBounds:
     """Propagate bounds for constant / interval operation."""
-    strategy = IBPDivConstant()
+    strategy = IBPDiv()
     interval_bounds = IntervalBounds(lower=interval_lower, upper=interval_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[constant, interval_bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, constant, interval_bounds)
 
 
 def test_div_positive_intervals() -> None:
@@ -291,10 +293,10 @@ def test_div_reciprocal_property() -> None:
     mul_strategy = IBPMul()
 
     # a / b
-    a_div_b = div_strategy.propagate_forwards(None, [a, b])  # ty:ignore[invalid-argument-type]
+    a_div_b = propagate(div_strategy, a, b)
 
     # (a / b) * b
-    result = mul_strategy.propagate_forwards(None, [a_div_b, b])  # ty:ignore[invalid-argument-type]
+    result = propagate(mul_strategy, a_div_b, b)
 
     # Result should contain original interval a (may be wider due to overestimation)
     assert torch.all(result.lower <= a.lower)

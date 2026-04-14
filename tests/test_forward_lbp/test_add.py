@@ -5,9 +5,10 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.add import (
     ForwardLBPAdd,
-    ForwardLBPAddWithConstant,
 )
 from bound_propagation.regions import HyperRectangle
+
+from tests.helpers import propagate
 
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
@@ -46,7 +47,7 @@ def test_add_abstract_abstract_positive() -> None:
     )
 
     strategy = ForwardLBPAdd()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds_a, bounds_b)
 
     # Linear coefficients: [1, 0] + [0, 1] = [1, 1]
     assert torch.allclose(result.linear_lower, torch.tensor([[1.0, 1.0]]))
@@ -85,7 +86,7 @@ def test_add_abstract_abstract_with_bias() -> None:
     )
 
     strategy = ForwardLBPAdd()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds_a, bounds_b)
 
     # Linear: 2 + 1 = 3
     assert torch.allclose(result.linear_lower, torch.tensor([[3.0]]))
@@ -110,8 +111,8 @@ def test_add_abstract_constant_scalar() -> None:
     region = HyperRectangle(lower=torch.tensor([2.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPAddWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, 3.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPAdd()
+    result = propagate(strategy, bounds, 3.0)
 
     # Linear coefficients unchanged
     assert torch.allclose(result.linear_lower, torch.tensor([[1.0]]))
@@ -136,8 +137,8 @@ def test_add_abstract_constant_tensor() -> None:
     bounds = _make_linear_bounds(region)
 
     constant = torch.tensor([10.0, 20.0])
-    strategy = ForwardLBPAddWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, constant])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPAdd()
+    result = propagate(strategy, bounds, constant)
 
     # Linear coefficients unchanged (identity)
     assert torch.allclose(result.linear_lower, torch.eye(2))
@@ -161,8 +162,8 @@ def test_add_constant_abstract() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([3.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPAddWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[5.0, bounds])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPAdd()
+    result = propagate(strategy, 5.0, bounds)
 
     # Linear coefficients unchanged
     assert torch.allclose(result.linear_lower, torch.tensor([[1.0]]))
@@ -186,8 +187,8 @@ def test_add_negative_constant() -> None:
     region = HyperRectangle(lower=torch.tensor([5.0]), upper=torch.tensor([10.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPAddWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, -3.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPAdd()
+    result = propagate(strategy, bounds, -3.0)
 
     # Bias decreased by 3
     assert torch.allclose(result.bias_lower, torch.tensor([-3.0]))

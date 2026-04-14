@@ -5,9 +5,10 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.maximum import (
     ForwardLBPMaximum,
-    ForwardLBPMaximumWithConstant,
 )
 from bound_propagation.regions import HyperRectangle
+
+from tests.helpers import propagate
 
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
@@ -47,7 +48,7 @@ def test_maximum_abstract_abstract_concretizes() -> None:
     )
 
     strategy = ForwardLBPMaximum()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds_a, bounds_b)
 
     # Should concretize (lose linear dependency)
     assert result.linear_lower is None
@@ -69,8 +70,8 @@ def test_maximum_abstract_constant_positive() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMaximumWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, 2.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, bounds, 2.0)
 
     # Concretizes
     assert result.linear_lower is None
@@ -90,8 +91,8 @@ def test_maximum_abstract_constant_below_range() -> None:
     region = HyperRectangle(lower=torch.tensor([3.0]), upper=torch.tensor([7.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMaximumWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, 1.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, bounds, 1.0)
 
     # Still concretizes but result is the input interval
     lower, upper = result.concretize()
@@ -108,8 +109,8 @@ def test_maximum_abstract_constant_above_range() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([3.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMaximumWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, 5.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, bounds, 5.0)
 
     # Result is constant 5
     lower, upper = result.concretize()
@@ -127,8 +128,8 @@ def test_maximum_abstract_constant_tensor() -> None:
     bounds = _make_linear_bounds(region)
 
     constant = torch.tensor([2.0, 3.0])
-    strategy = ForwardLBPMaximumWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, constant])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, bounds, constant)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([2.0, 3.0]))
@@ -144,8 +145,8 @@ def test_maximum_constant_abstract() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([6.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMaximumWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[3.0, bounds])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, 3.0, bounds)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([3.0]))
@@ -161,8 +162,8 @@ def test_maximum_negative_values() -> None:
     region = HyperRectangle(lower=torch.tensor([-5.0]), upper=torch.tensor([-1.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMaximumWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, -3.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, bounds, -3.0)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([-3.0]))

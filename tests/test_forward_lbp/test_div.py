@@ -3,8 +3,10 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.div import ForwardLBPDiv, ForwardLBPDivConstant
+from bound_propagation.propagation.forward_lbp.div import ForwardLBPDiv
 from bound_propagation.regions import HyperRectangle
+
+from tests.helpers import propagate
 
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
@@ -42,7 +44,7 @@ def test_div_abstract_abstract_positive() -> None:
     )
 
     strategy = ForwardLBPDiv()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds_a, bounds_b)
 
     # Division loses linear dependency
     lower, upper = result.concretize()
@@ -58,8 +60,8 @@ def test_div_abstract_constant_positive() -> None:
     region = HyperRectangle(lower=torch.tensor([4.0]), upper=torch.tensor([8.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPDivConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, torch.tensor(2.0)])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPDiv()
+    result = propagate(strategy, bounds, torch.tensor(2.0))
 
     # Should preserve linear structure: x/2
     assert result.linear_lower is not None
@@ -80,8 +82,8 @@ def test_div_abstract_constant_negative() -> None:
     region = HyperRectangle(lower=torch.tensor([4.0]), upper=torch.tensor([8.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPDivConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, torch.tensor(-2.0)])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPDiv()
+    result = propagate(strategy, bounds, torch.tensor(-2.0))
 
     # Linear bounds should be flipped: x/(-2) = -x/2
     lower, upper = result.concretize()
@@ -112,7 +114,7 @@ def test_div_crossing_zero_divisor() -> None:
     )
 
     strategy = ForwardLBPDiv()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds_a, bounds_b)
 
     lower, upper = result.concretize()
     assert torch.isneginf(lower).all()

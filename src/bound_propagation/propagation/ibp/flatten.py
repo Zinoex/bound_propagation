@@ -3,32 +3,38 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPFlatten(ForwardIBPStrategy):
-    """IBP strategy for FLATTEN operation."""
+    """IBP strategy for flatten."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"flatten requires 1 input, got {len(input_bounds)}")
-
-        x_bounds = input_bounds[0]
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPFlatten requires input to be IntervalBounds")
 
-        # Flatten all dimensions
-        lower = x_bounds.lower.flatten()
-        upper = x_bounds.upper.flatten()
+        if node.op == "call_module":
+            module = ctx.get_module(node.target)
+            start_dim = module.start_dim
+            end_dim = module.end_dim
+        else:
+            start_dim = args[1] if len(args) > 1 else kwargs.get("start_dim", 0)
+            end_dim = args[2] if len(args) > 2 else kwargs.get("end_dim", -1)
+
+        lower = torch.flatten(x_bounds.lower, start_dim, end_dim)
+        upper = torch.flatten(x_bounds.upper, start_dim, end_dim)
 
         return IntervalBounds(lower, upper)

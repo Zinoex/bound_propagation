@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.unsqueeze import ForwardLBPUnsqueeze
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def test_unsqueeze_dim0() -> None:
     """Test unsqueeze at dimension 0."""
@@ -21,18 +22,12 @@ def test_unsqueeze_dim0() -> None:
         bias_upper=torch.arange(12.0) + 1,
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPUnsqueeze()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=0)
 
     # Should add a dimension at position 0: (12,) -> (1, 12)
     assert result.bias_lower.shape == (1, 12)
     assert result.bias_upper.shape == (1, 12)
-
 
 def test_unsqueeze_middle_dim() -> None:
     """Test unsqueeze at a middle dimension."""
@@ -47,18 +42,12 @@ def test_unsqueeze_middle_dim() -> None:
         bias_upper=torch.arange(6.0) + 1,
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPUnsqueeze()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=0)
 
     # Should add a dimension at position 0: (6,) -> (1, 6)
     assert result.bias_lower.shape == (1, 6)
     assert result.bias_upper.shape == (1, 6)
-
 
 def test_unsqueeze_last_dim() -> None:
     """Test unsqueeze at the last dimension."""
@@ -73,18 +62,12 @@ def test_unsqueeze_last_dim() -> None:
         bias_upper=torch.arange(3.0) + 1,
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 1}
-
-    node = MockNode()
     strategy = ForwardLBPUnsqueeze()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=1)
 
     # Should add a dimension at the end: (3,) -> (3, 1)
     assert result.bias_lower.shape == (3, 1)
     assert result.bias_upper.shape == (3, 1)
-
 
 def test_unsqueeze_1d_to_2d() -> None:
     """Test unsqueeze converting 1D to 2D tensor."""
@@ -99,13 +82,8 @@ def test_unsqueeze_1d_to_2d() -> None:
         bias_upper=torch.arange(5.0) + 1,
     )
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 0}
-
-    node = MockNode()
     strategy = ForwardLBPUnsqueeze()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=0)
 
     # Should convert to (1, 5)
     assert result.bias_lower.shape == (1, 5)

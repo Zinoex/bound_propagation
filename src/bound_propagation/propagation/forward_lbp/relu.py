@@ -2,47 +2,31 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch.fx as fx
+
 from ...bounds import LinearBounds
 from ..linear_relaxations.relu import compute_relu_alpha_beta
 from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
-    import torch
-
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPRelu(ForwardLBPStrategy):
-    """
-    Forward LBP strategy for RELU operation.
+    """Forward LBP strategy for ReLU using linear relaxation."""
 
-    For ReLU y = max(0, x), we use adaptive linear relaxations:
-    - If x >= 0 (active): y = x (identity)
-    - If x <= 0 (inactive): y = 0 (zero)
-    - If x crosses zero: linear relaxation
-      - Lower bound: y >= 0 (always valid)
-      - Upper bound: y <= (u/(u-l)) * (x - l) where [l, u] are concrete bounds
-    """
-
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"relu requires exactly 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
 
-        if not isinstance(input_bounds[0], LinearBounds):
+        if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPRelu requires input to be LinearBounds")
 
-        bounds = input_bounds[0]
-
-        # Concretize to get interval bounds for determining ReLU behavior
         lower, upper = bounds.concretize()
-
-        # Compute alpha/beta parameters for ReLU relaxation
         alpha_lower, beta_lower, alpha_upper, beta_upper = compute_relu_alpha_beta(lower, upper, adaptive=False)
-
-        # Apply the linear relaxation to the bounds
         return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

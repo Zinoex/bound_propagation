@@ -2,40 +2,37 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch.fx as fx
+
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
-    import torch
-
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class ForwardLBPMin(ForwardLBPStrategy):
-    """Forward LBP strategy for MIN reduction operation."""
+    """Forward LBP strategy for min reduction."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[LinearBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> LinearBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"min requires exactly 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
 
-        if not isinstance(input_bounds[0], LinearBounds):
+        if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPMin requires input to be LinearBounds")
 
-        bounds = input_bounds[0]
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = kwargs.get("keepdim", False)
 
-        dim = node.attributes.get("dim")
-        keep_dim = node.attributes.get("keepdim", False)
-
-        # Concretize and apply min
         lower, upper = bounds.concretize()
 
         if dim is not None:
-            lower = lower.min(dim=dim, keepdim=keep_dim).values
-            upper = upper.min(dim=dim, keepdim=keep_dim).values
+            lower = lower.min(dim=dim, keepdim=keepdim).values
+            upper = upper.min(dim=dim, keepdim=keepdim).values
         else:
             lower = lower.min()
             upper = upper.min()

@@ -6,6 +6,8 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.sqrt import ForwardLBPSqrt
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -31,7 +33,7 @@ def test_sqrt_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSqrt()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     # Should have linear relaxation
     assert result.linear_lower is not None
@@ -64,7 +66,7 @@ def test_sqrt_small_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSqrt()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # sqrt(4) = 2, sqrt(4.1) ≈ 2.0248
@@ -83,7 +85,7 @@ def test_sqrt_zero_width_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSqrt()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For zero-width interval, relaxation should be tight
@@ -100,7 +102,7 @@ def test_sqrt_large_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSqrt()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Due to relaxation, bounds should contain [1, 10]
@@ -126,7 +128,7 @@ def test_sqrt_with_bias() -> None:
     )
 
     strategy = ForwardLBPSqrt()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Min: sqrt(1) = 1, Max: sqrt(15) ≈ 3.87
@@ -145,7 +147,7 @@ def test_sqrt_multidimensional() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSqrt()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Element 0: sqrt([1, 4]) = [1, 2]

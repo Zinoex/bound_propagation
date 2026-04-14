@@ -6,12 +6,14 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.mul import IBPMul
 from bound_propagation.propagation.ibp.reciprocal import IBPReciprocal
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for reciprocal (1/x) operation."""
     strategy = IBPReciprocal()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_reciprocal_positive_interval() -> None:
@@ -161,10 +163,10 @@ def test_reciprocal_involutory_property() -> None:
     a = IntervalBounds(torch.tensor([2.0, -4.0]), torch.tensor([5.0, -1.0]))
 
     # 1/a
-    recip_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    recip_a = propagate(strategy, a)
 
     # 1/(1/a)
-    recip_recip_a = strategy.propagate_forwards(None, [recip_a])  # ty:ignore[invalid-argument-type]
+    recip_recip_a = propagate(strategy, recip_a)
 
     # Should recover original interval
     assert torch.allclose(a.lower, recip_recip_a.lower, rtol=1e-5)
@@ -202,10 +204,10 @@ def test_reciprocal_with_multiplication_property() -> None:
     mul_strategy = IBPMul()
 
     # 1/a
-    recip_a = recip_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    recip_a = propagate(recip_strategy, a)
 
     # a * (1/a)
-    result = mul_strategy.propagate_forwards(None, [a, recip_a])  # ty:ignore[invalid-argument-type]
+    result = propagate(mul_strategy, a, recip_a)
 
     # Should contain 1 (may be wider due to overestimation)
     assert torch.all(result.lower <= 1.0)

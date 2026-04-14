@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.linear import ForwardLBPLinear
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -18,7 +19,6 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
         bias_upper=torch.zeros(dim),
     )
 
-
 def test_linear_simple_transformation() -> None:
     """Test simple linear transformation."""
     # Region: x ∈ [1, 2]
@@ -29,19 +29,13 @@ def test_linear_simple_transformation() -> None:
     weight = torch.tensor([[2.0]])
     bias = torch.tensor([3.0])
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"weight": weight, "bias": bias}
-
-    node = MockNode()
     strategy = ForwardLBPLinear()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, weight=weight, bias=bias)
 
     # Expected: y = 2x + 3, so at x=1: y=5, at x=2: y=7
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([5.0]))
     assert torch.allclose(upper, torch.tensor([7.0]))
-
 
 def test_linear_multi_input_multi_output() -> None:
     """Test linear layer with multiple inputs and outputs."""
@@ -53,13 +47,8 @@ def test_linear_multi_input_multi_output() -> None:
     weight = torch.tensor([[1.0, 1.0], [2.0, -1.0]])
     bias = torch.tensor([1.0, -1.0])
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"weight": weight, "bias": bias}
-
-    node = MockNode()
     strategy = ForwardLBPLinear()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, weight=weight, bias=bias)
 
     lower, upper = result.concretize()
     # First output: x0 + x1 + 1
@@ -74,7 +63,6 @@ def test_linear_multi_input_multi_output() -> None:
     assert torch.allclose(lower, torch.tensor([3.0, -4.0]))
     assert torch.allclose(upper, torch.tensor([5.0, -1.0]))
 
-
 def test_linear_no_bias() -> None:
     """Test linear transformation without bias."""
     # Region: x ∈ [2, 4]
@@ -84,19 +72,13 @@ def test_linear_no_bias() -> None:
 
     weight = torch.tensor([[3.0]])
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"weight": weight, "bias": None}
-
-    node = MockNode()
     strategy = ForwardLBPLinear()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, weight=weight, bias=None)
 
     # Expected: y = 3x, so at x=2: y=6, at x=4: y=12
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([6.0]))
     assert torch.allclose(upper, torch.tensor([12.0]))
-
 
 def test_linear_negative_weights() -> None:
     """Test linear transformation with negative weights."""
@@ -108,13 +90,8 @@ def test_linear_negative_weights() -> None:
     weight = torch.tensor([[-2.0]])
     bias = torch.tensor([5.0])
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"weight": weight, "bias": bias}
-
-    node = MockNode()
     strategy = ForwardLBPLinear()
-    result = strategy.propagate_forwards(node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, weight=weight, bias=bias)
 
     # Expected: y = -2x + 5
     # At x=1: y = -2 + 5 = 3

@@ -6,6 +6,8 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.reciprocal import ForwardLBPReciprocal
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -35,7 +37,7 @@ def test_reciprocal_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPReciprocal()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     # Should have linear relaxation
     assert result.linear_lower is not None
@@ -73,7 +75,7 @@ def test_reciprocal_negative_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPReciprocal()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Lower bound should be in [-0.5, -0.25]
@@ -98,7 +100,7 @@ def test_reciprocal_positive_small_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPReciprocal()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Lower bound should be around 1.778
@@ -118,7 +120,7 @@ def test_reciprocal_crossing_zero() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPReciprocal()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Should be unbounded
@@ -136,7 +138,7 @@ def test_reciprocal_zero_lower_bound() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPReciprocal()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Implementation returns safe bounds (0, 0) for intervals touching zero
@@ -154,7 +156,7 @@ def test_reciprocal_zero_upper_bound() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPReciprocal()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Implementation returns safe bounds (0, 0) for intervals touching zero
@@ -171,7 +173,7 @@ def test_reciprocal_point_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPReciprocal()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For zero-width interval, relaxation should be tight

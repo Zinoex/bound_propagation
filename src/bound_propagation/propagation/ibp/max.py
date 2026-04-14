@@ -3,38 +3,37 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPMax(ForwardIBPStrategy):
-    """IBP strategy for MEAN operation."""
+    """IBP strategy for amax (reduction max along dimension)."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"max requires 1 input, got {len(input_bounds)}")
-
-        x_bounds = input_bounds[0]
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPMax requires the input to be an IntervalBounds")
 
-        dim = node.attributes.get("dim")
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = args[2] if len(args) > 2 else kwargs.get("keepdim", False)
+
         if dim is not None:
-            # If dim is specified, we take the max across that dimension
-            lower = torch.max(x_bounds.lower, dim=dim).values
-            upper = torch.max(x_bounds.upper, dim=dim).values
+            lower = torch.amax(x_bounds.lower, dim=dim, keepdim=keepdim)
+            upper = torch.amax(x_bounds.upper, dim=dim, keepdim=keepdim)
         else:
-            # Otherwise, we take the elementwise max
-            lower = torch.max(x_bounds.lower)
-            upper = torch.max(x_bounds.upper)
+            lower = torch.amax(x_bounds.lower)
+            upper = torch.amax(x_bounds.upper)
 
         return IntervalBounds(lower, upper)

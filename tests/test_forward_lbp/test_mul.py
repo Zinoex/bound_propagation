@@ -5,9 +5,10 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.mul import (
     ForwardLBPMul,
-    ForwardLBPMulWithConstant,
 )
 from bound_propagation.regions import HyperRectangle
+
+from tests.helpers import propagate
 
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
@@ -47,7 +48,7 @@ def test_mul_abstract_abstract_concretizes() -> None:
     )
 
     strategy = ForwardLBPMul()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds_a, bounds_b])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds_a, bounds_b)
 
     # Should have no linear dependency (concretized)
     assert result.linear_lower is None
@@ -77,8 +78,8 @@ def test_mul_abstract_constant_positive_scalar() -> None:
         bias_upper=torch.tensor([3.0]),
     )
 
-    strategy = ForwardLBPMulWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, 2.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMul()
+    result = propagate(strategy, bounds, 2.0)
 
     # Linear: 1 * 2 = 2
     assert torch.allclose(result.linear_lower, torch.tensor([[2.0]]))
@@ -102,8 +103,8 @@ def test_mul_abstract_constant_negative_scalar() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([4.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMulWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, -2.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMul()
+    result = propagate(strategy, bounds, -2.0)
 
     # Linear: 1 * -2 = -2 (swapped because negative)
     assert torch.allclose(result.linear_lower, torch.tensor([[-2.0]]))
@@ -127,8 +128,8 @@ def test_mul_abstract_constant_zero() -> None:
     region = HyperRectangle(lower=torch.tensor([2.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMulWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, 0.0])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMul()
+    result = propagate(strategy, bounds, 0.0)
 
     # Linear dependency removed (multiplied by 0)
     assert result.linear_lower is None
@@ -152,8 +153,8 @@ def test_mul_abstract_constant_tensor_positive() -> None:
     bounds = _make_linear_bounds(region)
 
     constant = torch.tensor([2.0, 3.0])
-    strategy = ForwardLBPMulWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, constant])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMul()
+    result = propagate(strategy, bounds, constant)
 
     # Linear: [1, 0] * 2 = [2, 0], [0, 1] * 3 = [0, 3]
     assert torch.allclose(result.linear_lower, torch.tensor([[2.0, 0.0], [0.0, 3.0]]))
@@ -178,8 +179,8 @@ def test_mul_abstract_constant_tensor_mixed_signs() -> None:
     bounds = _make_linear_bounds(region)
 
     constant = torch.tensor([2.0, -1.0])
-    strategy = ForwardLBPMulWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds, constant])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMul()
+    result = propagate(strategy, bounds, constant)
 
     # Linear: [1, 0] * 2 = [2, 0], [0, 1] * -1 = [0, -1]
     # For x1: negative multiplier swaps bounds
@@ -202,8 +203,8 @@ def test_mul_constant_abstract() -> None:
     region = HyperRectangle(lower=torch.tensor([2.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
-    strategy = ForwardLBPMulWithConstant()
-    result = strategy.propagate_forwards(node=None, input_bounds=[3.0, bounds])  # ty:ignore[invalid-argument-type]
+    strategy = ForwardLBPMul()
+    result = propagate(strategy, 3.0, bounds)
 
     # Linear: 3 * 1 = 3
     assert torch.allclose(result.linear_lower, torch.tensor([[3.0]]))

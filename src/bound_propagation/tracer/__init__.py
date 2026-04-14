@@ -1,14 +1,19 @@
-"""
-Graph tracing and conversion to IR.
+"""Graph tracing for bound propagation.
 
-This module provides functionality to trace PyTorch functions using torch.fx
-and convert them to the internal IR representation.
+Traces PyTorch functions/modules into :class:`torch.fx.GraphModule` and
+validates that all operations are supported by a :class:`TargetRegistry`.
 """
 
-from .converter import GraphConverter
-from .fx_tracer import BoundPropagationTracer
+from .fx_tracer import (
+    BoundPropagationTracer,
+    ControlFlowError,
+    TraceError,
+    UnsupportedOperationError,
+)
 
 __all__ = [
     "BoundPropagationTracer",
-    "GraphConverter",
+    "ControlFlowError",
+    "TraceError",
+    "UnsupportedOperationError",
 ]

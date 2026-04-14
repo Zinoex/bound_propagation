@@ -1,134 +1,114 @@
+"""Interval Bound Propagation (IBP) propagator.
+
+Walks a :class:`torch.fx.GraphModule` in forward topological order,
+propagating :class:`IntervalBounds` through each operation node.
+"""
+
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import cast
 
 import torch
+import torch.fx as fx
 
-from ...bounds import AbstractBounds, IntervalBounds
-from ...ir import Graph, NodeType
+from ...bounds import IntervalBounds
 from ...regions import SimpleRegion
-from ..ibp import ForwardIBPStrategy, ForwardIBPStrategyRegistry
-from .base import (
-    BoundPropagator,
-)
+from ..context import PropagationContext
+from ..ibp import create_default_ibp_registry
+from ..registry import TargetRegistry
+from .base import BoundPropagator
 
 
 class IBPPropagator(BoundPropagator):
+    """Forward interval bound propagation.
+
+    Uses interval arithmetic rules for each operation. Fast but less
+    precise than LBP because it does not track linear dependencies.
+
+    Args:
+        graph_module: The traced ``fx.GraphModule`` with metadata
+            annotations (from :class:`MetadataPass`).
+        registry: Strategy registry. If ``None``, uses the built-in
+            default IBP registry.
     """
-    Interval Bound Propagation (IBP).
 
-    Propagates simple interval bounds forward through the computation graph.
-    Uses interval arithmetic rules for all operations. Faster than LBP but
-    less precise because it doesn't track linear dependencies.
-    """
-
-    def __init__(self, graph: Graph, registry: ForwardIBPStrategyRegistry | None = None):
-        super().__init__(graph)
-        self._registry = registry or ForwardIBPStrategyRegistry.default_registry()
-        self._ensure_node_kind_annotations()
-
-        self._bound_strategies = self._build_strategies()
-
-    def _ensure_node_kind_annotations(self) -> None:
-        """Ensure node-level input/output kind annotations exist for dispatch."""
-        missing_operation_annotation = any(
-            node.is_operation and node.input_signature is None for node in self.graph.nodes
-        )
-        if missing_operation_annotation:
-            raise ValueError("All OPERATION and OUTPUT nodes must have input_signature annotations for IBP dispatch")
-
-    def _build_strategies(self) -> dict[int, ForwardIBPStrategy]:
-        """Build a cache of strategies for each node in the graph."""
-        strategy_cache: dict[int, ForwardIBPStrategy] = {}
-        for node in self.graph.nodes:
-            if node.is_operation:
-                signature = node.input_signature
-                if signature is None:
-                    raise ValueError(f"Node {node.id} is missing input_signature annotation required for IBP dispatch")
-                strategy_cache[node.id] = self._registry.get_strategy(
-                    node.op_type,
-                    signature,
-                )
-
-        return strategy_cache
+    def __init__(
+        self,
+        graph_module: fx.GraphModule,
+        registry: TargetRegistry | None = None,
+    ) -> None:
+        super().__init__(graph_module, registry or create_default_ibp_registry())
 
     @property
     def method_name(self) -> str:
-        """Return the name of this propagation method."""
         return "ibp"
 
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
-    ) -> Sequence[AbstractBounds]:
-        """
-        Propagate interval bounds forward through the graph.
+    ) -> Sequence[IntervalBounds]:
+        placeholders = self._placeholder_nodes()
+        if len(input_regions) != len(placeholders):
+            raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
 
-        Args:
-            graph: The computation graph to propagate through.
-            input_regions: List of input regions defining the domain.
+        ctx = self._new_context()
 
-        Returns:
-            List of computed interval bounds, one for each output.
-        """
-        if len(input_regions) != len(self.graph.input_nodes):
-            raise ValueError(f"Expected {len(self.graph.input_nodes)} input regions, got {len(input_regions)}")
+        # Seed placeholder bounds
+        for ph, region in zip(placeholders, input_regions, strict=True):
+            lower, upper = region.aabb()
+            ctx.store(ph, IntervalBounds(lower, upper))
 
-        # Get nodes in topological order
-        nodes = self.graph.topological_order()
+        # Forward walk (graph.nodes is already in topological order)
+        for node in self._graph_module.graph.nodes:
+            if node.op == "placeholder":
+                continue
+            elif node.op == "get_attr":
+                ctx.store(node, ctx.fetch_attr(node.target))
+            elif node.op in ("call_function", "call_method", "call_module"):
+                self._propagate_operation(node, ctx)
+            elif node.op == "output":
+                # Collect outputs
+                args, _ = ctx.resolve_args(node)
+                outputs: list[IntervalBounds] = []
+                # output node's args[0] is a tuple of return values
+                output_values = args[0] if isinstance(args[0], (tuple, list)) else args
+                for val in output_values:
+                    if not isinstance(val, IntervalBounds):
+                        raise TypeError(f"Expected output to be IntervalBounds, got {type(val)}")
+                    outputs.append(val)
+                return outputs
 
-        # Initialize bounds dictionary
-        bounds: dict[int, IntervalBounds | torch.Tensor] = {}
+            ctx.release(node)
 
-        # Initialize input bounds from input regions
-        for node, region in zip(self.graph.input_nodes, input_regions, strict=True):
-            bounds[node.id] = self._create_input_bounds(region)
+        raise RuntimeError("Graph has no output node")
 
-        # Propagate through each node
-        for node in nodes:
-            match node.node_type:
-                case NodeType.INPUT:
-                    # Input bounds already initialized
-                    continue
-                case NodeType.CONSTANT | NodeType.PARAMETER:
-                    bounds[node.id] = node.value
-                case NodeType.OPERATION | NodeType.OUTPUT:
-                    input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number] = [
-                        bounds[inp.id] for inp in node.inputs
-                    ]
-                    strategy = self._bound_strategies[node.id]
-                    bounds[node.id] = strategy.propagate_forwards(node, input_bounds)
-                case _:
-                    raise ValueError(f"Unsupported node type: {node.node_type}")
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
 
-        # Build output bounds list
-        outputs = [bounds[node.id] for node in self.graph.output_nodes]
+    def _propagate_operation(self, node: fx.Node, ctx: PropagationContext) -> None:
+        """Dispatch *node* to its IBP strategy or evaluate concretely."""
+        is_abstract = node.meta.get("is_abstract", True)
 
-        for output in outputs:
-            if not isinstance(output, IntervalBounds):
-                raise TypeError(f"Expected output bounds to be IntervalBounds, got {type(output)}")
+        if not is_abstract:
+            # Constant sub-expression — evaluate concretely
+            ctx.store(node, self._evaluate_concrete(node, ctx))
+            return
 
-        outputs = cast(list[IntervalBounds], outputs)
+        strategy = self.registry.get_strategy(node, self._graph_module)
+        result = strategy.propagate_forward(node, ctx)
+        ctx.store(node, result)
 
-        return outputs
-
-    def _create_input_bounds(
-        self,
-        region: SimpleRegion,
-    ) -> IntervalBounds:
-        """
-        Create interval bounds for an input node from the region.
-
-        Args:
-            region: Input region. Can be HyperRectangle (single input)
-                   or MultiInputRegion (multiple inputs).
-
-        Returns:
-            IntervalBounds from the region
-        """
-        # Handle multi-input regions
-        lower, upper = region.aabb()
-
-        # Single input region
-        return IntervalBounds(lower, upper)
+    @staticmethod
+    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext) -> torch.Tensor:
+        """Concretely evaluate a non-abstract node."""
+        args, kwargs = ctx.resolve_args(node)
+        target = node.target
+        if node.op == "call_function":
+            return target(*args, **kwargs)
+        if node.op == "call_method":
+            return getattr(args[0], target)(*args[1:], **kwargs)
+        if node.op == "call_module":
+            module = ctx.get_module(target)
+            return module(*args, **kwargs)
+        raise ValueError(f"Cannot evaluate node op={node.op!r}")

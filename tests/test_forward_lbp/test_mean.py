@@ -6,6 +6,7 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.mean import ForwardLBPMean
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
 
 def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> LinearBounds:
     """Create identity linear bounds from a region with specific shape."""
@@ -28,7 +29,6 @@ def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> Linea
         linear_upper=linear_reshaped,
         bias_upper=torch.zeros(shape),
     )
-
 
 def test_mean_along_last_dim() -> None:
     """Test mean reduction along the last dimension."""
@@ -55,13 +55,8 @@ def test_mean_along_last_dim() -> None:
     strategy = ForwardLBPMean()
 
     # Create mock node with dim attribute
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": -1, "keepdim": False}
 
-    node = MockNode()
-
-    result = strategy.propagate_forwards(node=node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=-1, keepdim=False)
 
     # After mean along dim=-1, shape should be (2,)
     # Result concretizes
@@ -74,7 +69,6 @@ def test_mean_along_last_dim() -> None:
     assert upper.shape == (2,)
     assert torch.allclose(lower, torch.tensor([0.0, 0.0]))
     assert torch.allclose(upper, torch.tensor([2.0, 2.0]))
-
 
 def test_mean_all_elements() -> None:
     """Test mean over all elements (no dim specified)."""
@@ -96,13 +90,7 @@ def test_mean_all_elements() -> None:
 
     strategy = ForwardLBPMean()
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {}
-
-    node = MockNode()
-
-    result = strategy.propagate_forwards(node=node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     # Concretizes to scalar
     lower, upper = result.concretize()
@@ -112,7 +100,6 @@ def test_mean_all_elements() -> None:
     # Mean of [1, 3] across all elements is [1, 3]
     assert torch.allclose(lower, torch.tensor(1.0))
     assert torch.allclose(upper, torch.tensor(3.0))
-
 
 def test_mean_with_keepdim() -> None:
     """Test mean with keepdim=True."""
@@ -134,13 +121,7 @@ def test_mean_with_keepdim() -> None:
 
     strategy = ForwardLBPMean()
 
-    class MockNode:
-        def __init__(self):
-            self.attributes = {"dim": 1, "keepdim": True}
-
-    node = MockNode()
-
-    result = strategy.propagate_forwards(node=node, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds, dim=1, keepdim=True)
 
     lower, upper = result.concretize()
     # Shape should be (2, 1) with keepdim

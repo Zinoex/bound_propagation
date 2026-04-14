@@ -5,11 +5,13 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.tan import IBPTan
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     strategy = IBPTan()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_tan_no_asymptote_interval_stays_finite() -> None:

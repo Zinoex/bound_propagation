@@ -3,38 +3,37 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPMin(ForwardIBPStrategy):
-    """IBP strategy for MIN operation."""
+    """IBP strategy for amin (reduction min along dimension)."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"min requires 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
-        if not isinstance(input_bounds[0], IntervalBounds):
+        if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPMin requires the input to be an IntervalBounds")
 
-        x_bounds: IntervalBounds = input_bounds[0]
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = args[2] if len(args) > 2 else kwargs.get("keepdim", False)
 
-        dim = node.attributes.get("dim")
         if dim is not None:
-            # If dim is specified, we take the min across that dimension
-            lower = torch.min(x_bounds.lower, dim=dim).values
-            upper = torch.min(x_bounds.upper, dim=dim).values
+            lower = torch.amin(x_bounds.lower, dim=dim, keepdim=keepdim)
+            upper = torch.amin(x_bounds.upper, dim=dim, keepdim=keepdim)
         else:
-            # Interval min
-            lower = torch.min(x_bounds.lower)
-            upper = torch.min(x_bounds.upper)
+            lower = torch.amin(x_bounds.lower)
+            upper = torch.amin(x_bounds.upper)
 
         return IntervalBounds(lower, upper)

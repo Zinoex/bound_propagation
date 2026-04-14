@@ -6,6 +6,8 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.log import ForwardLBPLog
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -30,7 +32,7 @@ def test_log_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPLog()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # log(1) = 0, log(4) ≈ 1.386
@@ -48,7 +50,7 @@ def test_log_small_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPLog()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # log(0.5) ≈ -0.693, log(1) = 0
@@ -66,7 +68,7 @@ def test_log_large_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPLog()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= 0.65)
@@ -84,7 +86,7 @@ def test_log_point_at_e() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPLog()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0]), atol=1e-3)

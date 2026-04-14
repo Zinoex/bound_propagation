@@ -2,37 +2,35 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch
+import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
-    from ...ir import Node
+    from ..context import PropagationContext
 
 
 class IBPTranspose(ForwardIBPStrategy):
-    """IBP strategy for TRANSPOSE operation."""
+    """IBP strategy for transpose."""
 
-    def propagate_forwards(
+    def propagate_forward(
         self,
-        node: Node,
-        input_bounds: list[IntervalBounds | torch.Tensor | torch.types.Number],
+        node: fx.Node,
+        ctx: PropagationContext,
     ) -> IntervalBounds:
-        if len(input_bounds) != 1:
-            raise ValueError(f"transpose requires 1 input, got {len(input_bounds)}")
+        args, kwargs = ctx.resolve_args(node)
+        x_bounds = args[0]
 
-        x_bounds = input_bounds[0]
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPTranspose requires the input to be an IntervalBounds")
 
-        dim0 = node.attributes.get("dim0")
-        dim1 = node.attributes.get("dim1")
+        dim0 = args[1] if len(args) > 1 else kwargs.get("dim0")
+        dim1 = args[2] if len(args) > 2 else kwargs.get("dim1")
 
         if dim0 is None or dim1 is None:
-            raise ValueError("transpose requires 'dim   0' and 'dim1' attributes")
+            raise ValueError("transpose requires dim0 and dim1 arguments")
 
-        # Interval transpose
         lower = x_bounds.lower.transpose(dim0, dim1)
         upper = x_bounds.upper.transpose(dim0, dim1)
 

@@ -3,7 +3,9 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.propagation.ibp.add import IBPAdd, IBPAddWithConstant
+from bound_propagation.propagation.ibp.add import IBPAdd
+
+from tests.helpers import propagate
 
 
 def _propagate_interval_interval(
@@ -16,16 +18,16 @@ def _propagate_interval_interval(
     strategy = IBPAdd()
     left_bounds = IntervalBounds(lower=left_lower, upper=left_upper)
     right_bounds = IntervalBounds(lower=right_lower, upper=right_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[left_bounds, right_bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, left_bounds, right_bounds)
 
 
 def _propagate_interval_constant(
     interval_lower: torch.Tensor, interval_upper: torch.Tensor, constant: torch.Tensor | float
 ) -> IntervalBounds:
     """Propagate bounds for interval + constant operation."""
-    strategy = IBPAddWithConstant()
+    strategy = IBPAdd()
     interval_bounds = IntervalBounds(lower=interval_lower, upper=interval_upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[interval_bounds, constant])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, interval_bounds, constant)
 
 
 def test_add_positive_intervals() -> None:
@@ -197,12 +199,12 @@ def test_add_associativity_property() -> None:
     strategy = IBPAdd()
 
     # (a + b) + c
-    ab = strategy.propagate_forwards(None, [a, b])  # ty:ignore[invalid-argument-type]
-    ab_c = strategy.propagate_forwards(None, [ab, c])  # ty:ignore[invalid-argument-type]
+    ab = propagate(strategy, a, b)
+    ab_c = propagate(strategy, ab, c)
 
     # a + (b + c)
-    bc = strategy.propagate_forwards(None, [b, c])  # ty:ignore[invalid-argument-type]
-    a_bc = strategy.propagate_forwards(None, [a, bc])  # ty:ignore[invalid-argument-type]
+    bc = propagate(strategy, b, c)
+    a_bc = propagate(strategy, a, bc)
 
     # Both should give the same result for addition (unlike multiplication)
     assert torch.allclose(ab_c.lower, a_bc.lower)
@@ -217,9 +219,9 @@ def test_add_commutativity_property() -> None:
     strategy = IBPAdd()
 
     # a + b
-    ab = strategy.propagate_forwards(None, [a, b])  # ty:ignore[invalid-argument-type]
+    ab = propagate(strategy, a, b)
     # b + a
-    ba = strategy.propagate_forwards(None, [b, a])  # ty:ignore[invalid-argument-type]
+    ba = propagate(strategy, b, a)
 
     assert torch.allclose(ab.lower, ba.lower)
     assert torch.allclose(ab.upper, ba.upper)

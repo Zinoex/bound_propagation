@@ -5,12 +5,14 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.relu import IBPRelu
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for relu operation."""
     strategy = IBPRelu()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_relu_positive_interval() -> None:
@@ -167,8 +169,8 @@ def test_relu_monotonicity() -> None:
 
     strategy = IBPRelu()
 
-    out_inner = strategy.propagate_forwards(None, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(None, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner)
+    out_outer = propagate(strategy, outer)
 
     # relu([1, 3]) = [1, 3] should be contained in relu([0, 5]) = [0, 5]
     # relu([-2, 1]) = [0, 1] should be contained in relu([-5, 2]) = [0, 2]
@@ -182,10 +184,10 @@ def test_relu_idempotency() -> None:
     a = IntervalBounds(torch.tensor([-3.0, 1.0, -5.0]), torch.tensor([4.0, 6.0, 2.0]))
 
     # relu(a)
-    relu_a = strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    relu_a = propagate(strategy, a)
 
     # relu(relu(a))
-    relu_relu_a = strategy.propagate_forwards(None, [relu_a])  # ty:ignore[invalid-argument-type]
+    relu_relu_a = propagate(strategy, relu_a)
 
     # Should be the same
     assert torch.allclose(relu_a.lower, relu_relu_a.lower)
@@ -198,7 +200,7 @@ def test_relu_preserves_positive_part() -> None:
     positive = IntervalBounds(torch.tensor([1.0, 2.0, 0.5]), torch.tensor([3.0, 5.0, 1.5]))
 
     strategy = IBPRelu()
-    result = strategy.propagate_forwards(None, [positive])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, positive)
 
     assert torch.allclose(result.lower, positive.lower)
     assert torch.allclose(result.upper, positive.upper)
@@ -210,7 +212,7 @@ def test_relu_zeros_negative_part() -> None:
     negative = IntervalBounds(torch.tensor([-5.0, -3.0, -1.0]), torch.tensor([-2.0, -1.0, 0.0]))
 
     strategy = IBPRelu()
-    result = strategy.propagate_forwards(None, [negative])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, negative)
 
     assert torch.allclose(result.lower, torch.zeros_like(result.lower))
     assert torch.allclose(result.upper, torch.zeros_like(result.upper))

@@ -8,6 +8,8 @@ from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.sin import ForwardLBPSin
 from bound_propagation.regions import HyperRectangle
 
+from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -29,7 +31,7 @@ def test_sin_small_positive_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     # Should have linear relaxation
     assert result.linear_lower is not None
@@ -51,7 +53,7 @@ def test_sin_increasing_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # sin(0) = 0, sin(π/2) = 1
@@ -70,7 +72,7 @@ def test_sin_crossing_maximum() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Should contain [√2/2, 1] ≈ [0.707, 1]
@@ -87,7 +89,7 @@ def test_sin_full_period() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # Should contain full range [-1, 1]
@@ -105,7 +107,7 @@ def test_sin_negative_interval() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # sin(-π/2) = -1, sin(0) = 0
@@ -123,7 +125,7 @@ def test_sin_zero_width() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For point interval, should be tight
@@ -140,7 +142,7 @@ def test_sin_zero_width_rising() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For point interval, should be tight
@@ -158,7 +160,7 @@ def test_sin_zero_width_falling() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
     # For point interval, should be tight
@@ -176,7 +178,7 @@ def test_sin_concave_region_first_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -198,7 +200,7 @@ def test_sin_concave_region_second_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -220,7 +222,7 @@ def test_sin_convex_region_first_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -242,7 +244,7 @@ def test_sin_convex_region_second_half() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -263,7 +265,7 @@ def test_sin_across_maximum_at_half_pi() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -284,7 +286,7 @@ def test_sin_across_minimum_at_3half_pi() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -306,7 +308,7 @@ def test_sin_strictly_increasing_small() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -328,7 +330,7 @@ def test_sin_strictly_decreasing_small() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -350,7 +352,7 @@ def test_sin_mixed_convexity_half_wave() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -372,7 +374,7 @@ def test_sin_negative_region_increasing() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 
@@ -393,7 +395,7 @@ def test_sin_large_interval_multiple_periods() -> None:
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPSin()
-    result = strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
 

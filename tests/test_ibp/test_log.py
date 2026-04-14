@@ -7,12 +7,14 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.exp import IBPExp
 from bound_propagation.propagation.ibp.log import IBPLog
 
+from tests.helpers import propagate
+
 
 def _propagate(lower: torch.Tensor, upper: torch.Tensor) -> IntervalBounds:
     """Propagate bounds for log operation."""
     strategy = IBPLog()
     bounds = IntervalBounds(lower=lower, upper=upper)
-    return strategy.propagate_forwards(node=None, input_bounds=[bounds])  # ty:ignore[invalid-argument-type]
+    return propagate(strategy, bounds)
 
 
 def test_log_positive_interval() -> None:
@@ -145,8 +147,8 @@ def test_log_monotonicity() -> None:
 
     strategy = IBPLog()
 
-    out_inner = strategy.propagate_forwards(None, [inner])  # ty:ignore[invalid-argument-type]
-    out_outer = strategy.propagate_forwards(None, [outer])  # ty:ignore[invalid-argument-type]
+    out_inner = propagate(strategy, inner)
+    out_outer = propagate(strategy, outer)
 
     assert out_outer.lower <= out_inner.lower
     assert out_outer.upper >= out_inner.upper
@@ -161,10 +163,10 @@ def test_log_composition_with_exp() -> None:
     log_strategy = IBPLog()
 
     # exp(a)
-    exp_a = exp_strategy.propagate_forwards(None, [a])  # ty:ignore[invalid-argument-type]
+    exp_a = propagate(exp_strategy, a)
 
     # log(exp(a))
-    result = log_strategy.propagate_forwards(None, [exp_a])  # ty:ignore[invalid-argument-type]
+    result = propagate(log_strategy, exp_a)
 
     # Should recover the original interval
     assert torch.allclose(result.lower, a.lower, rtol=1e-5)
