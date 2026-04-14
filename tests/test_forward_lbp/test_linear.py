@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.linear import ForwardLBPLinear
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -18,6 +18,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
         linear_upper=torch.eye(dim),
         bias_upper=torch.zeros(dim),
     )
+
 
 def test_linear_simple_transformation() -> None:
     """Test simple linear transformation."""
@@ -36,6 +37,7 @@ def test_linear_simple_transformation() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([5.0]))
     assert torch.allclose(upper, torch.tensor([7.0]))
+
 
 def test_linear_multi_input_multi_output() -> None:
     """Test linear layer with multiple inputs and outputs."""
@@ -63,6 +65,7 @@ def test_linear_multi_input_multi_output() -> None:
     assert torch.allclose(lower, torch.tensor([3.0, -4.0]))
     assert torch.allclose(upper, torch.tensor([5.0, -1.0]))
 
+
 def test_linear_no_bias() -> None:
     """Test linear transformation without bias."""
     # Region: x ∈ [2, 4]
@@ -79,6 +82,7 @@ def test_linear_no_bias() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([6.0]))
     assert torch.allclose(upper, torch.tensor([12.0]))
+
 
 def test_linear_negative_weights() -> None:
     """Test linear transformation with negative weights."""

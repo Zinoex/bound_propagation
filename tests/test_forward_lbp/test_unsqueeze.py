@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.unsqueeze import ForwardLBPUnsqueeze
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def test_unsqueeze_dim0() -> None:
     """Test unsqueeze at dimension 0."""
@@ -29,6 +29,7 @@ def test_unsqueeze_dim0() -> None:
     assert result.bias_lower.shape == (1, 12)
     assert result.bias_upper.shape == (1, 12)
 
+
 def test_unsqueeze_middle_dim() -> None:
     """Test unsqueeze at a middle dimension."""
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
@@ -49,6 +50,7 @@ def test_unsqueeze_middle_dim() -> None:
     assert result.bias_lower.shape == (1, 6)
     assert result.bias_upper.shape == (1, 6)
 
+
 def test_unsqueeze_last_dim() -> None:
     """Test unsqueeze at the last dimension."""
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
@@ -68,6 +70,7 @@ def test_unsqueeze_last_dim() -> None:
     # Should add a dimension at the end: (3,) -> (3, 1)
     assert result.bias_lower.shape == (3, 1)
     assert result.bias_upper.shape == (3, 1)
+
 
 def test_unsqueeze_1d_to_2d() -> None:
     """Test unsqueeze converting 1D to 2D tensor."""

@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.squeeze import ForwardLBPSqueeze
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def test_squeeze_single_dim() -> None:
     """Test squeeze on a specific dimension."""
@@ -29,6 +29,7 @@ def test_squeeze_single_dim() -> None:
     assert result.bias_lower.shape == (3, 1, 4)
     assert result.bias_upper.shape == (3, 1, 4)
 
+
 def test_squeeze_all_dims() -> None:
     """Test squeeze without specifying dimension (removes all size-1 dims)."""
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
@@ -48,6 +49,7 @@ def test_squeeze_all_dims() -> None:
     # Should squeeze all singleton dims: (1, 3, 1, 4) -> (3, 4)
     assert result.bias_lower.shape == (3, 4)
     assert result.bias_upper.shape == (3, 4)
+
 
 def test_squeeze_middle_dim() -> None:
     """Test squeeze on a middle dimension."""

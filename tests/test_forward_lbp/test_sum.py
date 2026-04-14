@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.sum import ForwardLBPSum
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def test_sum_all_elements() -> None:
     """Test sum over all elements."""
@@ -31,6 +31,7 @@ def test_sum_all_elements() -> None:
     assert torch.allclose(lower, torch.tensor(15.0))
     assert torch.allclose(upper, torch.tensor(25.0))
 
+
 def test_sum_along_dim() -> None:
     """Test sum along a specific dimension."""
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
@@ -52,6 +53,7 @@ def test_sum_along_dim() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor(21.0))
     assert torch.allclose(upper, torch.tensor(33.0))
+
 
 def test_sum_keepdim() -> None:
     """Test sum with keepdim=True."""

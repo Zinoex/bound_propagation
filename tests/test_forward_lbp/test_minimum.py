@@ -7,7 +7,6 @@ from bound_propagation.propagation.forward_lbp.minimum import (
     ForwardLBPMinimum,
 )
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
 
 

@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.stack import ForwardLBPStack
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def test_stack_two_tensors() -> None:
     """Test stacking two tensors."""
@@ -39,6 +39,7 @@ def test_stack_two_tensors() -> None:
     # torch.stack([tensor([1.]), tensor([3.])], dim=0) -> tensor([[1.], [3.]])
     assert torch.allclose(lower, torch.tensor([[1.0], [3.0]]))
     assert torch.allclose(upper, torch.tensor([[2.0], [4.0]]))
+
 
 def test_stack_three_tensors() -> None:
     """Test stacking three tensors."""
@@ -75,6 +76,7 @@ def test_stack_three_tensors() -> None:
     # torch.stack([tensor([1.]), tensor([2.]), tensor([3.])], dim=0) -> tensor([[1.], [2.], [3.]])
     assert torch.allclose(lower, torch.tensor([[1.0], [2.0], [3.0]]))
     assert torch.allclose(upper, torch.tensor([[2.0], [4.0], [5.0]]))
+
 
 def test_stack_dim1() -> None:
     """Test stacking along dimension 1."""

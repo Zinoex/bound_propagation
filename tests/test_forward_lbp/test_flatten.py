@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.flatten import ForwardLBPFlatten
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def test_flatten_2d_to_1d() -> None:
     """Test flattening a 2D tensor to 1D."""
@@ -31,6 +31,7 @@ def test_flatten_2d_to_1d() -> None:
     assert torch.allclose(result.bias_lower, torch.arange(6.0))
     assert torch.allclose(result.bias_upper, torch.arange(6.0) + 1)
 
+
 def test_flatten_3d_to_1d() -> None:
     """Test flattening a 3D tensor to 1D."""
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
@@ -52,6 +53,7 @@ def test_flatten_3d_to_1d() -> None:
     assert result.bias_upper.shape == (8,)
     assert torch.allclose(result.bias_lower, torch.arange(8.0))
     assert torch.allclose(result.bias_upper, torch.arange(8.0) + 2)
+
 
 def test_flatten_1d_identity() -> None:
     """Test flattening a 1D tensor (should be identity)."""

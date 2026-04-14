@@ -199,16 +199,18 @@ class TestIBPWorkflowComplexOperations:
         gm = _trace_and_annotate(sub_fn, (torch.randn(3), torch.randn(3)))
         propagator = IBPPropagator(gm)
 
-        outputs = propagator.propagate([
-            HyperRectangle(
-                lower=torch.tensor([5.0, 5.0, 5.0]),
-                upper=torch.tensor([10.0, 10.0, 10.0]),
-            ),
-            HyperRectangle(
-                lower=torch.tensor([1.0, 2.0, 3.0]),
-                upper=torch.tensor([1.0, 2.0, 3.0]),
-            ),
-        ])
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([5.0, 5.0, 5.0]),
+                    upper=torch.tensor([10.0, 10.0, 10.0]),
+                ),
+                HyperRectangle(
+                    lower=torch.tensor([1.0, 2.0, 3.0]),
+                    upper=torch.tensor([1.0, 2.0, 3.0]),
+                ),
+            ]
+        )
 
         out = outputs[0]
         assert isinstance(out, IntervalBounds)

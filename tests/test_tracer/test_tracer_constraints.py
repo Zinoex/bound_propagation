@@ -47,6 +47,7 @@ class TestTracerConstraints:
 
     def test_discrete_indexing_is_allowed(self):
         """operator.getitem is registered, so indexing works."""
+
         def model(x):
             return x[:, 0]
 

@@ -6,7 +6,6 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.neg import IBPNeg
 from bound_propagation.propagation.ibp.sigmoid import IBPSigmoid
 from bound_propagation.propagation.ibp.tanh import IBPTanh
-
 from tests.helpers import propagate
 
 

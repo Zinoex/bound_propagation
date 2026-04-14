@@ -7,7 +7,6 @@ from bound_propagation.propagation.ibp.add import IBPAdd
 from bound_propagation.propagation.ibp.cos import IBPCos
 from bound_propagation.propagation.ibp.neg import IBPNeg
 from bound_propagation.propagation.ibp.sin import IBPSin
-
 from tests.helpers import propagate
 
 

@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.clamp import ForwardLBPClamp
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -18,6 +18,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
         linear_upper=torch.eye(dim),
         bias_upper=torch.zeros(dim),
     )
+
 
 def test_clamp_interval_within_range() -> None:
     """Test clamp when interval is already within clamp range."""
@@ -39,6 +40,7 @@ def test_clamp_interval_within_range() -> None:
     assert torch.allclose(lower, torch.tensor([3.0]))
     assert torch.allclose(upper, torch.tensor([5.0]))
 
+
 def test_clamp_interval_below_range() -> None:
     """Test clamp when interval is completely below clamp range."""
     # Region: x ∈ [-5, -2]
@@ -54,6 +56,7 @@ def test_clamp_interval_below_range() -> None:
     assert torch.allclose(lower, torch.tensor([0.0]))
     assert torch.allclose(upper, torch.tensor([0.0]))
 
+
 def test_clamp_interval_above_range() -> None:
     """Test clamp when interval is completely above clamp range."""
     # Region: x ∈ [12, 15]
@@ -68,6 +71,7 @@ def test_clamp_interval_above_range() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([10.0]))
     assert torch.allclose(upper, torch.tensor([10.0]))
+
 
 def test_clamp_crosses_min() -> None:
     """Test clamp when interval crosses the minimum threshold."""
@@ -89,6 +93,7 @@ def test_clamp_crosses_min() -> None:
     assert torch.all(upper >= 4.9)
     assert torch.all(upper <= 5.1)
 
+
 def test_clamp_crosses_max() -> None:
     """Test clamp when interval crosses the maximum threshold."""
     # Region: x ∈ [3, 12]
@@ -107,6 +112,7 @@ def test_clamp_crosses_max() -> None:
     assert torch.all(upper >= 9.9)
     assert torch.all(upper <= 10.1)
 
+
 def test_clamp_crosses_both() -> None:
     """Test clamp when interval crosses both min and max thresholds."""
     # Region: x ∈ [-5, 15]
@@ -124,6 +130,7 @@ def test_clamp_crosses_both() -> None:
     assert torch.all(upper >= 9.5)
     assert torch.all(upper <= 10.1)
 
+
 def test_clamp_only_min() -> None:
     """Test clamp with only min specified."""
     # Region: x ∈ [-2, 5]
@@ -140,6 +147,7 @@ def test_clamp_only_min() -> None:
     assert torch.all(upper >= 4.9)
     assert torch.all(upper <= 5.1)
 
+
 def test_clamp_only_max() -> None:
     """Test clamp with only max specified."""
     # Region: x ∈ [3, 12]
@@ -155,6 +163,7 @@ def test_clamp_only_max() -> None:
     assert torch.all(lower <= 3.1)
     assert torch.all(upper >= 9.9)
     assert torch.all(upper <= 10.1)
+
 
 def test_clamp_point_interval() -> None:
     """Test clamp on a point interval."""

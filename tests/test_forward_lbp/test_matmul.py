@@ -7,8 +7,8 @@ from bound_propagation.propagation.forward_lbp.matmul import (
     ForwardLBPMatmul,
 )
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
@@ -20,6 +20,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
         linear_upper=torch.eye(dim),
         bias_upper=torch.zeros(dim),
     )
+
 
 def test_matmul_abstract_times_constant() -> None:
     """Test matmul: abstract @ constant."""
@@ -39,6 +40,7 @@ def test_matmul_abstract_times_constant() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([7.0]))
     assert torch.allclose(upper, torch.tensor([10.0]))
+
 
 def test_matmul_constant_times_abstract() -> None:
     """Test matmul: constant @ abstract."""
@@ -62,6 +64,7 @@ def test_matmul_constant_times_abstract() -> None:
     assert torch.allclose(lower, torch.tensor([7.0, 6.0]))
     assert torch.allclose(upper, torch.tensor([10.0, 10.0]))
 
+
 def test_matmul_2d_constant() -> None:
     """Test matmul with 2D weight matrix."""
     # Region: x0 ∈ [0, 1], x1 ∈ [0, 1]
@@ -80,6 +83,7 @@ def test_matmul_2d_constant() -> None:
     # At (x0, x1) = (1, 1): [2, 3]
     assert torch.allclose(lower, torch.tensor([0.0, 0.0]))
     assert torch.allclose(upper, torch.tensor([2.0, 3.0]))
+
 
 def test_matmul_negative_weights() -> None:
     """Test matmul with negative weights."""

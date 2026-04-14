@@ -5,7 +5,6 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.relu import ForwardLBPRelu
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
 
 

@@ -6,7 +6,6 @@ from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.max import IBPMax
 from bound_propagation.propagation.ibp.min import IBPMin
 from bound_propagation.propagation.ibp.neg import IBPNeg
-
 from tests.helpers import propagate
 
 

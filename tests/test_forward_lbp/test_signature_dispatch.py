@@ -9,6 +9,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
+from bound_propagation.passes import MetadataPass
 from bound_propagation.propagation import ForwardLBPPropagator, TargetRegistry
 from bound_propagation.propagation.forward_lbp import (
     ForwardLBPAdd,
@@ -16,10 +17,8 @@ from bound_propagation.propagation.forward_lbp import (
     ForwardLBPMul,
     create_default_forward_lbp_registry,
 )
-from bound_propagation.passes import MetadataPass
 from bound_propagation.regions import HyperRectangle
 from bound_propagation.tracer import BoundPropagationTracer
-
 from tests.helpers import propagate
 
 

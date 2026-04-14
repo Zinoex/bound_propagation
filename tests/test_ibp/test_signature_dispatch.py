@@ -13,13 +13,12 @@ import torch
 import torch.fx as fx
 
 from bound_propagation.bounds import IntervalBounds
+from bound_propagation.passes import MetadataPass
 from bound_propagation.propagation import IBPPropagator, TargetRegistry
 from bound_propagation.propagation.ibp import IBPAdd, IBPMatmul, IBPMul, create_default_ibp_registry
 from bound_propagation.propagation.registry import normalize_target
-from bound_propagation.passes import MetadataPass
 from bound_propagation.regions import HyperRectangle
 from bound_propagation.tracer import BoundPropagationTracer
-
 from tests.helpers import propagate
 
 
@@ -124,6 +123,7 @@ class TestIBPEndToEndDispatch:
 
     def test_add_with_constant_dispatches_correctly(self) -> None:
         """Test that x + constant and x + y use the same IBPAdd strategy."""
+
         def fn(x):
             return x + torch.tensor([2.0, 3.0])
 
@@ -133,12 +133,14 @@ class TestIBPEndToEndDispatch:
         MetadataPass(gm).run(torch.randn(2))
 
         propagator = IBPPropagator(gm, registry)
-        outputs = propagator.propagate([
-            HyperRectangle(
-                lower=torch.tensor([0.0, 1.0]),
-                upper=torch.tensor([1.0, 2.0]),
-            )
-        ])
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([0.0, 1.0]),
+                    upper=torch.tensor([1.0, 2.0]),
+                )
+            ]
+        )
 
         out = outputs[0]
         assert isinstance(out, IntervalBounds)
@@ -147,6 +149,7 @@ class TestIBPEndToEndDispatch:
 
     def test_constant_mul_then_add(self) -> None:
         """Test chain: (x + [2, 3]) * [2, -1]."""
+
         def fn(x):
             return (x + torch.tensor([2.0, 3.0])) * torch.tensor([2.0, -1.0])
 
@@ -156,12 +159,14 @@ class TestIBPEndToEndDispatch:
         MetadataPass(gm).run(torch.randn(2))
 
         propagator = IBPPropagator(gm, registry)
-        outputs = propagator.propagate([
-            HyperRectangle(
-                lower=torch.tensor([0.0, 1.0]),
-                upper=torch.tensor([1.0, 2.0]),
-            )
-        ])
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([0.0, 1.0]),
+                    upper=torch.tensor([1.0, 2.0]),
+                )
+            ]
+        )
 
         # x in [0,1]x[1,2], add [2,3] -> [2,3]x[4,5]
         # multiply by [2,-1] -> [4,6]x[-5,-4]
@@ -172,6 +177,7 @@ class TestIBPEndToEndDispatch:
 
     def test_matmul_with_constant_weight(self) -> None:
         """Test matmul dispatch with constant weight matrix."""
+
         def fn(x):
             weight = torch.tensor([[1.0, -0.5, 2.0], [0.5, 1.0, -1.0]])
             return x @ weight
@@ -182,12 +188,14 @@ class TestIBPEndToEndDispatch:
         MetadataPass(gm).run(torch.randn(2))
 
         propagator = IBPPropagator(gm, registry)
-        outputs = propagator.propagate([
-            HyperRectangle(
-                lower=torch.tensor([0.0, 0.0]),
-                upper=torch.tensor([1.0, 1.0]),
-            )
-        ])
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([0.0, 0.0]),
+                    upper=torch.tensor([1.0, 1.0]),
+                )
+            ]
+        )
 
         out = outputs[0]
         assert isinstance(out, IntervalBounds)
@@ -196,6 +204,7 @@ class TestIBPEndToEndDispatch:
 
     def test_two_abstract_inputs_subtraction(self) -> None:
         """Test propagation with two abstract inputs (x - y)."""
+
         def fn(x, y):
             return x - y
 
@@ -205,16 +214,18 @@ class TestIBPEndToEndDispatch:
         MetadataPass(gm).run(torch.randn(2), torch.randn(2))
 
         propagator = IBPPropagator(gm, registry)
-        outputs = propagator.propagate([
-            HyperRectangle(
-                lower=torch.tensor([5.0, 5.0]),
-                upper=torch.tensor([10.0, 10.0]),
-            ),
-            HyperRectangle(
-                lower=torch.tensor([1.0, 2.0]),
-                upper=torch.tensor([1.0, 2.0]),
-            ),
-        ])
+        outputs = propagator.propagate(
+            [
+                HyperRectangle(
+                    lower=torch.tensor([5.0, 5.0]),
+                    upper=torch.tensor([10.0, 10.0]),
+                ),
+                HyperRectangle(
+                    lower=torch.tensor([1.0, 2.0]),
+                    upper=torch.tensor([1.0, 2.0]),
+                ),
+            ]
+        )
 
         out = outputs[0]
         assert isinstance(out, IntervalBounds)

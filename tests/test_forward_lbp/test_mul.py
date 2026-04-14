@@ -7,7 +7,6 @@ from bound_propagation.propagation.forward_lbp.mul import (
     ForwardLBPMul,
 )
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
 
 

@@ -103,6 +103,7 @@ class TestTraceFunction:
 
     def test_trace_validates_all_operations(self):
         """Test that unsupported operations in a multi-op graph are caught."""
+
         def mixed_fn(x):
             y = torch.relu(x)  # supported
             return torch.erf(y)  # unsupported
@@ -116,6 +117,7 @@ class TestTracerWithModules:
 
     def test_registered_module_kept_as_leaf(self):
         """Registered module types should be kept as leaf (call_module) nodes."""
+
         class Model(nn.Module):
             def __init__(self):
                 super().__init__()
@@ -132,6 +134,7 @@ class TestTracerWithModules:
 
     def test_unregistered_module_is_traced_into(self):
         """Unregistered module types should be traced into (not call_module)."""
+
         class CustomLayer(nn.Module):
             def forward(self, x):
                 return torch.relu(x) + 1.0

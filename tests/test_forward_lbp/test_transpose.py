@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.transpose import ForwardLBPTranspose
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def test_transpose_2d() -> None:
     """Test transpose on 2D tensor."""
@@ -52,6 +52,7 @@ def test_transpose_2d() -> None:
     assert torch.allclose(lower, expected_lower)
     assert torch.allclose(upper, expected_upper)
 
+
 def test_transpose_3d() -> None:
     """Test transpose on 3D tensor."""
     # Region: 8 elements for shape (2, 2, 2)
@@ -89,6 +90,7 @@ def test_transpose_3d() -> None:
     assert lower.shape == (2, 2, 2)
     assert upper.shape == (2, 2, 2)
 
+
 def test_transpose_identity() -> None:
     """Test transpose with same dimensions (identity)."""
     # Region: 4 elements for shape (2, 2)
@@ -120,6 +122,7 @@ def test_transpose_identity() -> None:
     # Should be unchanged
     assert torch.allclose(lower, torch.ones(2, 2))
     assert torch.allclose(upper, torch.full((2, 2), 2.0))
+
 
 def test_transpose_with_bias() -> None:
     """Test transpose with non-identity linear bounds."""

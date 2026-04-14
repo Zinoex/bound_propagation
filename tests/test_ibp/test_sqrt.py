@@ -5,7 +5,6 @@ import torch
 
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.sqrt import IBPSqrt
-
 from tests.helpers import propagate
 
 

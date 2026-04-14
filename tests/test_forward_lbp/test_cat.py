@@ -5,8 +5,8 @@ import torch
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.propagation.forward_lbp.cat import ForwardLBPConcat
 from bound_propagation.regions import HyperRectangle
-
 from tests.helpers import propagate
+
 
 def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> LinearBounds:
     """Create identity linear bounds from a region with specific shape."""
@@ -18,6 +18,7 @@ def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> Linea
         linear_upper=torch.eye(dim).view(shape + (dim,)),
         bias_upper=torch.zeros(shape),
     )
+
 
 def test_cat_two_tensors_dim0() -> None:
     """Test concatenating two tensors along dimension 0."""
@@ -51,6 +52,7 @@ def test_cat_two_tensors_dim0() -> None:
     assert torch.allclose(lower, torch.tensor([1.0, 3.0]))
     assert torch.allclose(upper, torch.tensor([2.0, 4.0]))
 
+
 def test_cat_two_tensors_dim1() -> None:
     """Test concatenating two tensors along dimension 1."""
     # Region: x0 ∈ [0, 1], x1 ∈ [2, 3]
@@ -81,6 +83,7 @@ def test_cat_two_tensors_dim1() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([[0.0, 0.0], [2.0, 2.0]]))
     assert torch.allclose(upper, torch.tensor([[1.0, 1.0], [3.0, 3.0]]))
+
 
 def test_cat_three_tensors() -> None:
     """Test concatenating three tensors."""
@@ -119,6 +122,7 @@ def test_cat_three_tensors() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0, 2.0, 3.0]))
     assert torch.allclose(upper, torch.tensor([2.0, 4.0, 5.0]))
+
 
 def test_cat_single_tensor() -> None:
     """Test concatenating a single tensor (edge case)."""

@@ -5,7 +5,6 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.mean import IBPMean
 from bound_propagation.propagation.ibp.sum import IBPSum
-
 from tests.helpers import propagate
 
 

@@ -4,7 +4,6 @@ import torch
 
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.relu import IBPRelu
-
 from tests.helpers import propagate
 
 
