@@ -62,20 +62,36 @@ class ForwardLBPMul(ForwardLBPStrategy):
         positive_mask = constant_tensor >= 0
 
         linear_lower = [
-            torch.where(
-                positive_mask.unsqueeze(-1),
-                constant_tensor.unsqueeze(-1) * lower_linear,
-                constant_tensor.unsqueeze(-1) * upper_linear,
-            )
+            torch.where(mask, scale * lower_linear, scale * upper_linear)
             for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+            for scale, mask in [
+                (
+                    constant_tensor.reshape(
+                        *constant_tensor.shape,
+                        *([1] * (lower_linear.ndim - constant_tensor.ndim)),
+                    ),
+                    positive_mask.reshape(
+                        *positive_mask.shape,
+                        *([1] * (lower_linear.ndim - positive_mask.ndim)),
+                    ),
+                )
+            ]
         ]
         linear_upper = [
-            torch.where(
-                positive_mask.unsqueeze(-1),
-                constant_tensor.unsqueeze(-1) * upper_linear,
-                constant_tensor.unsqueeze(-1) * lower_linear,
-            )
+            torch.where(mask, scale * upper_linear, scale * lower_linear)
             for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+            for scale, mask in [
+                (
+                    constant_tensor.reshape(
+                        *constant_tensor.shape,
+                        *([1] * (lower_linear.ndim - constant_tensor.ndim)),
+                    ),
+                    positive_mask.reshape(
+                        *positive_mask.shape,
+                        *([1] * (lower_linear.ndim - positive_mask.ndim)),
+                    ),
+                )
+            ]
         ]
 
         bias_lower_pos = constant_tensor * bounds.bias_lower

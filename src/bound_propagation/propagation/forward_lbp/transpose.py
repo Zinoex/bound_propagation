@@ -81,8 +81,14 @@ class ForwardLBPPermute(ForwardLBPStrategy):
         if sorted(dims) != list(range(output_ndim)):
             raise ValueError(f"invalid permutation for {output_ndim} dims: {dims}")
 
-        linear_lower = transform_linear_terms(bounds.linear_lowers, lambda linear: linear.permute(*dims, output_ndim))
-        linear_upper = transform_linear_terms(bounds.linear_uppers, lambda linear: linear.permute(*dims, output_ndim))
+        linear_lower = transform_linear_terms(
+            bounds.linear_lowers,
+            lambda linear: linear.permute(*dims, *range(output_ndim, linear.ndim)),
+        )
+        linear_upper = transform_linear_terms(
+            bounds.linear_uppers,
+            lambda linear: linear.permute(*dims, *range(output_ndim, linear.ndim)),
+        )
         bias_lower = bounds.bias_lower.permute(*dims)
         bias_upper = bounds.bias_upper.permute(*dims)
 

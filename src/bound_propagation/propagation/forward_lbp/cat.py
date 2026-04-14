@@ -53,18 +53,36 @@ class ForwardLBPConcat(ForwardLBPStrategy):
         linear_lower: list[torch.Tensor] = []
         linear_upper: list[torch.Tensor] = []
         for input_id, region in zip(ordered_ids, regions, strict=True):
-            input_dim = torch.Size(region.shape).numel()  # type: ignore[union-attr]
+            expected_input_axes: torch.Size | None = None
             lower_parts: list[torch.Tensor] = []
             upper_parts: list[torch.Tensor] = []
             for b, lookup in zip(bounds_list, id_index, strict=True):
                 if input_id in lookup:
                     idx = lookup[input_id]
-                    lower_parts.append(b.linear_lowers[idx])
-                    upper_parts.append(b.linear_uppers[idx])
+                    lower_linear = b.linear_lowers[idx]
+                    upper_linear = b.linear_uppers[idx]
+                    lower_input_axes = lower_linear.shape[len(b.bias_lower.shape) :]
+                    upper_input_axes = upper_linear.shape[len(b.bias_upper.shape) :]
+                    if lower_input_axes != upper_input_axes:
+                        raise ValueError(
+                            f"Lower and upper input axes must match for input_id {input_id}: "
+                            f"{tuple(lower_input_axes)} vs {tuple(upper_input_axes)}"
+                        )
+                    if expected_input_axes is None:
+                        expected_input_axes = lower_input_axes
+                    elif expected_input_axes != lower_input_axes:
+                        raise ValueError(
+                            f"Inconsistent input axes for input_id {input_id}: "
+                            f"expected {tuple(expected_input_axes)}, got {tuple(lower_input_axes)}"
+                        )
+                    lower_parts.append(lower_linear)
+                    upper_parts.append(upper_linear)
                 else:
+                    if expected_input_axes is None:
+                        expected_input_axes = torch.Size(region.shape)
                     zeros = torch.zeros(
                         *b.bias_lower.shape,
-                        input_dim,
+                        *expected_input_axes,
                         dtype=b.bias_lower.dtype,
                         device=b.bias_lower.device,
                     )

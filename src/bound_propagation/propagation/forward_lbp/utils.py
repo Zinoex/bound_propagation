@@ -139,20 +139,18 @@ def apply_linear_relaxation(
     # y_lower = alpha_lower * (W_l@x0 + b_l) + beta_lower = (alpha_lower*W_l)@x0 + (alpha_lower*b_l + beta_lower)
     # y_upper = alpha_upper * (W_u@x0 + b_u) + beta_upper = (alpha_upper*W_u)@x0 + (alpha_upper*b_u + beta_upper)
 
-    # Flatten alpha and beta for element-wise multiplication
-    alpha_lower_flat = alpha_lower.flatten()
-    alpha_upper_flat = alpha_upper.flatten()
-
-    linear_lower = [alpha_lower_flat.unsqueeze(-1) * linear for linear in bounds.linear_lowers]
-    linear_upper = [alpha_upper_flat.unsqueeze(-1) * linear for linear in bounds.linear_uppers]
+    linear_lower = [
+        alpha_lower.reshape(alpha_lower.shape + (1,) * (linear.ndim - alpha_lower.ndim)) * linear
+        for linear in bounds.linear_lowers
+    ]
+    linear_upper = [
+        alpha_upper.reshape(alpha_upper.shape + (1,) * (linear.ndim - alpha_upper.ndim)) * linear
+        for linear in bounds.linear_uppers
+    ]
 
     # Apply to bias terms
-    bias_lower = alpha_lower.flatten() * bounds.bias_lower.flatten() + beta_lower.flatten()
-    bias_upper = alpha_upper.flatten() * bounds.bias_upper.flatten() + beta_upper.flatten()
-
-    # Reshape bias to original shape
-    bias_lower = bias_lower.view(bounds.bias_lower.shape)
-    bias_upper = bias_upper.view(bounds.bias_upper.shape)
+    bias_lower = alpha_lower * bounds.bias_lower + beta_lower
+    bias_upper = alpha_upper * bounds.bias_upper + beta_upper
 
     return LinearBounds(
         regions=bounds.regions,

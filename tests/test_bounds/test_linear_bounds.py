@@ -68,6 +68,43 @@ class TestLinearBounds:
         assert torch.allclose(upper, torch.tensor([10.0]))
         assert bounds.input_ids == [11, 22]
 
+    def test_concretize_with_unflattened_scalar_input_axis(self):
+        """Test concretization with a scalar input region and no flattened input axis."""
+        region = HyperRectangle(torch.tensor(2.0), torch.tensor(3.0))
+
+        bounds = LinearBounds(
+            regions=[region],
+            linear_lower=[torch.tensor([2.0])],
+            bias_lower=torch.tensor([0.5]),
+            linear_upper=[torch.tensor([4.0])],
+            bias_upper=torch.tensor([1.0]),
+        )
+
+        lower, upper = bounds.concretize()
+
+        assert torch.allclose(lower, torch.tensor([4.5]))
+        assert torch.allclose(upper, torch.tensor([13.0]))
+
+    def test_concretize_with_unflattened_matrix_input_axes(self):
+        """Test concretization with matrix-shaped input axes kept unflattened."""
+        region = HyperRectangle(
+            torch.tensor([[0.0, 1.0], [2.0, 3.0]]),
+            torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+        )
+
+        bounds = LinearBounds(
+            regions=[region],
+            linear_lower=[torch.ones(1, 2, 2)],
+            bias_lower=torch.tensor([0.0]),
+            linear_upper=[2 * torch.ones(1, 2, 2)],
+            bias_upper=torch.tensor([1.0]),
+        )
+
+        lower, upper = bounds.concretize()
+
+        assert torch.allclose(lower, torch.tensor([6.0]))
+        assert torch.allclose(upper, torch.tensor([21.0]))
+
     @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_basic(self):
         """Test forward composition with linear bounds."""

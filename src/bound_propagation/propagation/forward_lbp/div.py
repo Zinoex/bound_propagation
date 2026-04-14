@@ -66,20 +66,36 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         positive_mask = divisor > 0
 
         linear_lower = [
-            torch.where(
-                positive_mask.unsqueeze(-1),
-                lower_linear / divisor.unsqueeze(-1),
-                upper_linear / divisor.unsqueeze(-1),
-            )
+            torch.where(mask, lower_linear / scale, upper_linear / scale)
             for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+            for scale, mask in [
+                (
+                    divisor.reshape(
+                        *divisor.shape,
+                        *([1] * (lower_linear.ndim - divisor.ndim)),
+                    ),
+                    positive_mask.reshape(
+                        *positive_mask.shape,
+                        *([1] * (lower_linear.ndim - positive_mask.ndim)),
+                    ),
+                )
+            ]
         ]
         linear_upper = [
-            torch.where(
-                positive_mask.unsqueeze(-1),
-                upper_linear / divisor.unsqueeze(-1),
-                lower_linear / divisor.unsqueeze(-1),
-            )
+            torch.where(mask, upper_linear / scale, lower_linear / scale)
             for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+            for scale, mask in [
+                (
+                    divisor.reshape(
+                        *divisor.shape,
+                        *([1] * (lower_linear.ndim - divisor.ndim)),
+                    ),
+                    positive_mask.reshape(
+                        *positive_mask.shape,
+                        *([1] * (lower_linear.ndim - positive_mask.ndim)),
+                    ),
+                )
+            ]
         ]
 
         bias_lower_pos = bounds.bias_lower / divisor

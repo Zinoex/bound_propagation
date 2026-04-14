@@ -15,6 +15,70 @@ if TYPE_CHECKING:
 class ForwardLBPMatmul(ForwardLBPStrategy):
     """Forward LBP strategy for matmul (abstract@abstract, abstract@constant, constant@abstract)."""
 
+    @staticmethod
+    def _matmul_right_constant_linear(
+        linear_lowers: list[torch.Tensor],
+        linear_uppers: list[torch.Tensor],
+        weight_pos: torch.Tensor,
+        weight_neg: torch.Tensor,
+        output_ndim: int,
+        *,
+        upper: bool,
+    ) -> list[torch.Tensor]:
+        transformed: list[torch.Tensor] = []
+        for lower_linear, upper_linear in zip(linear_lowers, linear_uppers, strict=True):
+            input_axes = lower_linear.shape[output_ndim:]
+            batch_shape = lower_linear.shape[: output_ndim - 1]
+            feature_dim = lower_linear.shape[output_ndim - 1]
+
+            lower_flat = lower_linear.reshape(*batch_shape, feature_dim, -1)
+            upper_flat = upper_linear.reshape(*batch_shape, feature_dim, -1)
+
+            if upper:
+                transformed_flat = torch.einsum("...kd,ko->...od", upper_flat, weight_pos) + torch.einsum(
+                    "...kd,ko->...od", lower_flat, weight_neg
+                )
+            else:
+                transformed_flat = torch.einsum("...kd,ko->...od", lower_flat, weight_pos) + torch.einsum(
+                    "...kd,ko->...od", upper_flat, weight_neg
+                )
+
+            transformed.append(transformed_flat.reshape(*batch_shape, weight_pos.shape[1], *input_axes))
+
+        return transformed
+
+    @staticmethod
+    def _matmul_left_constant_linear(
+        linear_lowers: list[torch.Tensor],
+        linear_uppers: list[torch.Tensor],
+        weight_pos: torch.Tensor,
+        weight_neg: torch.Tensor,
+        output_ndim: int,
+        *,
+        upper: bool,
+    ) -> list[torch.Tensor]:
+        transformed: list[torch.Tensor] = []
+        for lower_linear, upper_linear in zip(linear_lowers, linear_uppers, strict=True):
+            input_axes = lower_linear.shape[output_ndim:]
+            batch_shape = lower_linear.shape[: output_ndim - 1]
+            feature_dim = lower_linear.shape[output_ndim - 1]
+
+            lower_flat = lower_linear.reshape(*batch_shape, feature_dim, -1)
+            upper_flat = upper_linear.reshape(*batch_shape, feature_dim, -1)
+
+            if upper:
+                transformed_flat = torch.einsum("ok,...kd->...od", weight_pos, upper_flat) + torch.einsum(
+                    "ok,...kd->...od", weight_neg, lower_flat
+                )
+            else:
+                transformed_flat = torch.einsum("ok,...kd->...od", weight_pos, lower_flat) + torch.einsum(
+                    "ok,...kd->...od", weight_neg, upper_flat
+                )
+
+            transformed.append(transformed_flat.reshape(*batch_shape, weight_pos.shape[0], *input_axes))
+
+        return transformed
+
     def propagate_forward(
         self,
         node: fx.Node,
@@ -50,22 +114,29 @@ class ForwardLBPMatmul(ForwardLBPStrategy):
 
         weight_pos = weight.clamp(min=0)
         weight_neg = weight.clamp(max=0)
+        output_ndim = bounds.bias_lower.ndim
 
-        linear_lower = [
-            torch.einsum("...kd,ko->...od", lower_linear, weight_pos)
-            + torch.einsum("...kd,ko->...od", upper_linear, weight_neg)
-            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
+        linear_lower = self._matmul_right_constant_linear(
+            bounds.linear_lowers,
+            bounds.linear_uppers,
+            weight_pos,
+            weight_neg,
+            output_ndim,
+            upper=False,
+        )
 
         bias_lower = torch.einsum("...k,ko->...o", bounds.bias_lower, weight_pos) + torch.einsum(
             "...k,ko->...o", bounds.bias_upper, weight_neg
         )
 
-        linear_upper = [
-            torch.einsum("...kd,ko->...od", upper_linear, weight_pos)
-            + torch.einsum("...kd,ko->...od", lower_linear, weight_neg)
-            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
+        linear_upper = self._matmul_right_constant_linear(
+            bounds.linear_lowers,
+            bounds.linear_uppers,
+            weight_pos,
+            weight_neg,
+            output_ndim,
+            upper=True,
+        )
 
         bias_upper = torch.einsum("...k,ko->...o", bounds.bias_upper, weight_pos) + torch.einsum(
             "...k,ko->...o", bounds.bias_lower, weight_neg
@@ -94,22 +165,29 @@ class ForwardLBPMatmul(ForwardLBPStrategy):
 
         weight_pos = weight.clamp(min=0)
         weight_neg = weight.clamp(max=0)
+        output_ndim = bounds.bias_lower.ndim
 
-        linear_lower = [
-            torch.einsum("ok,...kd->...od", weight_pos, lower_linear)
-            + torch.einsum("ok,...kd->...od", weight_neg, upper_linear)
-            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
+        linear_lower = self._matmul_left_constant_linear(
+            bounds.linear_lowers,
+            bounds.linear_uppers,
+            weight_pos,
+            weight_neg,
+            output_ndim,
+            upper=False,
+        )
 
         bias_lower = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_lower) + torch.einsum(
             "ok,...k->...o", weight_neg, bounds.bias_upper
         )
 
-        linear_upper = [
-            torch.einsum("ok,...kd->...od", weight_pos, upper_linear)
-            + torch.einsum("ok,...kd->...od", weight_neg, lower_linear)
-            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
+        linear_upper = self._matmul_left_constant_linear(
+            bounds.linear_lowers,
+            bounds.linear_uppers,
+            weight_pos,
+            weight_neg,
+            output_ndim,
+            upper=True,
+        )
 
         bias_upper = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_upper) + torch.einsum(
             "ok,...k->...o", weight_neg, bounds.bias_lower

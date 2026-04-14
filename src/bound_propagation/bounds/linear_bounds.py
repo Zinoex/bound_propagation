@@ -124,15 +124,24 @@ class LinearBounds(AbstractBounds):
 
         for name, linears in (("linear_lower", linear_lower), ("linear_upper", linear_upper)):
             for linear, region in zip(linears, regions, strict=True):
-                if linear.shape[:-1] != bias_lower.shape:
+                if len(linear.shape) < len(bias_lower.shape):
                     raise ValueError(
-                        f"{name} output shape must match bias shape: {linear.shape[:-1]} vs {bias_lower.shape}"
+                        f"{name} must include output axes matching bias shape {bias_lower.shape}, got {linear.shape}"
                     )
 
-                expected_input_dim = torch.Size(region.shape).numel()
-                if linear.shape[-1] != expected_input_dim:
+                output_shape = linear.shape[: len(bias_lower.shape)]
+                if output_shape != bias_lower.shape:
                     raise ValueError(
-                        f"{name} input dimension must match region size {expected_input_dim}, got {linear.shape[-1]}"
+                        f"{name} output shape must match bias shape: {output_shape} vs {bias_lower.shape}"
+                    )
+
+                input_axes = linear.shape[len(bias_lower.shape) :]
+                region_shape = torch.Size(region.shape)
+                flattened_region_shape = torch.Size([region_shape.numel()])
+                if input_axes not in (region_shape, flattened_region_shape):
+                    raise ValueError(
+                        f"{name} input axes must match region shape {tuple(region_shape)} "
+                        f"(or legacy flattened shape {tuple(flattened_region_shape)}), got {tuple(input_axes)}"
                     )
 
     @staticmethod
@@ -174,20 +183,56 @@ class LinearBounds(AbstractBounds):
     @staticmethod
     def _minimize_affine_term(region: SimpleRegion, linear: torch.Tensor) -> torch.Tensor:
         if isinstance(region, HyperRectangle):
-            input_lower = region.lower.flatten()
-            input_upper = region.upper.flatten()
-            contributions = torch.where(linear > 0, linear * input_lower, linear * input_upper)
-            return contributions.sum(dim=-1)
+            input_lower = region.lower
+            input_upper = region.upper
+
+            region_shape = torch.Size(region.shape)
+            flattened_region_shape = torch.Size([region_shape.numel()])
+            input_axes = linear.shape[-len(region_shape) :] if len(region_shape) > 0 else torch.Size([])
+
+            if input_axes == region_shape:
+                contributions = torch.where(linear > 0, linear * input_lower, linear * input_upper)
+                sum_dims = tuple(range(-len(region_shape), 0))
+                return contributions.sum(dim=sum_dims) if sum_dims else contributions
+
+            trailing_axes = linear.shape[-1:]
+            if trailing_axes == flattened_region_shape:
+                flat_lower = input_lower.reshape(flattened_region_shape)
+                flat_upper = input_upper.reshape(flattened_region_shape)
+                contributions = torch.where(linear > 0, linear * flat_lower, linear * flat_upper)
+                return contributions.sum(dim=-1)
+
+            raise ValueError(
+                f"linear input axes {tuple(linear.shape)} are incompatible with region shape {tuple(region_shape)}"
+            )
 
         raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
 
     @staticmethod
     def _maximize_affine_term(region: SimpleRegion, linear: torch.Tensor) -> torch.Tensor:
         if isinstance(region, HyperRectangle):
-            input_lower = region.lower.flatten()
-            input_upper = region.upper.flatten()
-            contributions = torch.where(linear > 0, linear * input_upper, linear * input_lower)
-            return contributions.sum(dim=-1)
+            input_lower = region.lower
+            input_upper = region.upper
+
+            region_shape = torch.Size(region.shape)
+            flattened_region_shape = torch.Size([region_shape.numel()])
+            input_axes = linear.shape[-len(region_shape) :] if len(region_shape) > 0 else torch.Size([])
+
+            if input_axes == region_shape:
+                contributions = torch.where(linear > 0, linear * input_upper, linear * input_lower)
+                sum_dims = tuple(range(-len(region_shape), 0))
+                return contributions.sum(dim=sum_dims) if sum_dims else contributions
+
+            trailing_axes = linear.shape[-1:]
+            if trailing_axes == flattened_region_shape:
+                flat_lower = input_lower.reshape(flattened_region_shape)
+                flat_upper = input_upper.reshape(flattened_region_shape)
+                contributions = torch.where(linear > 0, linear * flat_upper, linear * flat_lower)
+                return contributions.sum(dim=-1)
+
+            raise ValueError(
+                f"linear input axes {tuple(linear.shape)} are incompatible with region shape {tuple(region_shape)}"
+            )
 
         raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
 
@@ -313,14 +358,27 @@ class LinearBounds(AbstractBounds):
 
     def __getitem__(self, item) -> LinearBounds:
         """Slice/index the bounds."""
-        linear_item = item if isinstance(item, tuple) else (item,)
-        linear_item = linear_item + (slice(None),)
+        output_item = item if isinstance(item, tuple) else (item,)
+
+        def _index_linear(linear: torch.Tensor, region: SimpleRegion) -> torch.Tensor:
+            input_ndim = len(torch.Size(region.shape))
+            if input_ndim > 0:
+                linear_item = output_item + (slice(None),) * input_ndim
+            else:
+                linear_item = output_item
+            return linear[linear_item]
 
         return LinearBounds(
             regions=self._regions,
-            linear_lower=[linear[linear_item] for linear in self._linear_lower],
+            linear_lower=[
+                _index_linear(linear, region)
+                for linear, region in zip(self._linear_lower, self._regions, strict=True)
+            ],
             bias_lower=self.bias_lower[item],
-            linear_upper=[linear[linear_item] for linear in self._linear_upper],
+            linear_upper=[
+                _index_linear(linear, region)
+                for linear, region in zip(self._linear_upper, self._regions, strict=True)
+            ],
             bias_upper=self.bias_upper[item],
             input_ids=self._input_ids.copy() if self._input_ids else None,
         )

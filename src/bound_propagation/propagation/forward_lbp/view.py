@@ -32,13 +32,15 @@ class ForwardLBPView(ForwardLBPStrategy):
         else:
             shape = tuple(args[1:])
 
+        output_ndim = bounds.bias_lower.ndim
+
         linear_lower = transform_linear_terms(
             bounds.linear_lowers,
-            lambda linear: linear.view(*shape, linear.shape[-1]),
+            lambda linear: linear.view(*shape, *linear.shape[output_ndim:]),
         )
         linear_upper = transform_linear_terms(
             bounds.linear_uppers,
-            lambda linear: linear.view(*shape, linear.shape[-1]),
+            lambda linear: linear.view(*shape, *linear.shape[output_ndim:]),
         )
 
         bias_lower = bounds.bias_lower.view(*shape)

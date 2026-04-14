@@ -43,14 +43,15 @@ class ForwardLBPSqueeze(ForwardLBPStrategy):
             target_shape = tuple(size for size in bounds.bias_lower.shape if size != 1)
             bias_lower = bounds.bias_lower.reshape(target_shape)
             bias_upper = bounds.bias_upper.reshape(target_shape)
+            output_ndim = bounds.bias_lower.ndim
 
             linear_lower = transform_linear_terms(
                 bounds.linear_lowers,
-                lambda linear: linear.reshape(*target_shape, linear.shape[-1]),
+                lambda linear: linear.reshape(*target_shape, *linear.shape[output_ndim:]),
             )
             linear_upper = transform_linear_terms(
                 bounds.linear_uppers,
-                lambda linear: linear.reshape(*target_shape, linear.shape[-1]),
+                lambda linear: linear.reshape(*target_shape, *linear.shape[output_ndim:]),
             )
 
         return LinearBounds(
