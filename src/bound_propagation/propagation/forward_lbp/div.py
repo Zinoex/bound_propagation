@@ -35,21 +35,25 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         raise TypeError(f"ForwardLBPDiv requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
     def _div_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
+        # TODO: implement a more precise method that tracks linear terms instead of just concretizing and re-abstracting
         lower_a, upper_a = a.concretize()
         lower_b, upper_b = b.concretize()
 
-        if torch.any((lower_b <= 0) & (upper_b >= 0)):
-            lower = torch.full_like(lower_a, float("-inf"))
-            upper = torch.full_like(upper_a, float("inf"))
-        else:
-            quotients = [
-                lower_a / lower_b,
-                lower_a / upper_b,
-                upper_a / lower_b,
-                upper_a / upper_b,
-            ]
-            lower = torch.min(torch.stack(quotients), dim=0)[0]
-            upper = torch.max(torch.stack(quotients), dim=0)[0]
+        crosses_zero = (lower_b <= 0) & (upper_b >= 0)
+        safe_lower_b = torch.where(crosses_zero, 1, lower_b)
+        safe_upper_b = torch.where(crosses_zero, 1, upper_b)
+
+        quotients = [
+            lower_a / safe_lower_b,
+            lower_a / safe_upper_b,
+            upper_a / safe_lower_b,
+            upper_a / safe_upper_b,
+        ]
+        finite_lower = torch.min(torch.stack(quotients), dim=0)[0]
+        finite_upper = torch.max(torch.stack(quotients), dim=0)[0]
+
+        lower = torch.where(crosses_zero, float("-inf"), finite_lower)
+        upper = torch.where(crosses_zero, float("inf"), finite_upper)
 
         return LinearBounds(
             regions=[],
@@ -116,16 +120,20 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         )
 
     def _constant_div(self, constant: object, bounds: LinearBounds) -> LinearBounds:
+        # TODO: implement a more precise method that tracks linear terms instead of just concretizing and re-abstracting
         lower_x, upper_x = bounds.concretize()
         constant_tensor = torch.as_tensor(constant, dtype=lower_x.dtype, device=lower_x.device)
 
-        if torch.any((lower_x <= 0) & (upper_x >= 0)):
-            lower = torch.full_like(lower_x, float("-inf"))
-            upper = torch.full_like(upper_x, float("inf"))
-        else:
-            quotients = [constant_tensor / lower_x, constant_tensor / upper_x]
-            lower = torch.min(torch.stack(quotients), dim=0)[0]
-            upper = torch.max(torch.stack(quotients), dim=0)[0]
+        crosses_zero = (lower_x <= 0) & (upper_x >= 0)
+        safe_lower_x = torch.where(crosses_zero, 1, lower_x)
+        safe_upper_x = torch.where(crosses_zero, 1, upper_x)
+
+        quotients = [constant_tensor / safe_lower_x, constant_tensor / safe_upper_x]
+        finite_lower = torch.min(torch.stack(quotients), dim=0)[0]
+        finite_upper = torch.max(torch.stack(quotients), dim=0)[0]
+
+        lower = torch.where(crosses_zero, float("-inf"), finite_lower)
+        upper = torch.where(crosses_zero, float("inf"), finite_upper)
 
         return LinearBounds(
             regions=[],

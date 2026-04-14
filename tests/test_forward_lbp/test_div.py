@@ -118,3 +118,55 @@ def test_div_crossing_zero_divisor() -> None:
     lower, upper = result.concretize()
     assert torch.isneginf(lower).all()
     assert torch.isposinf(upper).all()
+
+
+def test_div_crossing_zero_divisor_is_elementwise() -> None:
+    """Only outputs whose divisor interval crosses zero should be unbounded."""
+    # Region: x0 ∈ [6, 12], x1 ∈ [-1, 1], x2 ∈ [2, 3]
+    # Divisions: [x0/x1, x0/x2]
+    # Result: [(-inf, inf), (2, 6)]
+    region = HyperRectangle(lower=torch.tensor([6.0, -1.0, 2.0]), upper=torch.tensor([12.0, 1.0, 3.0]))
+
+    bounds_a = LinearBounds(
+        regions=[region],
+        linear_lower=torch.tensor([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        bias_lower=torch.tensor([0.0, 0.0]),
+        linear_upper=torch.tensor([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
+        bias_upper=torch.tensor([0.0, 0.0]),
+    )
+    bounds_b = LinearBounds(
+        regions=[region],
+        linear_lower=torch.tensor([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        bias_lower=torch.tensor([0.0, 0.0]),
+        linear_upper=torch.tensor([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
+        bias_upper=torch.tensor([0.0, 0.0]),
+    )
+
+    strategy = ForwardLBPDiv()
+    result = propagate(strategy, bounds_a, bounds_b)
+
+    lower, upper = result.concretize()
+
+    assert torch.isneginf(lower[0])
+    assert torch.isposinf(upper[0])
+    assert torch.allclose(lower[1], torch.tensor(2.0))
+    assert torch.allclose(upper[1], torch.tensor(6.0))
+
+
+def test_constant_div_crossing_zero_divisor_is_elementwise() -> None:
+    """For constant/abstract division, only zero-crossing denominator outputs should be unbounded."""
+    # Region: x0 ∈ [-1, 1], x1 ∈ [2, 3]
+    # Divisions: [6/x0, 6/x1]
+    # Result: [(-inf, inf), (2, 3)]
+    region = HyperRectangle(lower=torch.tensor([-1.0, 2.0]), upper=torch.tensor([1.0, 3.0]))
+
+    denominator_bounds = _make_linear_bounds(region)
+    strategy = ForwardLBPDiv()
+    result = propagate(strategy, torch.tensor(6.0), denominator_bounds)
+
+    lower, upper = result.concretize()
+
+    assert torch.isneginf(lower[0])
+    assert torch.isposinf(upper[0])
+    assert torch.allclose(lower[1], torch.tensor(2.0))
+    assert torch.allclose(upper[1], torch.tensor(3.0))
