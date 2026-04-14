@@ -138,4 +138,4 @@ class HyperRectangle(SimpleRegion):
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"HyperRectangle(shape={self.shape}, lower={self.lower.min():.3f}..{self.lower.max():.3f}, upper={self.upper.min():.3f}..{self.upper.max():.3f})"
+        return f"HyperRectangle(shape={self.shape}, lower={self.lower}, upper={self.upper})"
