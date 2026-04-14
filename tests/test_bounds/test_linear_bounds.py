@@ -105,6 +105,45 @@ class TestLinearBounds:
         assert torch.allclose(lower, torch.tensor([6.0]))
         assert torch.allclose(upper, torch.tensor([21.0]))
 
+    def test_concretize_with_batched_region_shape(self):
+        """Test concretization with region shape interpreted as (*batch_dims, *input_dims)."""
+        # region shape: (batch=2, input=2)
+        region = HyperRectangle(
+            torch.tensor([[0.0, 1.0], [2.0, 3.0]]),
+            torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
+        )
+
+        # bias shape: (batch=2, output=1)
+        # linear shape: (batch=2, output=1, input=2)
+        bounds = LinearBounds(
+            regions=[region],
+            linear_lower=[torch.tensor([[[1.0, -2.0]], [[3.0, 4.0]]])],
+            bias_lower=torch.tensor([[0.5], [1.0]]),
+            linear_upper=[torch.tensor([[[2.0, 1.0]], [[4.0, 5.0]]])],
+            bias_upper=torch.tensor([[1.5], [2.0]]),
+        )
+
+        lower, upper = bounds.concretize()
+
+        assert torch.allclose(lower, torch.tensor([[-3.5], [19.0]]))
+        assert torch.allclose(upper, torch.tensor([[5.5], [34.0]]))
+
+    def test_reject_flattened_input_axes_with_batched_region_shape(self):
+        """Flattened input axes are rejected for batched region shapes."""
+        region = HyperRectangle(
+            torch.tensor([[[0.0, 1.0], [2.0, 3.0]], [[1.0, 2.0], [3.0, 4.0]]]),
+            torch.tensor([[[1.0, 2.0], [3.0, 4.0]], [[2.0, 3.0], [4.0, 5.0]]]),
+        )
+
+        with pytest.raises(ValueError, match="input axes must match input shape"):
+            LinearBounds(
+                regions=[region],
+                linear_lower=[torch.tensor([[[1.0, -1.0, 2.0, -2.0]], [[2.0, 0.0, -1.0, 3.0]]])],
+                bias_lower=torch.tensor([[0.0], [1.0]]),
+                linear_upper=[torch.tensor([[[2.0, 1.0, 3.0, 1.0]], [[3.0, 1.0, 0.0, 4.0]]])],
+                bias_upper=torch.tensor([[1.0], [2.0]]),
+            )
+
     @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_basic(self):
         """Test forward composition with linear bounds."""

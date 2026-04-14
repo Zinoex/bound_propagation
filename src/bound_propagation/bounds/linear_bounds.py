@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Literal
 
 import torch
+from plum import dispatch
 
 from ..regions import AbstractRegion, HyperRectangle, SimpleRegion
 from .abstract_bounds import AbstractBounds
@@ -109,6 +110,30 @@ class LinearBounds(AbstractBounds):
 
         return normalized_input_ids
 
+    @staticmethod
+    def _split_region_shape(
+        region_shape: torch.Size,
+        output_shape: torch.Size,
+        linear_input_axes: torch.Size,
+    ) -> tuple[torch.Size, torch.Size]:
+        """Infer (*batch_dims, *input_dims) from linear/bias ranks."""
+        input_ndim = len(linear_input_axes)
+        batch_ndim = len(region_shape) - input_ndim
+
+        if batch_ndim < 0:
+            raise ValueError(
+                f"Region rank {len(region_shape)} is smaller than inferred input rank {input_ndim} "
+                f"from linear input axes {tuple(linear_input_axes)}"
+            )
+
+        if batch_ndim > len(output_shape):
+            raise ValueError(
+                f"Inferred batch rank {batch_ndim} exceeds output rank {len(output_shape)} "
+                f"for region shape {tuple(region_shape)} and output shape {tuple(output_shape)}"
+            )
+
+        return region_shape[:batch_ndim], region_shape[batch_ndim:]
+
     def _check_shapes(
         self,
         regions: list[SimpleRegion],
@@ -131,17 +156,16 @@ class LinearBounds(AbstractBounds):
 
                 output_shape = linear.shape[: len(bias_lower.shape)]
                 if output_shape != bias_lower.shape:
-                    raise ValueError(
-                        f"{name} output shape must match bias shape: {output_shape} vs {bias_lower.shape}"
-                    )
+                    raise ValueError(f"{name} output shape must match bias shape: {output_shape} vs {bias_lower.shape}")
 
                 input_axes = linear.shape[len(bias_lower.shape) :]
                 region_shape = torch.Size(region.shape)
-                flattened_region_shape = torch.Size([region_shape.numel()])
-                if input_axes not in (region_shape, flattened_region_shape):
+                _, input_shape = self._split_region_shape(region_shape, bias_lower.shape, input_axes)
+                if input_axes != input_shape:
                     raise ValueError(
-                        f"{name} input axes must match region shape {tuple(region_shape)} "
-                        f"(or legacy flattened shape {tuple(flattened_region_shape)}), got {tuple(input_axes)}"
+                        f"{name} input axes must match input shape {tuple(input_shape)} "
+                        f"(derived from region shape {tuple(region_shape)} and bias shape {tuple(bias_lower.shape)}), "
+                        f"got {tuple(input_axes)}"
                     )
 
     @staticmethod
@@ -174,67 +198,71 @@ class LinearBounds(AbstractBounds):
         min_gap = bias_upper - bias_lower
 
         for region, lower_linear, upper_linear in zip(regions, linear_lower, linear_upper, strict=True):
-            min_gap = min_gap + self._minimize_affine_term(region, upper_linear - lower_linear)
+            min_gap = min_gap + self._minimize_affine_term(region, upper_linear - lower_linear, bias_lower.shape)
 
         if torch.any(min_gap < -1e-6):
             num_violations = torch.sum(min_gap < -1e-6).item()
             raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
 
     @staticmethod
-    def _minimize_affine_term(region: SimpleRegion, linear: torch.Tensor) -> torch.Tensor:
-        if isinstance(region, HyperRectangle):
-            input_lower = region.lower
-            input_upper = region.upper
-
-            region_shape = torch.Size(region.shape)
-            flattened_region_shape = torch.Size([region_shape.numel()])
-            input_axes = linear.shape[-len(region_shape) :] if len(region_shape) > 0 else torch.Size([])
-
-            if input_axes == region_shape:
-                contributions = torch.where(linear > 0, linear * input_lower, linear * input_upper)
-                sum_dims = tuple(range(-len(region_shape), 0))
-                return contributions.sum(dim=sum_dims) if sum_dims else contributions
-
-            trailing_axes = linear.shape[-1:]
-            if trailing_axes == flattened_region_shape:
-                flat_lower = input_lower.reshape(flattened_region_shape)
-                flat_upper = input_upper.reshape(flattened_region_shape)
-                contributions = torch.where(linear > 0, linear * flat_lower, linear * flat_upper)
-                return contributions.sum(dim=-1)
-
-            raise ValueError(
-                f"linear input axes {tuple(linear.shape)} are incompatible with region shape {tuple(region_shape)}"
-            )
-
+    @dispatch
+    def _minimize_affine_term(region: SimpleRegion, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
         raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
 
     @staticmethod
-    def _maximize_affine_term(region: SimpleRegion, linear: torch.Tensor) -> torch.Tensor:
-        if isinstance(region, HyperRectangle):
-            input_lower = region.lower
-            input_upper = region.upper
+    @dispatch
+    def _minimize_affine_term(region: HyperRectangle, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:  # noqa: F811
+        input_lower = region.lower
+        input_upper = region.upper
 
-            region_shape = torch.Size(region.shape)
-            flattened_region_shape = torch.Size([region_shape.numel()])
-            input_axes = linear.shape[-len(region_shape) :] if len(region_shape) > 0 else torch.Size([])
+        region_shape = torch.Size(region.shape)
+        linear_input_axes = torch.Size(linear.shape[len(output_shape) :])
+        batch_shape, input_shape = LinearBounds._split_region_shape(region_shape, output_shape, linear_input_axes)
+        input_ndim = len(input_shape)
+        output_ndim = len(output_shape)
 
-            if input_axes == region_shape:
-                contributions = torch.where(linear > 0, linear * input_upper, linear * input_lower)
-                sum_dims = tuple(range(-len(region_shape), 0))
-                return contributions.sum(dim=sum_dims) if sum_dims else contributions
+        if linear_input_axes == input_shape:
+            expanded_shape = (*batch_shape, *([1] * (output_ndim - len(batch_shape))), *input_shape)
+            expanded_lower = input_lower.reshape(expanded_shape)
+            expanded_upper = input_upper.reshape(expanded_shape)
+            contributions = torch.where(linear > 0, linear * expanded_lower, linear * expanded_upper)
+            sum_dims = tuple(range(-input_ndim, 0))
+            return contributions.sum(dim=sum_dims) if sum_dims else contributions
 
-            trailing_axes = linear.shape[-1:]
-            if trailing_axes == flattened_region_shape:
-                flat_lower = input_lower.reshape(flattened_region_shape)
-                flat_upper = input_upper.reshape(flattened_region_shape)
-                contributions = torch.where(linear > 0, linear * flat_upper, linear * flat_lower)
-                return contributions.sum(dim=-1)
+        raise ValueError(
+            f"linear input axes {tuple(linear_input_axes)} are incompatible with input shape {tuple(input_shape)} "
+            f"derived from region shape {tuple(region_shape)}"
+        )
 
-            raise ValueError(
-                f"linear input axes {tuple(linear.shape)} are incompatible with region shape {tuple(region_shape)}"
-            )
-
+    @staticmethod
+    @dispatch
+    def _maximize_affine_term(region: SimpleRegion, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
         raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
+
+    @staticmethod
+    @dispatch
+    def _maximize_affine_term(region: HyperRectangle, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:  # noqa: F811
+        input_lower = region.lower
+        input_upper = region.upper
+
+        region_shape = torch.Size(region.shape)
+        linear_input_axes = torch.Size(linear.shape[len(output_shape) :])
+        batch_shape, input_shape = LinearBounds._split_region_shape(region_shape, output_shape, linear_input_axes)
+        input_ndim = len(input_shape)
+        output_ndim = len(output_shape)
+
+        if linear_input_axes == input_shape:
+            expanded_shape = (*batch_shape, *([1] * (output_ndim - len(batch_shape))), *input_shape)
+            expanded_lower = input_lower.reshape(expanded_shape)
+            expanded_upper = input_upper.reshape(expanded_shape)
+            contributions = torch.where(linear > 0, linear * expanded_upper, linear * expanded_lower)
+            sum_dims = tuple(range(-input_ndim, 0))
+            return contributions.sum(dim=sum_dims) if sum_dims else contributions
+
+        raise ValueError(
+            f"linear input axes {tuple(linear_input_axes)} are incompatible with input shape {tuple(input_shape)} "
+            f"derived from region shape {tuple(region_shape)}"
+        )
 
     @staticmethod
     def combine_linear_terms(
@@ -331,7 +359,19 @@ class LinearBounds(AbstractBounds):
     @property
     def input_dim(self) -> int:
         """Get input dimensions of linear bounds."""
-        return sum(torch.Size(region.shape).numel() for region in self._regions)
+        if not self._linear_lower:
+            return 0
+
+        return sum(
+            torch.Size(
+                self._split_region_shape(
+                    torch.Size(region.shape),
+                    self.bias_lower.shape,
+                    torch.Size(linear.shape[len(self.bias_lower.shape) :]),
+                )[1]
+            ).numel()
+            for region, linear in zip(self._regions, self._linear_lower, strict=True)
+        )
 
     @staticmethod
     def _move_region(region: SimpleRegion, device: str | torch.device) -> SimpleRegion:
@@ -361,7 +401,12 @@ class LinearBounds(AbstractBounds):
         output_item = item if isinstance(item, tuple) else (item,)
 
         def _index_linear(linear: torch.Tensor, region: SimpleRegion) -> torch.Tensor:
-            input_ndim = len(torch.Size(region.shape))
+            _, input_shape = self._split_region_shape(
+                torch.Size(region.shape),
+                self.bias_lower.shape,
+                torch.Size(linear.shape[len(self.bias_lower.shape) :]),
+            )
+            input_ndim = len(input_shape)
             if input_ndim > 0:
                 linear_item = output_item + (slice(None),) * input_ndim
             else:
@@ -371,13 +416,11 @@ class LinearBounds(AbstractBounds):
         return LinearBounds(
             regions=self._regions,
             linear_lower=[
-                _index_linear(linear, region)
-                for linear, region in zip(self._linear_lower, self._regions, strict=True)
+                _index_linear(linear, region) for linear, region in zip(self._linear_lower, self._regions, strict=True)
             ],
             bias_lower=self.bias_lower[item],
             linear_upper=[
-                _index_linear(linear, region)
-                for linear, region in zip(self._linear_upper, self._regions, strict=True)
+                _index_linear(linear, region) for linear, region in zip(self._linear_upper, self._regions, strict=True)
             ],
             bias_upper=self.bias_upper[item],
             input_ids=self._input_ids.copy() if self._input_ids else None,
@@ -397,7 +440,16 @@ class LinearBounds(AbstractBounds):
         Returns:
             IntervalBounds representing the concretized bounds
         """
-        return concretize(self.regions, self)
+        lower_result = self.bias_lower.clone()
+        upper_result = self.bias_upper.clone()
+
+        for region, linear_lower in zip(self._regions, self._linear_lower, strict=True):
+            lower_result = lower_result + self._minimize_affine_term(region, linear_lower, self.bias_lower.shape)
+
+        for region, linear_upper in zip(self._regions, self._linear_upper, strict=True):
+            upper_result = upper_result + self._maximize_affine_term(region, linear_upper, self.bias_upper.shape)
+
+        return lower_result, upper_result
 
     def clone(self) -> LinearBounds:
         """Create a deep copy."""
@@ -409,34 +461,3 @@ class LinearBounds(AbstractBounds):
             bias_upper=self.bias_upper.clone(),
             input_ids=self._input_ids.copy() if self._input_ids else None,
         )
-
-
-def concretize(regions: list[SimpleRegion], bounds: LinearBounds) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Concretize linear bounds given input regions.
-
-    For linear bounds, evaluates each affine term over its own region and sums the
-    contributions together with the bias terms.
-
-    For each weight coefficient:
-    - Use region.lower if coefficient > 0 (for minimization)
-    - Use region.upper if coefficient < 0 (for minimization)
-    - Vice versa for maximization
-
-    Args:
-        regions: The input regions corresponding to the affine terms
-        bounds: The linear bounds to concretize
-
-    Returns:
-        Tuple of (lower, upper) concrete bounds
-    """
-    lower_result = bounds.bias_lower.clone()
-    upper_result = bounds.bias_upper.clone()
-
-    for region, linear_lower in zip(regions, bounds.linear_lowers, strict=True):
-        lower_result = lower_result + bounds._minimize_affine_term(region, linear_lower)
-
-    for region, linear_upper in zip(regions, bounds.linear_uppers, strict=True):
-        upper_result = upper_result + bounds._maximize_affine_term(region, linear_upper)
-
-    return lower_result, upper_result
