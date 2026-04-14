@@ -38,9 +38,9 @@ class ForwardLBPMax(ForwardLBPStrategy):
             upper = upper.max()
 
         return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=lower,
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=upper,
         )

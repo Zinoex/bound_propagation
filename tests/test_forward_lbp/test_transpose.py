@@ -20,7 +20,7 @@ def test_transpose_2d() -> None:
 
     # Identity linear bounds for (2, 2)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(4).view(2, 2, 4),
         bias_lower=torch.zeros(2, 2),
         linear_upper=torch.eye(4).view(2, 2, 4),
@@ -63,7 +63,7 @@ def test_transpose_3d() -> None:
 
     # Identity linear bounds
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(8).view(2, 2, 2, 8),
         bias_lower=torch.zeros(2, 2, 2),
         linear_upper=torch.eye(8).view(2, 2, 2, 8),
@@ -100,7 +100,7 @@ def test_transpose_identity() -> None:
     )
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(4).view(2, 2, 4),
         bias_lower=torch.zeros(2, 2),
         linear_upper=torch.eye(4).view(2, 2, 4),
@@ -134,7 +134,7 @@ def test_transpose_with_bias() -> None:
 
     # Non-identity bounds: add bias
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(4).view(2, 2, 4),
         bias_lower=torch.tensor([[1.0, 2.0], [3.0, 4.0]]),
         linear_upper=torch.eye(4).view(2, 2, 4),

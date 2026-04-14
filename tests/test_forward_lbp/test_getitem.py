@@ -13,7 +13,7 @@ def test_getitem_single_index() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(5, 1),
         bias_lower=torch.arange(5.0),
         linear_upper=torch.ones(5, 1),
@@ -35,7 +35,7 @@ def test_getitem_slice() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(5, 1),
         bias_lower=torch.arange(5.0),
         linear_upper=torch.ones(5, 1),
@@ -55,7 +55,7 @@ def test_getitem_2d_single_index() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(3, 4, 1),
         bias_lower=torch.arange(12.0).view(3, 4),
         linear_upper=torch.ones(3, 4, 1),

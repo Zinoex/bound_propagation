@@ -52,33 +52,25 @@ class BackwardLBPSubStrategy(ForwardBoundingStrategy):
         bounds_a: LinearBounds = input_bounds[0]
         bounds_b: LinearBounds = input_bounds[1]
 
-        # Subtract linear coefficients (lower - upper for lower bound)
-        if bounds_a.linear_lower is not None and bounds_b.linear_upper is not None:
-            linear_lower = bounds_a.linear_lower - bounds_b.linear_upper
-        elif bounds_a.linear_lower is not None:
-            linear_lower = bounds_a.linear_lower
-        elif bounds_b.linear_upper is not None:
-            linear_lower = -bounds_b.linear_upper
-        else:
-            linear_lower = None
+        lower_regions, linear_lower, input_ids = LinearBounds.combine_linear_terms(
+            [(bounds_a, "lower", 1.0), (bounds_b, "upper", -1.0)]
+        )
+        upper_regions, linear_upper, upper_input_ids = LinearBounds.combine_linear_terms(
+            [(bounds_a, "upper", 1.0), (bounds_b, "lower", -1.0)]
+        )
 
-        if bounds_a.linear_upper is not None and bounds_b.linear_lower is not None:
-            linear_upper = bounds_a.linear_upper - bounds_b.linear_lower
-        elif bounds_a.linear_upper is not None:
-            linear_upper = bounds_a.linear_upper
-        elif bounds_b.linear_lower is not None:
-            linear_upper = -bounds_b.linear_lower
-        else:
-            linear_upper = None
+        if input_ids != upper_input_ids:
+            raise ValueError(f"Lower and upper input IDs must match, got {input_ids} vs {upper_input_ids}")
 
         # Subtract bias terms
         bias_lower = bounds_a.bias_lower - bounds_b.bias_upper
         bias_upper = bounds_a.bias_upper - bounds_b.bias_lower
 
         return LinearBounds(
-            region=bounds_a.region,
+            regions=lower_regions or upper_regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=input_ids,
         )

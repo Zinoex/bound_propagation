@@ -26,9 +26,10 @@ class ForwardLBPNeg(ForwardLBPStrategy):
             raise TypeError("ForwardLBPNeg requires input to be LinearBounds")
 
         return LinearBounds(
-            region=bounds.region,
-            linear_lower=-bounds.linear_upper if bounds.linear_upper is not None else None,
+            regions=bounds.regions,
+            linear_lower=[-linear for linear in bounds.linear_uppers],
             bias_lower=-bounds.bias_upper,
-            linear_upper=-bounds.linear_lower if bounds.linear_lower is not None else None,
+            linear_upper=[-linear for linear in bounds.linear_lowers],
             bias_upper=-bounds.bias_lower,
+            input_ids=bounds.input_ids,
         )

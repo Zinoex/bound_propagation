@@ -13,7 +13,7 @@ def test_reshape_1d_to_2d() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(6, 1),
         bias_lower=torch.arange(6.0),
         linear_upper=torch.ones(6, 1),
@@ -34,7 +34,7 @@ def test_reshape_2d_to_1d() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(2, 3, 1),
         bias_lower=torch.arange(6.0).view(2, 3),
         linear_upper=torch.ones(2, 3, 1),
@@ -55,7 +55,7 @@ def test_reshape_3d() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(2, 2, 3, 1),
         bias_lower=torch.arange(12.0).view(2, 2, 3),
         linear_upper=torch.ones(2, 2, 3, 1),

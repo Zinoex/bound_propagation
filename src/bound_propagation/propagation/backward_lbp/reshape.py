@@ -59,9 +59,10 @@ class BackwardLBPReshapeStrategy(ForwardBoundingStrategy):
         bias_upper = bounds.bias_upper.reshape(target_shape)
 
         return LinearBounds(
-            region=bounds.region,
-            linear_lower=bounds.linear_lower,  # Same reference to input
+            regions=bounds.regions,
+            linear_lower=[linear.reshape(*target_shape, linear.shape[-1]) for linear in bounds.linear_lowers],
             bias_lower=bias_lower,
-            linear_upper=bounds.linear_upper,  # Same reference to input
+            linear_upper=[linear.reshape(*target_shape, linear.shape[-1]) for linear in bounds.linear_uppers],
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

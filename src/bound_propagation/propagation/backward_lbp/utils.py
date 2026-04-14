@@ -42,10 +42,10 @@ def create_element_wise_relaxation_bounds(
     linear_upper = torch.diag(alpha_upper.flatten())
 
     return LinearBounds(
-        region=region,
-        linear_lower=linear_lower,
+        regions=[region],
+        linear_lower=[linear_lower],
         bias_lower=beta_lower,
-        linear_upper=linear_upper,
+        linear_upper=[linear_upper],
         bias_upper=beta_upper,
     )
 

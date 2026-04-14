@@ -15,7 +15,7 @@ def test_stack_two_tensors() -> None:
 
     # First tensor: x0
     bounds1 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0, 0.0]]),
@@ -24,7 +24,7 @@ def test_stack_two_tensors() -> None:
 
     # Second tensor: x1
     bounds2 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -46,7 +46,7 @@ def test_stack_three_tensors() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([2.0]))
 
     bounds1 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -54,7 +54,7 @@ def test_stack_three_tensors() -> None:
     )
 
     bounds2 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -62,7 +62,7 @@ def test_stack_three_tensors() -> None:
     )
 
     bounds3 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([2.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -84,7 +84,7 @@ def test_stack_dim1() -> None:
 
     # Both tensors have shape (2,)
     bounds1 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(2, 1),
         bias_lower=torch.tensor([1.0, 2.0]),
         linear_upper=torch.ones(2, 1),
@@ -92,7 +92,7 @@ def test_stack_dim1() -> None:
     )
 
     bounds2 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(2, 1),
         bias_lower=torch.tensor([3.0, 4.0]),
         linear_upper=torch.ones(2, 1),

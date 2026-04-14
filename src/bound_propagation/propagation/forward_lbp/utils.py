@@ -6,9 +6,26 @@ Helper functions for working with linear bounds in LBP-style propagation.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import torch
 
 from ...bounds import LinearBounds
+
+
+def transform_linear_terms(
+    linear_terms: list[torch.Tensor],
+    transform: Callable[[torch.Tensor], torch.Tensor],
+) -> list[torch.Tensor]:
+    """Apply a tensor transform to each affine coefficient tensor."""
+    return [transform(linear_term) for linear_term in linear_terms]
+
+
+def combine_linear_terms(
+    components: list[tuple[LinearBounds, str, float]],
+) -> tuple[list, list[torch.Tensor], list[int]]:
+    """Combine affine terms from multiple bounds, aligned by input IDs."""
+    return LinearBounds.combine_linear_terms(components)
 
 
 def create_identity_bounds(region, shape: tuple[int, ...]) -> LinearBounds:
@@ -34,10 +51,10 @@ def create_identity_bounds(region, shape: tuple[int, ...]) -> LinearBounds:
         bias = torch.zeros(output_size, dtype=region.dtype, device=region.device)
 
         return LinearBounds(
-            region=region,
-            linear_lower=identity,
+            regions=[region],
+            linear_lower=[identity],
             bias_lower=bias,
-            linear_upper=identity,
+            linear_upper=[identity],
             bias_upper=bias,
         )
     else:
@@ -46,10 +63,10 @@ def create_identity_bounds(region, shape: tuple[int, ...]) -> LinearBounds:
 
         lower, upper = region.lower, region.upper
         return LinearBounds(
-            region=region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=lower,
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=upper,
         )
 
@@ -85,10 +102,10 @@ def create_element_wise_relaxation_bounds(
     linear_upper = torch.diag(alpha_upper.flatten())
 
     return LinearBounds(
-        region=region,
-        linear_lower=linear_lower,
+        regions=[region],
+        linear_lower=[linear_lower],
         bias_lower=beta_lower,
-        linear_upper=linear_upper,
+        linear_upper=[linear_upper],
         bias_upper=beta_upper,
     )
 
@@ -126,15 +143,8 @@ def apply_linear_relaxation(
     alpha_lower_flat = alpha_lower.flatten()
     alpha_upper_flat = alpha_upper.flatten()
 
-    if bounds.linear_lower is not None and bounds.linear_upper is not None:
-        # Apply element-wise multiplication to linear coefficients
-        # Shape of linear_lower: (out_features, in_features)
-        # We want to multiply each row by the corresponding alpha
-        linear_lower = alpha_lower_flat.unsqueeze(-1) * bounds.linear_lower
-        linear_upper = alpha_upper_flat.unsqueeze(-1) * bounds.linear_upper
-    else:
-        linear_lower = None
-        linear_upper = None
+    linear_lower = [alpha_lower_flat.unsqueeze(-1) * linear for linear in bounds.linear_lowers]
+    linear_upper = [alpha_upper_flat.unsqueeze(-1) * linear for linear in bounds.linear_uppers]
 
     # Apply to bias terms
     bias_lower = alpha_lower.flatten() * bounds.bias_lower.flatten() + beta_lower.flatten()
@@ -145,9 +155,10 @@ def apply_linear_relaxation(
     bias_upper = bias_upper.view(bounds.bias_upper.shape)
 
     return LinearBounds(
-        region=bounds.region,
+        regions=bounds.regions,
         linear_lower=linear_lower,
         bias_lower=bias_lower,
         linear_upper=linear_upper,
         bias_upper=bias_upper,
+        input_ids=bounds.input_ids,
     )

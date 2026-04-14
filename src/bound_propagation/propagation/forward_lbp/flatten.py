@@ -6,6 +6,7 @@ import torch.fx as fx
 
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
+from .utils import transform_linear_terms
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -44,13 +45,20 @@ class ForwardLBPFlatten(ForwardLBPStrategy):
 
         bias_lower = bounds.bias_lower.flatten(start_dim, end_dim)
         bias_upper = bounds.bias_upper.flatten(start_dim, end_dim)
-        linear_lower = bounds.linear_lower.flatten(start_dim, end_dim) if bounds.linear_lower is not None else None
-        linear_upper = bounds.linear_upper.flatten(start_dim, end_dim) if bounds.linear_upper is not None else None
+        linear_lower = transform_linear_terms(
+            bounds.linear_lowers,
+            lambda linear: linear.flatten(start_dim, end_dim),
+        )
+        linear_upper = transform_linear_terms(
+            bounds.linear_uppers,
+            lambda linear: linear.flatten(start_dim, end_dim),
+        )
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

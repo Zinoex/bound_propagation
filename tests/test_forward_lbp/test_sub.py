@@ -14,7 +14,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
     dim = region.lower.numel()
     return LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(dim),
         bias_lower=torch.zeros(dim),
         linear_upper=torch.eye(dim),
@@ -32,14 +32,14 @@ def test_sub_abstract_abstract() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0, 2.0]), upper=torch.tensor([3.0, 4.0]))
 
     bounds_a = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[2.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[2.0, 0.0]]),
         bias_upper=torch.tensor([0.0]),
     )
     bounds_b = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -75,7 +75,7 @@ def test_sub_abstract_constant_scalar() -> None:
     region = HyperRectangle(lower=torch.tensor([5.0]), upper=torch.tensor([8.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -185,14 +185,14 @@ def test_sub_with_bias() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([2.0]))
 
     bounds_a = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[3.0]]),
         bias_lower=torch.tensor([2.0]),
         linear_upper=torch.tensor([[3.0]]),
         bias_upper=torch.tensor([5.0]),
     )
     bounds_b = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[1.0]]),

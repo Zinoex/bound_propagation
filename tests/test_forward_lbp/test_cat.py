@@ -12,7 +12,7 @@ def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> Linea
     """Create identity linear bounds from a region with specific shape."""
     dim = region.lower.numel()
     return LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(dim).view(shape + (dim,)),
         bias_lower=torch.zeros(shape),
         linear_upper=torch.eye(dim).view(shape + (dim,)),
@@ -28,7 +28,7 @@ def test_cat_two_tensors_dim0() -> None:
 
     # First tensor: x0
     bounds1 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0, 0.0]]),
@@ -37,7 +37,7 @@ def test_cat_two_tensors_dim0() -> None:
 
     # Second tensor: x1
     bounds2 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -60,7 +60,7 @@ def test_cat_two_tensors_dim1() -> None:
 
     # First tensor: [[x0], [x1]]
     bounds1 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[[1.0, 0.0]], [[0.0, 1.0]]]),
         bias_lower=torch.tensor([[0.0], [0.0]]),
         linear_upper=torch.tensor([[[1.0, 0.0]], [[0.0, 1.0]]]),
@@ -69,7 +69,7 @@ def test_cat_two_tensors_dim1() -> None:
 
     # Second tensor: [[x0], [x1]]
     bounds2 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[[1.0, 0.0]], [[0.0, 1.0]]]),
         bias_lower=torch.tensor([[0.0], [0.0]]),
         linear_upper=torch.tensor([[[1.0, 0.0]], [[0.0, 1.0]]]),
@@ -90,7 +90,7 @@ def test_cat_three_tensors() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([2.0]))
 
     bounds1 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -98,7 +98,7 @@ def test_cat_three_tensors() -> None:
     )
 
     bounds2 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -106,7 +106,7 @@ def test_cat_three_tensors() -> None:
     )
 
     bounds3 = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([2.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -129,7 +129,7 @@ def test_cat_single_tensor() -> None:
     region = HyperRectangle(lower=torch.tensor([5.0]), upper=torch.tensor([10.0]))
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0]]),

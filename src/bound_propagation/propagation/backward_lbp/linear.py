@@ -24,7 +24,7 @@ class BackwardLBPLinearStrategy(BackwardLBPBoundingStrategy):
         node: Node,
         output_bounds: LinearBounds,
     ) -> list[LinearBounds]:
-        bounds: LinearBounds = input_bounds[0]
+        bounds = output_bounds
 
         # Get weight and bias from node attributes
         weight = node.attributes.get("weight")
@@ -42,15 +42,10 @@ class BackwardLBPLinearStrategy(BackwardLBPBoundingStrategy):
         weight_neg = torch.clamp(weight, max=0)
 
         # Lower bound computation
-        if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            # W_l^y = weight_pos @ W_l^x + weight_neg @ W_u^x
-            linear_lower = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_upper
-        elif bounds.linear_lower is not None:
-            linear_lower = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_lower
-        elif bounds.linear_upper is not None:
-            linear_lower = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_upper
-        else:
-            linear_lower = None
+        linear_lower = [
+            weight_pos @ lower_linear + weight_neg @ upper_linear
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
 
         # b_l^y = weight_pos @ b_l^x + weight_neg @ b_u^x + b
         bias_lower = weight_pos @ bounds.bias_lower + weight_neg @ bounds.bias_upper
@@ -58,15 +53,10 @@ class BackwardLBPLinearStrategy(BackwardLBPBoundingStrategy):
             bias_lower = bias_lower + bias
 
         # Upper bound computation
-        if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            # W_u^y = weight_pos @ W_u^x + weight_neg @ W_l^x
-            linear_upper = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_lower
-        elif bounds.linear_upper is not None:
-            linear_upper = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_upper
-        elif bounds.linear_lower is not None:
-            linear_upper = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_lower
-        else:
-            linear_upper = None
+        linear_upper = [
+            weight_pos @ upper_linear + weight_neg @ lower_linear
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
 
         # b_u^y = weight_pos @ b_u^x + weight_neg @ b_l^x + b
         bias_upper = weight_pos @ bounds.bias_upper + weight_neg @ bounds.bias_lower
@@ -75,10 +65,11 @@ class BackwardLBPLinearStrategy(BackwardLBPBoundingStrategy):
 
         return [
             LinearBounds(
-                region=bounds.region,
+                regions=bounds.regions,
                 linear_lower=linear_lower,
                 bias_lower=bias_lower,
                 linear_upper=linear_upper,
                 bias_upper=bias_upper,
+                input_ids=bounds.input_ids,
             )
         ]

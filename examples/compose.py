@@ -58,7 +58,7 @@ def forward_compose(self, other: LinearBounds) -> LinearBounds:
         bias_upper = other.bias_upper
 
     return LinearBounds(
-        region=self.region,  # Use self's region (global input region)
+        regions=self.regions,
         linear_lower=linear_lower,
         bias_lower=bias_lower,
         linear_upper=linear_upper,
@@ -122,7 +122,7 @@ def backward_compose(self, other: LinearBounds) -> LinearBounds:
         bias_upper = self.bias_upper
 
     return LinearBounds(
-        region=other.region,  # Use other's region (the input region for the composition)
+        regions=other.regions,
         linear_lower=linear_lower,
         bias_lower=bias_lower,
         linear_upper=linear_upper,

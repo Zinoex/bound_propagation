@@ -52,10 +52,10 @@ class ForwardLBPDiv(ForwardLBPStrategy):
             upper = torch.max(torch.stack(quotients), dim=0)[0]
 
         return LinearBounds(
-            region=a.region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=lower,
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=upper,
         )
 
@@ -65,23 +65,22 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         )
         positive_mask = divisor > 0
 
-        if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            linear_lower_pos = bounds.linear_lower / divisor.unsqueeze(-1)
-            linear_lower_neg = bounds.linear_upper / divisor.unsqueeze(-1)
-            linear_lower = torch.where(positive_mask.unsqueeze(-1), linear_lower_pos, linear_lower_neg)
-
-            linear_upper_pos = bounds.linear_upper / divisor.unsqueeze(-1)
-            linear_upper_neg = bounds.linear_lower / divisor.unsqueeze(-1)
-            linear_upper = torch.where(positive_mask.unsqueeze(-1), linear_upper_pos, linear_upper_neg)
-        elif bounds.linear_lower is not None:
-            linear_lower = bounds.linear_lower / divisor.unsqueeze(-1)
-            linear_upper = bounds.linear_lower / divisor.unsqueeze(-1)
-        elif bounds.linear_upper is not None:
-            linear_lower = bounds.linear_upper / divisor.unsqueeze(-1)
-            linear_upper = bounds.linear_upper / divisor.unsqueeze(-1)
-        else:
-            linear_lower = None
-            linear_upper = None
+        linear_lower = [
+            torch.where(
+                positive_mask.unsqueeze(-1),
+                lower_linear / divisor.unsqueeze(-1),
+                upper_linear / divisor.unsqueeze(-1),
+            )
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
+        linear_upper = [
+            torch.where(
+                positive_mask.unsqueeze(-1),
+                upper_linear / divisor.unsqueeze(-1),
+                lower_linear / divisor.unsqueeze(-1),
+            )
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
 
         bias_lower_pos = bounds.bias_lower / divisor
         bias_lower_neg = bounds.bias_upper / divisor
@@ -92,11 +91,12 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         bias_upper = torch.where(positive_mask, bias_upper_pos, bias_upper_neg)
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )
 
     def _constant_div(self, constant: object, bounds: LinearBounds) -> LinearBounds:
@@ -112,9 +112,9 @@ class ForwardLBPDiv(ForwardLBPStrategy):
             upper = torch.max(torch.stack(quotients), dim=0)[0]
 
         return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=lower,
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=upper,
         )

@@ -46,6 +46,28 @@ class TestLinearBounds:
         # Maximum is at x=1, y=1: 2 + 3 + 1.5 = 6.5
         assert torch.allclose(upper, torch.tensor([6.5]))
 
+    def test_concretize_with_multiple_regions(self):
+        """Test concretization of linear bounds composed from multiple regions."""
+        region_x = HyperRectangle(torch.tensor([0.0]), torch.tensor([1.0]))
+        region_y = HyperRectangle(torch.tensor([2.0]), torch.tensor([4.0]))
+
+        bounds = LinearBounds(
+            regions=[region_x, region_y],
+            linear_lower=[torch.tensor([[2.0]]), torch.tensor([[-1.0]])],
+            bias_lower=torch.tensor([0.5]),
+            linear_upper=[torch.tensor([[3.0]]), torch.tensor([[1.5]])],
+            bias_upper=torch.tensor([1.0]),
+            input_ids=[11, 22],
+        )
+
+        lower, upper = bounds.concretize()
+
+        # Lower: minimize 2x - y + 0.5 over x in [0, 1], y in [2, 4] => 0 - 4 + 0.5
+        assert torch.allclose(lower, torch.tensor([-3.5]))
+        # Upper: maximize 3x + 1.5y + 1.0 over x in [0, 1], y in [2, 4] => 3 + 6 + 1
+        assert torch.allclose(upper, torch.tensor([10.0]))
+        assert bounds.input_ids == [11, 22]
+
     @pytest.mark.skip(reason="forward_compose and backward_compose methods should be moved to LinearRelaxation.")
     def test_forward_compose_basic(self):
         """Test forward composition with linear bounds."""

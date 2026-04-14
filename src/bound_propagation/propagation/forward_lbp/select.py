@@ -6,6 +6,7 @@ import torch.fx as fx
 
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
+from .utils import transform_linear_terms
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -34,15 +35,16 @@ class ForwardLBPSelect(ForwardLBPStrategy):
         if dim < 0 or dim >= output_ndim:
             raise ValueError(f"select dim must be in [0, {output_ndim - 1}], got {dim}")
 
-        linear_lower = bounds.linear_lower.select(dim, index) if bounds.linear_lower is not None else None
-        linear_upper = bounds.linear_upper.select(dim, index) if bounds.linear_upper is not None else None
+        linear_lower = transform_linear_terms(bounds.linear_lowers, lambda linear: linear.select(dim, index))
+        linear_upper = transform_linear_terms(bounds.linear_uppers, lambda linear: linear.select(dim, index))
         bias_lower = bounds.bias_lower.select(dim, index)
         bias_upper = bounds.bias_upper.select(dim, index)
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

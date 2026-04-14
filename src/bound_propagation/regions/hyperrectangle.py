@@ -76,28 +76,6 @@ class HyperRectangle(SimpleRegion):
             upper=self.upper[item],
         )
 
-    def maximize(self, direction: torch.Tensor) -> torch.Tensor:
-        """
-        Get the point in the hyperrectangle that maximizes the linear function defined by direction.
-
-        Args:
-            direction: Coefficients of the linear function to maximize
-        Returns:
-            sup_{x in hyperrectangle} direction^T x
-        """
-        return torch.where(direction >= 0, self.upper, self.lower) * direction
-
-    def minimize(self, direction: torch.Tensor) -> torch.Tensor:
-        """
-        Get the point in the hyperrectangle that minimizes the linear function defined by direction.
-
-        Args:
-            direction: Coefficients of the linear function to minimize
-        Returns:
-            inf_{x in hyperrectangle} direction^T x
-        """
-        return torch.where(direction >= 0, self.lower, self.upper) * direction
-
     def aabb(self) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Get axis-aligned bounding box (AABB) of the hyperrectangle.

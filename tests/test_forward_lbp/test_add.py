@@ -14,7 +14,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     """Create identity linear bounds from a region."""
     dim = region.lower.numel()
     return LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(dim),
         bias_lower=torch.zeros(dim),
         linear_upper=torch.eye(dim),
@@ -31,14 +31,14 @@ def test_add_abstract_abstract_positive() -> None:
     region = HyperRectangle(lower=torch.tensor([1.0, 3.0]), upper=torch.tensor([2.0, 4.0]))
 
     bounds_a = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0, 0.0]]),
         bias_upper=torch.tensor([0.0]),
     )
     bounds_b = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -70,14 +70,14 @@ def test_add_abstract_abstract_with_bias() -> None:
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
 
     bounds_a = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[2.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[2.0]]),
         bias_upper=torch.tensor([3.0]),
     )
     bounds_b = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([0.5]),
         linear_upper=torch.tensor([[1.0]]),
@@ -99,6 +99,42 @@ def test_add_abstract_abstract_with_bias() -> None:
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.5]))
     assert torch.allclose(upper, torch.tensor([7.5]))
+
+
+def test_add_abstract_abstract_different_regions() -> None:
+    """Test addition merges affine terms from different input regions."""
+    region_x = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
+    region_y = HyperRectangle(lower=torch.tensor([2.0]), upper=torch.tensor([3.0]))
+
+    bounds_x = LinearBounds(
+        regions=[region_x],
+        linear_lower=[torch.tensor([[1.0]])],
+        bias_lower=torch.tensor([0.0]),
+        linear_upper=[torch.tensor([[1.0]])],
+        bias_upper=torch.tensor([0.0]),
+        input_ids=[101],
+    )
+    bounds_y = LinearBounds(
+        regions=[region_y],
+        linear_lower=[torch.tensor([[1.0]])],
+        bias_lower=torch.tensor([0.5]),
+        linear_upper=[torch.tensor([[1.0]])],
+        bias_upper=torch.tensor([0.5]),
+        input_ids=[202],
+    )
+
+    strategy = ForwardLBPAdd()
+    result = propagate(strategy, bounds_x, bounds_y)
+
+    assert len(result.regions) == 2
+    assert result.input_ids == [101, 202]
+    assert torch.allclose(result.linear_lowers[0], torch.tensor([[1.0]]))
+    assert torch.allclose(result.linear_lowers[1], torch.tensor([[1.0]]))
+
+    lower, upper = result.concretize()
+    # x + y + 0.5 over x in [0, 1], y in [2, 3]
+    assert torch.allclose(lower, torch.tensor([2.5]))
+    assert torch.allclose(upper, torch.tensor([4.5]))
 
 
 def test_add_abstract_constant_scalar() -> None:

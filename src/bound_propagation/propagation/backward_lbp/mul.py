@@ -53,8 +53,8 @@ class BackwardLBPMulStrategy(ForwardBoundingStrategy):
         bounds_b: LinearBounds = input_bounds[1]
 
         # Check if one operand is constant (no linear dependency)
-        a_is_constant = bounds_a.linear_lower is None and bounds_a.linear_upper is None
-        b_is_constant = bounds_b.linear_lower is None and bounds_b.linear_upper is None
+        a_is_constant = not bounds_a.linear_lowers and not bounds_a.linear_uppers
+        b_is_constant = not bounds_b.linear_lowers and not bounds_b.linear_uppers
 
         if b_is_constant:
             # y is constant: z = x * c
@@ -79,10 +79,10 @@ class BackwardLBPMulStrategy(ForwardBoundingStrategy):
 
             # Return as constant LinearBounds
             return LinearBounds(
-                region=bounds_a.region,
-                linear_lower=None,
+                regions=[],
+                linear_lower=[],
                 bias_lower=lower,
-                linear_upper=None,
+                linear_upper=[],
                 bias_upper=upper,
             )
 
@@ -103,23 +103,22 @@ class BackwardLBPMulStrategy(ForwardBoundingStrategy):
 
         # For positive values: lower *= c, upper *= c
         # For negative values: lower = c * old_upper, upper = c * old_lower
-        if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            linear_lower_pos = constant.unsqueeze(-1) * bounds.linear_lower
-            linear_lower_neg = constant.unsqueeze(-1) * bounds.linear_upper
-            linear_lower = torch.where(positive_mask.unsqueeze(-1), linear_lower_pos, linear_lower_neg)
-
-            linear_upper_pos = constant.unsqueeze(-1) * bounds.linear_upper
-            linear_upper_neg = constant.unsqueeze(-1) * bounds.linear_lower
-            linear_upper = torch.where(positive_mask.unsqueeze(-1), linear_upper_pos, linear_upper_neg)
-        elif bounds.linear_lower is not None:
-            linear_lower = constant.unsqueeze(-1) * bounds.linear_lower
-            linear_upper = constant.unsqueeze(-1) * bounds.linear_lower
-        elif bounds.linear_upper is not None:
-            linear_lower = constant.unsqueeze(-1) * bounds.linear_upper
-            linear_upper = constant.unsqueeze(-1) * bounds.linear_upper
-        else:
-            linear_lower = None
-            linear_upper = None
+        linear_lower = [
+            torch.where(
+                positive_mask.unsqueeze(-1),
+                constant.unsqueeze(-1) * lower_linear,
+                constant.unsqueeze(-1) * upper_linear,
+            )
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
+        linear_upper = [
+            torch.where(
+                positive_mask.unsqueeze(-1),
+                constant.unsqueeze(-1) * upper_linear,
+                constant.unsqueeze(-1) * lower_linear,
+            )
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
 
         bias_lower_pos = constant * bounds.bias_lower
         bias_lower_neg = constant * bounds.bias_upper
@@ -130,9 +129,10 @@ class BackwardLBPMulStrategy(ForwardBoundingStrategy):
         bias_upper = torch.where(positive_mask, bias_upper_pos, bias_upper_neg)
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

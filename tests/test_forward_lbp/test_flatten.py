@@ -15,7 +15,7 @@ def test_flatten_2d_to_1d() -> None:
 
     # Input shape: (2, 3)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(2, 3, 1),
         bias_lower=torch.arange(6.0).view(2, 3),
         linear_upper=torch.ones(2, 3, 1),
@@ -38,7 +38,7 @@ def test_flatten_3d_to_1d() -> None:
 
     # Input shape: (2, 2, 2)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(2, 2, 2, 1),
         bias_lower=torch.arange(8.0).view(2, 2, 2),
         linear_upper=torch.ones(2, 2, 2, 1),
@@ -61,7 +61,7 @@ def test_flatten_1d_identity() -> None:
 
     # Input shape: (5,)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(5, 1),
         bias_lower=torch.arange(5.0),
         linear_upper=torch.ones(5, 1),

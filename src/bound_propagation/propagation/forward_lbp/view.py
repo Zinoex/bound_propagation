@@ -7,6 +7,7 @@ import torch.fx as fx
 
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
+from .utils import transform_linear_terms
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -31,25 +32,23 @@ class ForwardLBPView(ForwardLBPStrategy):
         else:
             shape = tuple(args[1:])
 
-        if bounds.linear_lower is not None:
-            linear_input_dim = bounds.linear_lower.shape[-1]
-            linear_lower = bounds.linear_lower.view(*shape, linear_input_dim)
-        else:
-            linear_lower = None
-
-        if bounds.linear_upper is not None:
-            linear_input_dim = bounds.linear_upper.shape[-1]
-            linear_upper = bounds.linear_upper.view(*shape, linear_input_dim)
-        else:
-            linear_upper = None
+        linear_lower = transform_linear_terms(
+            bounds.linear_lowers,
+            lambda linear: linear.view(*shape, linear.shape[-1]),
+        )
+        linear_upper = transform_linear_terms(
+            bounds.linear_uppers,
+            lambda linear: linear.view(*shape, linear.shape[-1]),
+        )
 
         bias_lower = bounds.bias_lower.view(*shape)
         bias_upper = bounds.bias_upper.view(*shape)
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

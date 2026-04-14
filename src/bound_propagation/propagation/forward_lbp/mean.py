@@ -33,9 +33,9 @@ class ForwardLBPMean(ForwardLBPStrategy):
         upper = upper.mean(dim=dim, keepdim=keepdim)
 
         return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=lower,
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=upper,
         )

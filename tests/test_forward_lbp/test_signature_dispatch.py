@@ -31,7 +31,7 @@ class TestForwardLBPConstantHandling:
             upper=torch.tensor([1.0, 1.0]),
         )
         bounds = LinearBounds(
-            region=region,
+            regions=[region],
             linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
             linear_upper=torch.eye(2),
@@ -52,7 +52,7 @@ class TestForwardLBPConstantHandling:
             upper=torch.tensor([3.0, 3.0]),
         )
         bounds = LinearBounds(
-            region=region,
+            regions=[region],
             linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
             linear_upper=torch.eye(2),

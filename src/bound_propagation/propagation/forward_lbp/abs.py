@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch.fx as fx
-
 from ...bounds import LinearBounds
 from ..linear_relaxations.abs import compute_abs_alpha_beta
 from .base import ForwardLBPStrategy
 from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
+    import torch.fx as fx
+
     from ..context import PropagationContext
 
 

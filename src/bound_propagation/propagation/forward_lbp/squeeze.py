@@ -6,6 +6,7 @@ import torch.fx as fx
 
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
+from .utils import transform_linear_terms
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -34,8 +35,8 @@ class ForwardLBPSqueeze(ForwardLBPStrategy):
             if dim < 0 or dim >= output_ndim:
                 raise ValueError(f"squeeze dim must be in [0, {output_ndim - 1}], got {dim}")
 
-            linear_lower = bounds.linear_lower.squeeze(dim) if bounds.linear_lower is not None else None
-            linear_upper = bounds.linear_upper.squeeze(dim) if bounds.linear_upper is not None else None
+            linear_lower = transform_linear_terms(bounds.linear_lowers, lambda linear: linear.squeeze(dim))
+            linear_upper = transform_linear_terms(bounds.linear_uppers, lambda linear: linear.squeeze(dim))
             bias_lower = bounds.bias_lower.squeeze(dim)
             bias_upper = bounds.bias_upper.squeeze(dim)
         else:
@@ -43,20 +44,20 @@ class ForwardLBPSqueeze(ForwardLBPStrategy):
             bias_lower = bounds.bias_lower.reshape(target_shape)
             bias_upper = bounds.bias_upper.reshape(target_shape)
 
-            if bounds.linear_lower is not None:
-                linear_lower = bounds.linear_lower.reshape(*target_shape, bounds.linear_lower.shape[-1])
-            else:
-                linear_lower = None
-
-            if bounds.linear_upper is not None:
-                linear_upper = bounds.linear_upper.reshape(*target_shape, bounds.linear_upper.shape[-1])
-            else:
-                linear_upper = None
+            linear_lower = transform_linear_terms(
+                bounds.linear_lowers,
+                lambda linear: linear.reshape(*target_shape, linear.shape[-1]),
+            )
+            linear_upper = transform_linear_terms(
+                bounds.linear_uppers,
+                lambda linear: linear.reshape(*target_shape, linear.shape[-1]),
+            )
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

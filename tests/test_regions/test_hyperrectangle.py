@@ -71,23 +71,3 @@ class TestHyperRectangle:
         assert torch.allclose(sliced_region.lower, lower[1:])
         assert torch.allclose(sliced_region.upper, upper[1:])
         assert sliced_region.shape == (2,)
-
-    def test_maximize(self):
-        """Test maximizing a linear function over the hyperrectangle."""
-        lower = torch.tensor([1.0, 2.0])
-        upper = torch.tensor([3.0, 5.0])
-        region = HyperRectangle(lower, upper)
-
-        direction = torch.tensor([1.0, -1.0])
-        expected_max = torch.tensor([3.0, 2.0])  # max at upper[0] and lower[1]
-        assert torch.allclose(region.maximize(direction), expected_max * direction)
-
-    def test_minimize(self):
-        """Test minimizing a linear function over the hyperrectangle."""
-        lower = torch.tensor([1.0, 2.0])
-        upper = torch.tensor([3.0, 5.0])
-        region = HyperRectangle(lower, upper)
-
-        direction = torch.tensor([1.0, -1.0])
-        expected_min = torch.tensor([1.0, 5.0])  # min at lower[0] and upper[1]
-        assert torch.allclose(region.minimize(direction), expected_min * direction)

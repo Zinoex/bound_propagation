@@ -6,6 +6,7 @@ import torch.fx as fx
 
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
+from .utils import combine_linear_terms
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -28,48 +29,39 @@ class ForwardLBPSub(ForwardLBPStrategy):
         if isinstance(left, LinearBounds):
             # x - c
             return LinearBounds(
-                region=left.region,
-                linear_lower=left.linear_lower,
+                regions=left.regions,
+                linear_lower=left.linear_lowers,
                 bias_lower=left.bias_lower - right,
-                linear_upper=left.linear_upper,
+                linear_upper=left.linear_uppers,
                 bias_upper=left.bias_upper - right,
+                input_ids=left.input_ids,
             )
 
         if isinstance(right, LinearBounds):
             # c - x: flip signs and bounds
             return LinearBounds(
-                region=right.region,
-                linear_lower=-right.linear_upper if right.linear_upper is not None else None,
+                regions=right.regions,
+                linear_lower=[-linear for linear in right.linear_uppers],
                 bias_lower=left - right.bias_upper,
-                linear_upper=-right.linear_lower if right.linear_lower is not None else None,
+                linear_upper=[-linear for linear in right.linear_lowers],
                 bias_upper=left - right.bias_lower,
+                input_ids=right.input_ids,
             )
 
         raise TypeError(f"ForwardLBPSub requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
     def _sub_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
-        if a.linear_lower is not None and b.linear_upper is not None:
-            linear_lower = a.linear_lower - b.linear_upper
-        elif a.linear_lower is not None:
-            linear_lower = a.linear_lower
-        elif b.linear_upper is not None:
-            linear_lower = -b.linear_upper
-        else:
-            linear_lower = None
+        lower_regions, linear_lower, input_ids = combine_linear_terms([(a, "lower", 1.0), (b, "upper", -1.0)])
+        upper_regions, linear_upper, upper_input_ids = combine_linear_terms([(a, "upper", 1.0), (b, "lower", -1.0)])
 
-        if a.linear_upper is not None and b.linear_lower is not None:
-            linear_upper = a.linear_upper - b.linear_lower
-        elif a.linear_upper is not None:
-            linear_upper = a.linear_upper
-        elif b.linear_lower is not None:
-            linear_upper = -b.linear_lower
-        else:
-            linear_upper = None
+        if input_ids != upper_input_ids:
+            raise ValueError(f"Lower and upper input IDs must match, got {input_ids} vs {upper_input_ids}")
 
         return LinearBounds(
-            region=a.region,
+            regions=lower_regions or upper_regions,
             linear_lower=linear_lower,
             bias_lower=a.bias_lower - b.bias_upper,
             linear_upper=linear_upper,
             bias_upper=a.bias_upper - b.bias_lower,
+            input_ids=input_ids,
         )

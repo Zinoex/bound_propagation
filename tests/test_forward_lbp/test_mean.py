@@ -23,7 +23,7 @@ def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> Linea
         linear_reshaped = linear[:flat_dim].view(*shape, dim)
 
     return LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=linear_reshaped,
         bias_lower=torch.zeros(shape),
         linear_upper=linear_reshaped,
@@ -45,7 +45,7 @@ def test_mean_along_last_dim() -> None:
 
     # Create linear bounds for shape (2, 3)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(6).view(2, 3, 6),
         bias_lower=torch.zeros(2, 3),
         linear_upper=torch.eye(6).view(2, 3, 6),
@@ -83,7 +83,7 @@ def test_mean_all_elements() -> None:
     )
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(4),
         bias_lower=torch.zeros(4),
         linear_upper=torch.eye(4),
@@ -115,7 +115,7 @@ def test_mean_with_keepdim() -> None:
     )
 
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.eye(6).view(2, 3, 6),
         bias_lower=torch.zeros(2, 3),
         linear_upper=torch.eye(6).view(2, 3, 6),

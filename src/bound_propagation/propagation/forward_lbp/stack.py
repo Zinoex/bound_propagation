@@ -34,9 +34,9 @@ class ForwardLBPStack(ForwardLBPStrategy):
         uppers = [b.concretize()[1] for b in bounds_list]
 
         return LinearBounds(
-            region=bounds_list[0].region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=torch.stack(lowers, dim=dim),
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=torch.stack(uppers, dim=dim),
         )

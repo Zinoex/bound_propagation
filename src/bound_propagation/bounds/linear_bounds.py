@@ -1,9 +1,10 @@
 from __future__ import annotations
 
-import torch
-from plum import dispatch
+from typing import Literal
 
-from ..regions import AbstractRegion, HyperRectangle
+import torch
+
+from ..regions import AbstractRegion, HyperRectangle, SimpleRegion
 from .abstract_bounds import AbstractBounds
 
 
@@ -17,10 +18,10 @@ class LinearBounds(AbstractBounds):
     Used in LBP-style bound propagation methods.
 
     Attributes:
-        region: Input region defining the domain
-        linear_lower: Linear coefficients for lower bound (W_l)
+        regions: Input regions defining the domain of each affine term
+        linear_lower: Linear coefficients for lower bound (W_l), one tensor per input region
         bias_lower: Bias term for lower bound (b_l)
-        linear_upper: Linear coefficients for upper bound (W_u)
+        linear_upper: Linear coefficients for upper bound (W_u), one tensor per input region
         bias_upper: Bias term for upper bound (b_u)
         input_ids: Optional list of input node IDs that contribute to these bounds.
                    Used for tracking dependencies in multi-input scenarios.
@@ -28,119 +29,254 @@ class LinearBounds(AbstractBounds):
 
     def __init__(
         self,
-        region: AbstractRegion,
-        linear_lower: torch.Tensor | None,
-        bias_lower: torch.Tensor,
-        linear_upper: torch.Tensor | None,
-        bias_upper: torch.Tensor,
+        regions: SimpleRegion | list[SimpleRegion],
+        linear_lower: torch.Tensor | list[torch.Tensor] | None = None,
+        bias_lower: torch.Tensor | None = None,
+        linear_upper: torch.Tensor | list[torch.Tensor] | None = None,
+        bias_upper: torch.Tensor | None = None,
         input_ids: list[int] | None = None,
     ) -> None:
         """
         Initialize linear bounds.
 
         Args:
-            region: Input region (e.g., HyperRectangle)
-            linear_lower: Linear coefficients for lower bound (can be None for constant bounds)
+            regions: Input regions, one for each affine coefficient tensor
+            linear_lower: Linear coefficients for lower bound (can be empty for constant bounds)
             bias_lower: Bias for lower bound
-            linear_upper: Linear coefficients for upper bound (can be None for constant bounds)
+            linear_upper: Linear coefficients for upper bound (can be empty for constant bounds)
             bias_upper: Bias for upper bound
         """
-        self.region = region
+        if bias_lower is None or bias_upper is None:
+            raise ValueError("LinearBounds requires both bias_lower and bias_upper")
 
-        # Validate shapes
+        normalized_regions = self._normalize_regions(regions)
+        normalized_linear_lower = self._normalize_linear_terms(linear_lower, "linear_lower")
+        normalized_linear_upper = self._normalize_linear_terms(linear_upper, "linear_upper")
+
+        self._check_uniformity(normalized_regions, normalized_linear_lower, normalized_linear_upper)
+
+        if normalized_linear_lower:
+            normalized_input_ids = self._normalize_input_ids(input_ids, normalized_regions)
+        else:
+            normalized_regions = []
+            normalized_input_ids = []
+
+        self._check_shapes(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
+        self._check_gap(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
+
+        self._regions = normalized_regions
+        self._linear_lower = normalized_linear_lower
+        self._bias_lower = bias_lower
+        self._linear_upper = normalized_linear_upper
+        self._bias_upper = bias_upper
+        self._input_ids = normalized_input_ids
+
+    @staticmethod
+    def _normalize_regions(regions: SimpleRegion | list[SimpleRegion]) -> list[SimpleRegion]:
+        if isinstance(regions, SimpleRegion):
+            return [regions]
+
+        normalized_regions = list(regions)
+        if any(not isinstance(region, SimpleRegion) for region in normalized_regions):
+            raise TypeError("regions must contain only SimpleRegion instances")
+        return normalized_regions
+
+    @staticmethod
+    def _normalize_linear_terms(
+        linear_terms: torch.Tensor | list[torch.Tensor] | None,
+        name: str,
+    ) -> list[torch.Tensor]:
+        if linear_terms is None:
+            return []
+        if isinstance(linear_terms, torch.Tensor):
+            return [linear_terms]
+
+        normalized_terms = list(linear_terms)
+        if any(not isinstance(linear, torch.Tensor) for linear in normalized_terms):
+            raise TypeError(f"{name} must contain only torch.Tensor entries")
+        return normalized_terms
+
+    @staticmethod
+    def _normalize_input_ids(input_ids: list[int] | None, regions: list[SimpleRegion]) -> list[int]:
+        normalized_input_ids = list(input_ids) if input_ids is not None else [id(region) for region in regions]
+
+        if len(normalized_input_ids) != len(regions):
+            raise ValueError(
+                f"input_ids must have the same length as regions: {len(normalized_input_ids)} vs {len(regions)}"
+            )
+        if len(set(normalized_input_ids)) != len(normalized_input_ids):
+            raise ValueError(f"input_ids must be unique, but got {normalized_input_ids!r}")
+
+        return normalized_input_ids
+
+    def _check_shapes(
+        self,
+        regions: list[SimpleRegion],
+        linear_lower: list[torch.Tensor],
+        bias_lower: torch.Tensor,
+        linear_upper: list[torch.Tensor],
+        bias_upper: torch.Tensor,
+    ) -> None:
         if bias_lower.shape != bias_upper.shape:
             raise ValueError(
                 f"bias_lower and bias_upper must have the same shape: {bias_lower.shape} vs {bias_upper.shape}"
             )
 
-        if linear_lower is not None and linear_lower.shape[:-1] != bias_lower.shape:
+        for name, linears in (("linear_lower", linear_lower), ("linear_upper", linear_upper)):
+            for linear, region in zip(linears, regions, strict=True):
+                if linear.shape[:-1] != bias_lower.shape:
+                    raise ValueError(
+                        f"{name} output shape must match bias shape: {linear.shape[:-1]} vs {bias_lower.shape}"
+                    )
+
+                expected_input_dim = torch.Size(region.shape).numel()
+                if linear.shape[-1] != expected_input_dim:
+                    raise ValueError(
+                        f"{name} input dimension must match region size {expected_input_dim}, got {linear.shape[-1]}"
+                    )
+
+    @staticmethod
+    def _check_uniformity(
+        regions: list[SimpleRegion],
+        linear_lower: list[torch.Tensor],
+        linear_upper: list[torch.Tensor],
+    ) -> None:
+        if bool(linear_lower) != bool(linear_upper):
+            raise ValueError("linear_lower and linear_upper must either both be provided or both be empty")
+
+        if linear_lower and len(linear_lower) != len(regions):
             raise ValueError(
-                f"linear_lower output shape must match bias_lower shape: {linear_lower.shape[:-1]} vs {bias_lower.shape}"
+                f"linear_lower must have the same length as regions: {len(linear_lower)} vs {len(regions)}"
             )
 
-        if linear_upper is not None and linear_upper.shape[:-1] != bias_upper.shape:
+        if linear_upper and len(linear_upper) != len(regions):
             raise ValueError(
-                f"linear_upper output shape must match bias_upper shape: {linear_upper.shape[:-1]} vs {bias_upper.shape}"
+                f"linear_upper must have the same length as regions: {len(linear_upper)} vs {len(regions)}"
             )
 
-        if linear_lower is not None and linear_upper is not None and linear_lower.shape[-1] != linear_upper.shape[-1]:
-            raise ValueError("linear_lower and linear_upper must have the same input dimension")
+    def _check_gap(
+        self,
+        regions: list[SimpleRegion],
+        linear_lower: list[torch.Tensor],
+        bias_lower: torch.Tensor,
+        linear_upper: list[torch.Tensor],
+        bias_upper: torch.Tensor,
+    ) -> None:
+        min_gap = bias_upper - bias_lower
 
-        # Validate that if one of linear_lower or linear_upper is provided, the other must also be provided
-        if linear_lower is not None and linear_upper is None:
-            raise ValueError("If linear_lower is provided, linear_upper must also be provided (and vice versa)")
+        for region, lower_linear, upper_linear in zip(regions, linear_lower, linear_upper, strict=True):
+            min_gap = min_gap + self._minimize_affine_term(region, upper_linear - lower_linear)
 
-        if linear_upper is not None and linear_lower is None:
-            raise ValueError("If linear_upper is provided, linear_lower must also be provided (and vice versa)")
+        if torch.any(min_gap < -1e-6):
+            num_violations = torch.sum(min_gap < -1e-6).item()
+            raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
 
-        if linear_lower is not None:
-            region_input_dim = (
-                self.region.lower.numel()
-                if isinstance(self.region, HyperRectangle)
-                else torch.Size(self.region.shape).numel()
-            )
-            if linear_lower.shape[-1] != region_input_dim:
-                raise ValueError(
-                    f"linear_lower input dimension must match region input size: {linear_lower.shape[-1]} vs {region_input_dim}"
-                )
-            if linear_upper is not None and linear_upper.shape[-1] != region_input_dim:
-                raise ValueError(
-                    f"linear_upper input dimension must match region input size: {linear_upper.shape[-1]} vs {region_input_dim}"
-                )
+    @staticmethod
+    def _minimize_affine_term(region: SimpleRegion, linear: torch.Tensor) -> torch.Tensor:
+        if isinstance(region, HyperRectangle):
+            input_lower = region.lower.flatten()
+            input_upper = region.upper.flatten()
+            contributions = torch.where(linear > 0, linear * input_lower, linear * input_upper)
+            return contributions.sum(dim=-1)
 
-        # Validate that the gap between lower and upper bounds is valid.
-        # That is, `(linear_upper - linear_lower)x + (bias_upper - bias_lower)`
-        # should be non-negative for all inputs `x` in `self.region`.
-        if linear_lower is not None and linear_upper is not None:
-            gap_linear = linear_upper - linear_lower
-            gap_bias = bias_upper - bias_lower
+        raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
 
-            if isinstance(self.region, HyperRectangle):
-                input_lower = self.region.lower.flatten()
-                input_upper = self.region.upper.flatten()
-                contributions = torch.where(gap_linear > 0, gap_linear * input_lower, gap_linear * input_upper)
-                min_gap = contributions.sum(dim=-1) + gap_bias
-            else:
-                min_contrib = self.region.minimize(gap_linear)
-                if min_contrib.shape == gap_bias.shape:
-                    min_gap = min_contrib + gap_bias
+    @staticmethod
+    def _maximize_affine_term(region: SimpleRegion, linear: torch.Tensor) -> torch.Tensor:
+        if isinstance(region, HyperRectangle):
+            input_lower = region.lower.flatten()
+            input_upper = region.upper.flatten()
+            contributions = torch.where(linear > 0, linear * input_upper, linear * input_lower)
+            return contributions.sum(dim=-1)
+
+        raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
+
+    @staticmethod
+    def combine_linear_terms(
+        components: list[tuple[LinearBounds, Literal["lower", "upper"], float]],
+    ) -> tuple[list[SimpleRegion], list[torch.Tensor], list[int]]:
+        merged: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
+        ordered_input_ids: list[int] = []
+
+        for bounds, bound_side, scale in components:
+            linears = bounds.linear_lowers if bound_side == "lower" else bounds.linear_uppers
+            for input_id, region, linear in zip(bounds.input_ids, bounds.regions, linears, strict=True):
+                contribution = linear if scale == 1 else scale * linear
+                if input_id in merged:
+                    existing_region, existing_linear = merged[input_id]
+                    if existing_region.shape != region.shape:
+                        raise ValueError(
+                            "Cannot merge input_id "
+                            f"{input_id}: region shapes differ "
+                            f"{existing_region.shape} vs {region.shape}"
+                        )
+                    merged[input_id] = (existing_region, existing_linear + contribution)
                 else:
-                    min_gap = min_contrib.sum(dim=-1) + gap_bias
+                    ordered_input_ids.append(input_id)
+                    merged[input_id] = (region, contribution)
 
-            if torch.any(min_gap < -1e-6):
-                num_violations = torch.sum(min_gap < -1e-6).item()
-                raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
-        else:
-            # If we don't have linear coefficients, just check bias terms
-            if torch.any(bias_upper < bias_lower - 1e-6):
-                num_violations = torch.sum(bias_upper < bias_lower - 1e-6).item()
-                raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
-
-        self.linear_lower = linear_lower
-        self.bias_lower = bias_lower
-        self.linear_upper = linear_upper
-        self.bias_upper = bias_upper
-        self.input_ids = input_ids if input_ids is not None else []
+        regions = [merged[input_id][0] for input_id in ordered_input_ids]
+        linear_terms = [merged[input_id][1] for input_id in ordered_input_ids]
+        return regions, linear_terms, ordered_input_ids
 
     @property
-    def lower(self) -> torch.Tensor:
-        """
-        Get concrete lower bound.
-
-        Note: For linear bounds, this requires evaluation at concrete input bounds.
-        This property returns the bias term only. Use concretize() for full bounds.
-        """
-        return self.bias_lower
+    def regions(self) -> list[SimpleRegion]:
+        """Get input regions associated with these bounds."""
+        return self._regions.copy()
 
     @property
-    def upper(self) -> torch.Tensor:
-        """
-        Get concrete upper bound.
+    def region(self) -> AbstractRegion:
+        """Get the single input region associated with these bounds."""
+        if len(self._regions) != 1:
+            raise ValueError(f"LinearBounds has {len(self._regions)} regions; use regions instead of region")
+        return self._regions[0]
 
-        Note: For linear bounds, this requires evaluation at concrete input bounds.
-        This property returns the bias term only. Use concretize() for full bounds.
-        """
-        return self.bias_upper
+    @property
+    def input_ids(self) -> list[int]:
+        """Get input IDs associated with the affine terms."""
+        return self._input_ids.copy()
+
+    @property
+    def linear_lowers(self) -> list[torch.Tensor]:
+        """Get linear coefficients for the lower bound, one tensor per input region."""
+        return self._linear_lower.copy()
+
+    @property
+    def linear_lower(self) -> torch.Tensor | None:
+        """Get linear coefficients for the lower bound in the single-input case."""
+        if not self._linear_lower:
+            return None
+        if len(self._linear_lower) != 1:
+            raise ValueError(
+                f"LinearBounds has {len(self._linear_lower)} lower coefficient tensors; use linear_lowers instead"
+            )
+        return self._linear_lower[0]
+
+    @property
+    def bias_lower(self) -> torch.Tensor:
+        """Get bias term for lower bound (b_l)."""
+        return self._bias_lower
+
+    @property
+    def linear_uppers(self) -> list[torch.Tensor]:
+        """Get linear coefficients for the upper bound, one tensor per input region."""
+        return self._linear_upper.copy()
+
+    @property
+    def linear_upper(self) -> torch.Tensor | None:
+        """Get linear coefficients for the upper bound in the single-input case."""
+        if not self._linear_upper:
+            return None
+        if len(self._linear_upper) != 1:
+            raise ValueError(
+                f"LinearBounds has {len(self._linear_upper)} upper coefficient tensors; use linear_uppers instead"
+            )
+        return self._linear_upper[0]
+
+    @property
+    def bias_upper(self) -> torch.Tensor:
+        """Get bias term for upper bound (b_u)."""
+        return self._bias_upper
 
     @property
     def shape(self) -> tuple[int, ...]:
@@ -150,10 +286,14 @@ class LinearBounds(AbstractBounds):
     @property
     def input_dim(self) -> int:
         """Get input dimensions of linear bounds."""
-        if self.linear_lower is not None:
-            return len(self.linear_lower.shape) - len(self.bias_lower.shape)
-        else:
-            return 0
+        return sum(torch.Size(region.shape).numel() for region in self._regions)
+
+    @staticmethod
+    def _move_region(region: SimpleRegion, device: str | torch.device) -> SimpleRegion:
+        moved_region = region.to(device)
+        if not isinstance(moved_region, SimpleRegion):
+            raise TypeError(f"Expected SimpleRegion after to(...), got {type(moved_region).__name__}")
+        return moved_region
 
     @property
     def device(self) -> torch.device:
@@ -163,11 +303,12 @@ class LinearBounds(AbstractBounds):
     def to(self, device: str | torch.device) -> LinearBounds:
         """Move bounds to a device."""
         return LinearBounds(
-            region=self.region.to(device),
-            linear_lower=self.linear_lower.to(device) if self.linear_lower is not None else None,
+            regions=[self._move_region(region, device) for region in self._regions],
+            linear_lower=[linear.to(device) for linear in self._linear_lower],
             bias_lower=self.bias_lower.to(device),
-            linear_upper=self.linear_upper.to(device) if self.linear_upper is not None else None,
+            linear_upper=[linear.to(device) for linear in self._linear_upper],
             bias_upper=self.bias_upper.to(device),
+            input_ids=self._input_ids.copy() if self._input_ids else None,
         )
 
     def __getitem__(self, item) -> LinearBounds:
@@ -176,11 +317,12 @@ class LinearBounds(AbstractBounds):
         linear_item = linear_item + (slice(None),)
 
         return LinearBounds(
-            region=self.region,
-            linear_lower=self.linear_lower[linear_item] if self.linear_lower is not None else None,
+            regions=self._regions,
+            linear_lower=[linear[linear_item] for linear in self._linear_lower],
             bias_lower=self.bias_lower[item],
-            linear_upper=self.linear_upper[linear_item] if self.linear_upper is not None else None,
+            linear_upper=[linear[linear_item] for linear in self._linear_upper],
             bias_upper=self.bias_upper[item],
+            input_ids=self._input_ids.copy() if self._input_ids else None,
         )
 
     def concretize(self) -> tuple[torch.Tensor, torch.Tensor]:
@@ -197,33 +339,26 @@ class LinearBounds(AbstractBounds):
         Returns:
             IntervalBounds representing the concretized bounds
         """
-        return concretize(self.region, self)  # ty:ignore[invalid-return-type, invalid-argument-type]
+        return concretize(self.regions, self)
 
     def clone(self) -> LinearBounds:
         """Create a deep copy."""
         return LinearBounds(
-            region=self.region,  # Regions are immutable
-            linear_lower=self.linear_lower.clone() if self.linear_lower is not None else None,
+            regions=self._regions,
+            linear_lower=[linear.clone() for linear in self._linear_lower],
             bias_lower=self.bias_lower.clone(),
-            linear_upper=self.linear_upper.clone() if self.linear_upper is not None else None,
+            linear_upper=[linear.clone() for linear in self._linear_upper],
             bias_upper=self.bias_upper.clone(),
-            input_ids=self.input_ids.copy() if self.input_ids else None,
+            input_ids=self._input_ids.copy() if self._input_ids else None,
         )
 
 
-@dispatch.abstract
-def concretize(region: AbstractRegion, bounds: LinearBounds) -> tuple[torch.Tensor, torch.Tensor]:
-    raise NotImplementedError("Abstract method for concretize")
-
-
-@dispatch
-def concretize(region: HyperRectangle, bounds: LinearBounds) -> tuple[torch.Tensor, torch.Tensor]:  # noqa: F811
+def concretize(regions: list[SimpleRegion], bounds: LinearBounds) -> tuple[torch.Tensor, torch.Tensor]:
     """
-    Concretize linear bounds given a hyperrectangle region.
+    Concretize linear bounds given input regions.
 
-    For linear bounds, evaluates the affine functions at the box extremes:
-    - Lower bound: minimize W_l @ x + b_l over x in [lower, upper]
-    - Upper bound: maximize W_u @ x + b_u over x in [lower, upper]
+    For linear bounds, evaluates each affine term over its own region and sums the
+    contributions together with the bias terms.
 
     For each weight coefficient:
     - Use region.lower if coefficient > 0 (for minimization)
@@ -231,36 +366,19 @@ def concretize(region: HyperRectangle, bounds: LinearBounds) -> tuple[torch.Tens
     - Vice versa for maximization
 
     Args:
-        region: The hyperrectangle input region
+        regions: The input regions corresponding to the affine terms
         bounds: The linear bounds to concretize
 
     Returns:
         Tuple of (lower, upper) concrete bounds
     """
-    # Flatten the hyperrectangle bounds for easier computation
-    input_lower = region.lower.flatten()
-    input_upper = region.upper.flatten()
-
-    # Lower bound computation: minimize W_l @ x + b_l
     lower_result = bounds.bias_lower.clone()
-    if bounds.linear_lower is not None:
-        positive_mask = bounds.linear_lower > 0
-        contributions = torch.where(
-            positive_mask,
-            bounds.linear_lower * input_lower,
-            bounds.linear_lower * input_upper,
-        )
-        lower_result = lower_result + contributions.sum(dim=-1)
-
-    # Upper bound computation: maximize W_u @ x + b_u
     upper_result = bounds.bias_upper.clone()
-    if bounds.linear_upper is not None:
-        positive_mask = bounds.linear_upper > 0
-        contributions = torch.where(
-            positive_mask,
-            bounds.linear_upper * input_upper,
-            bounds.linear_upper * input_lower,
-        )
-        upper_result = upper_result + contributions.sum(dim=-1)
+
+    for region, linear_lower in zip(regions, bounds.linear_lowers, strict=True):
+        lower_result = lower_result + bounds._minimize_affine_term(region, linear_lower)
+
+    for region, linear_upper in zip(regions, bounds.linear_uppers, strict=True):
+        upper_result = upper_result + bounds._maximize_affine_term(region, linear_upper)
 
     return lower_result, upper_result

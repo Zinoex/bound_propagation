@@ -48,10 +48,10 @@ class ForwardLBPMul(ForwardLBPStrategy):
         upper = torch.stack(products).max(dim=0)[0]
 
         return LinearBounds(
-            region=a.region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=lower,
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=upper,
         )
 
@@ -61,23 +61,22 @@ class ForwardLBPMul(ForwardLBPStrategy):
         ).expand_as(bounds.bias_lower)
         positive_mask = constant_tensor >= 0
 
-        if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            linear_lower_pos = constant_tensor.unsqueeze(-1) * bounds.linear_lower
-            linear_lower_neg = constant_tensor.unsqueeze(-1) * bounds.linear_upper
-            linear_lower = torch.where(positive_mask.unsqueeze(-1), linear_lower_pos, linear_lower_neg)
-
-            linear_upper_pos = constant_tensor.unsqueeze(-1) * bounds.linear_upper
-            linear_upper_neg = constant_tensor.unsqueeze(-1) * bounds.linear_lower
-            linear_upper = torch.where(positive_mask.unsqueeze(-1), linear_upper_pos, linear_upper_neg)
-        elif bounds.linear_lower is not None:
-            linear_lower = constant_tensor.unsqueeze(-1) * bounds.linear_lower
-            linear_upper = constant_tensor.unsqueeze(-1) * bounds.linear_lower
-        elif bounds.linear_upper is not None:
-            linear_lower = constant_tensor.unsqueeze(-1) * bounds.linear_upper
-            linear_upper = constant_tensor.unsqueeze(-1) * bounds.linear_upper
-        else:
-            linear_lower = None
-            linear_upper = None
+        linear_lower = [
+            torch.where(
+                positive_mask.unsqueeze(-1),
+                constant_tensor.unsqueeze(-1) * lower_linear,
+                constant_tensor.unsqueeze(-1) * upper_linear,
+            )
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
+        linear_upper = [
+            torch.where(
+                positive_mask.unsqueeze(-1),
+                constant_tensor.unsqueeze(-1) * upper_linear,
+                constant_tensor.unsqueeze(-1) * lower_linear,
+            )
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
 
         bias_lower_pos = constant_tensor * bounds.bias_lower
         bias_lower_neg = constant_tensor * bounds.bias_upper
@@ -88,9 +87,10 @@ class ForwardLBPMul(ForwardLBPStrategy):
         bias_upper = torch.where(positive_mask, bias_upper_pos, bias_upper_neg)
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

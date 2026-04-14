@@ -53,7 +53,7 @@ class BackwardLBPMatmulStrategy(ForwardBoundingStrategy):
         bounds_b: LinearBounds = input_bounds[1]
 
         # Check if second operand is constant (common case: x @ W)
-        b_is_constant = bounds_b.linear_lower is None and bounds_b.linear_upper is None
+        b_is_constant = not bounds_b.linear_lowers and not bounds_b.linear_uppers
 
         if b_is_constant:
             # y is constant: z = x @ W
@@ -62,7 +62,8 @@ class BackwardLBPMatmulStrategy(ForwardBoundingStrategy):
         else:
             # Both vary - need to concretize
             raise NotImplementedError(
-                "Backward LBP matmul with two varying operands not yet supported. Use constant weights or switch to IBP method."
+                "Backward LBP matmul with two varying operands not yet "
+                "supported. Use constant weights or switch to IBP method."
             )
 
     def _matmul_by_constant(self, bounds: LinearBounds, weight: torch.Tensor) -> LinearBounds:
@@ -84,35 +85,26 @@ class BackwardLBPMatmulStrategy(ForwardBoundingStrategy):
         weight_neg = torch.clamp(weight, max=0)
 
         # Lower bound
-        if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            # Use lower for positive weights, upper for negative
-            linear_lower = bounds.linear_lower @ weight_pos + bounds.linear_upper @ weight_neg
-        elif bounds.linear_lower is not None:
-            linear_lower = bounds.linear_lower @ weight_pos + bounds.linear_lower @ weight_neg
-        elif bounds.linear_upper is not None:
-            linear_lower = bounds.linear_upper @ weight_pos + bounds.linear_upper @ weight_neg
-        else:
-            linear_lower = None
+        linear_lower = [
+            lower_linear @ weight_pos + upper_linear @ weight_neg
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
 
         bias_lower = bounds.bias_lower @ weight_pos + bounds.bias_upper @ weight_neg
 
         # Upper bound
-        if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            # Use upper for positive weights, lower for negative
-            linear_upper = bounds.linear_upper @ weight_pos + bounds.linear_lower @ weight_neg
-        elif bounds.linear_upper is not None:
-            linear_upper = bounds.linear_upper @ weight_pos + bounds.linear_upper @ weight_neg
-        elif bounds.linear_lower is not None:
-            linear_upper = bounds.linear_lower @ weight_pos + bounds.linear_lower @ weight_neg
-        else:
-            linear_upper = None
+        linear_upper = [
+            upper_linear @ weight_pos + lower_linear @ weight_neg
+            for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
+        ]
 
         bias_upper = bounds.bias_upper @ weight_pos + bounds.bias_lower @ weight_neg
 
         return LinearBounds(
-            region=bounds.region,
+            regions=bounds.regions,
             linear_lower=linear_lower,
             bias_lower=bias_lower,
             linear_upper=linear_upper,
             bias_upper=bias_upper,
+            input_ids=bounds.input_ids,
         )

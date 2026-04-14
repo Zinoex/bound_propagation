@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import torch.fx as fx
-
 from ...bounds import LinearBounds
 from .base import ForwardLBPStrategy
+from .utils import combine_linear_terms
 
 if TYPE_CHECKING:
+    import torch
+    import torch.fx as fx
+
     from ..context import PropagationContext
 
 
@@ -34,37 +36,27 @@ class ForwardLBPAdd(ForwardLBPStrategy):
         raise TypeError(f"ForwardLBPAdd requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
     def _add_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
-        if a.linear_lower is not None and b.linear_lower is not None:
-            linear_lower = a.linear_lower + b.linear_lower
-        elif a.linear_lower is not None:
-            linear_lower = a.linear_lower
-        elif b.linear_lower is not None:
-            linear_lower = b.linear_lower
-        else:
-            linear_lower = None
+        lower_regions, linear_lower, input_ids = combine_linear_terms([(a, "lower", 1.0), (b, "lower", 1.0)])
+        upper_regions, linear_upper, upper_input_ids = combine_linear_terms([(a, "upper", 1.0), (b, "upper", 1.0)])
 
-        if a.linear_upper is not None and b.linear_upper is not None:
-            linear_upper = a.linear_upper + b.linear_upper
-        elif a.linear_upper is not None:
-            linear_upper = a.linear_upper
-        elif b.linear_upper is not None:
-            linear_upper = b.linear_upper
-        else:
-            linear_upper = None
+        if input_ids != upper_input_ids:
+            raise ValueError(f"Lower and upper input IDs must match, got {input_ids} vs {upper_input_ids}")
 
         return LinearBounds(
-            region=a.region,
+            regions=lower_regions or upper_regions,
             linear_lower=linear_lower,
             bias_lower=a.bias_lower + b.bias_lower,
             linear_upper=linear_upper,
             bias_upper=a.bias_upper + b.bias_upper,
+            input_ids=input_ids,
         )
 
-    def _add_constant(self, bounds: LinearBounds, constant: object) -> LinearBounds:
+    def _add_constant(self, bounds: LinearBounds, constant: torch.Tensor | torch.types.Number) -> LinearBounds:
         return LinearBounds(
-            region=bounds.region,
-            linear_lower=bounds.linear_lower,
+            regions=bounds.regions,
+            linear_lower=bounds.linear_lowers,
             bias_lower=bounds.bias_lower + constant,
-            linear_upper=bounds.linear_upper,
+            linear_upper=bounds.linear_uppers,
             bias_upper=bounds.bias_upper + constant,
+            input_ids=bounds.input_ids,
         )

@@ -26,24 +26,21 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
             lower_a, upper_a = left.concretize()
             lower_b, upper_b = right.concretize()
-            region = left.region
         elif isinstance(left, LinearBounds):
             lower_a, upper_a = left.concretize()
             right_tensor = torch.as_tensor(right, dtype=lower_a.dtype, device=lower_a.device)
             lower_b, upper_b = right_tensor, right_tensor
-            region = left.region
         elif isinstance(right, LinearBounds):
             left_tensor = torch.as_tensor(left, dtype=right.bias_lower.dtype, device=right.bias_lower.device)
             lower_a, upper_a = left_tensor, left_tensor
             lower_b, upper_b = right.concretize()
-            region = right.region
         else:
             raise TypeError(f"ForwardLBPMaximum requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
         return LinearBounds(
-            region=region,
-            linear_lower=None,
+            regions=[],
+            linear_lower=[],
             bias_lower=torch.maximum(lower_a, lower_b),
-            linear_upper=None,
+            linear_upper=[],
             bias_upper=torch.maximum(upper_a, upper_b),
         )

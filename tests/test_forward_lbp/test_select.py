@@ -15,7 +15,7 @@ def test_select_dim0() -> None:
 
     # Shape: (3, 4)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(3, 4, 1),
         bias_lower=torch.arange(12.0).view(3, 4),
         linear_upper=torch.ones(3, 4, 1),
@@ -39,7 +39,7 @@ def test_select_dim1() -> None:
 
     # Shape: (3, 4)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(3, 4, 1),
         bias_lower=torch.arange(12.0).view(3, 4),
         linear_upper=torch.ones(3, 4, 1),
@@ -63,7 +63,7 @@ def test_select_3d() -> None:
 
     # Shape: (2, 3, 4)
     bounds = LinearBounds(
-        region=region,
+        regions=[region],
         linear_lower=torch.ones(2, 3, 4, 1),
         bias_lower=torch.arange(24.0).view(2, 3, 4),
         linear_upper=torch.ones(2, 3, 4, 1),
