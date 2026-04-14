@@ -33,9 +33,9 @@ class TestForwardLBPConstantHandling:
         )
         bounds = LinearBounds(
             region=region,
-            linear_lower=torch.eye(2).unsqueeze(-1),
+            linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
-            linear_upper=torch.eye(2).unsqueeze(-1),
+            linear_upper=torch.eye(2),
             bias_upper=torch.zeros(2),
         )
         constant = torch.tensor([2.0, 3.0])
@@ -54,9 +54,9 @@ class TestForwardLBPConstantHandling:
         )
         bounds = LinearBounds(
             region=region,
-            linear_lower=torch.eye(2).unsqueeze(-1),
+            linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
-            linear_upper=torch.eye(2).unsqueeze(-1),
+            linear_upper=torch.eye(2),
             bias_upper=torch.zeros(2),
         )
         constant = torch.tensor([2.0, -1.0])
@@ -96,6 +96,7 @@ class TestForwardLBPEndToEndDispatch:
 
     def test_computation_with_mixed_signatures(self) -> None:
         """Test: x + 2 -> mul 3: 3(x + 2) for x in [1, 2]."""
+
         def fn(x):
             return (x + torch.tensor([2.0, 2.0])) * torch.tensor([3.0, 3.0])
 
@@ -119,6 +120,7 @@ class TestForwardLBPEndToEndDispatch:
 
     def test_matmul_with_constant_weight(self) -> None:
         """Test Forward LBP dispatch for matmul with constant weight."""
+
         def fn(x):
             weight = torch.tensor([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
             bias = torch.tensor([1.0, -1.0])

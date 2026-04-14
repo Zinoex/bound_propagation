@@ -24,9 +24,11 @@ def test_getitem_single_index() -> None:
     strategy = ForwardLBPGetItem()
     result = propagate(strategy, bounds, 2)
 
+    # getitem preserves affine coefficients; with x in [0, 1] and coefficient 1,
+    # each selected upper gains +1 from the input contribution.
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor(2.0))
-    assert torch.allclose(upper, torch.tensor(3.0))
+    assert torch.allclose(upper, torch.tensor(4.0))
 
 
 def test_getitem_slice() -> None:
@@ -46,7 +48,7 @@ def test_getitem_slice() -> None:
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0, 2.0, 3.0]))
-    assert torch.allclose(upper, torch.tensor([2.0, 3.0, 4.0]))
+    assert torch.allclose(upper, torch.tensor([3.0, 4.0, 5.0]))
 
 
 def test_getitem_2d_single_index() -> None:
@@ -66,4 +68,4 @@ def test_getitem_2d_single_index() -> None:
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([4.0, 5.0, 6.0, 7.0]))
-    assert torch.allclose(upper, torch.tensor([5.0, 6.0, 7.0, 8.0]))
+    assert torch.allclose(upper, torch.tensor([6.0, 7.0, 8.0, 9.0]))

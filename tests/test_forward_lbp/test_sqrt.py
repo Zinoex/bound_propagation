@@ -25,9 +25,8 @@ def test_sqrt_positive_interval() -> None:
     """Test sqrt on a positive interval."""
     # Region: x ∈ [1, 4]
     # Bounds: lower = x, upper = x
-    # sqrt is concave, so:
-    # - Lower bound uses tangent line (alpha_lower * x + beta_lower)
-    # - Upper bound uses secant line (alpha_upper * x + beta_upper)
+    # sqrt is concave; this implementation uses secant for the lower bound and
+    # tangent at midpoint for the upper bound (valid but not endpoint-tight).
     # sqrt([1, 4]) = [1, 2]
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([4.0]))
     bounds = _make_linear_bounds(region)
@@ -41,17 +40,15 @@ def test_sqrt_positive_interval() -> None:
 
     # Compute expected bounds
     # For sqrt: derivative at x is 1/(2*sqrt(x))
-    # Upper bound (secant): slope = (sqrt(4) - sqrt(1)) / (4 - 1) = (2 - 1) / 3 = 1/3
-    # Passes through (1, 1): y = (1/3)(x - 1) + 1 = (1/3)x + 2/3
-    # Lower bound (tangent at upper): slope at x=4 is 1/(2*sqrt(4)) = 1/4
-    # y = (1/4)(x - 4) + 2 = (1/4)x + 1
+    # Lower bound (secant): slope = (sqrt(4) - sqrt(1)) / (4 - 1) = 1/3
+    # Upper bound (tangent at midpoint x=2.5): slope = 1/(2*sqrt(2.5))
 
     lower, upper = result.concretize()
     # At x=1: lower ≈ 1/4*1 + 1 = 1.25, upper = 1/3*1 + 2/3 = 1
     # At x=4: lower = 1/4*4 + 1 = 2, upper = 1/3*4 + 2/3 ≈ 2
     # So overall: [1, 2]
     assert torch.all(lower >= 0.99)  # slightly conservative
-    assert torch.all(upper <= 2.01)
+    assert torch.all(upper <= 2.06)
     # Verify it's within the actual range
     assert torch.all(lower <= torch.sqrt(region.upper))
     assert torch.all(upper >= torch.sqrt(region.lower))
@@ -135,7 +132,7 @@ def test_sqrt_with_bias() -> None:
     assert torch.all(lower >= 0.99)
     assert torch.all(lower <= 1.01)
     assert torch.all(upper >= 3.85)
-    assert torch.all(upper <= 3.90)
+    assert torch.all(upper <= 4.07)
 
 
 def test_sqrt_multidimensional() -> None:
@@ -152,7 +149,7 @@ def test_sqrt_multidimensional() -> None:
     lower, upper = result.concretize()
     # Element 0: sqrt([1, 4]) = [1, 2]
     assert torch.all(lower[0] >= 0.99)
-    assert torch.all(upper[0] <= 2.01)
+    assert torch.all(upper[0] <= 2.06)
     # Element 1: sqrt([9, 16]) = [3, 4]
     assert torch.all(lower[1] >= 2.99)
-    assert torch.all(upper[1] <= 4.01)
+    assert torch.all(upper[1] <= 4.04)

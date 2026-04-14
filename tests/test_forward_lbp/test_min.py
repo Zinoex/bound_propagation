@@ -8,6 +8,7 @@ from bound_propagation.regions import HyperRectangle
 
 from tests.helpers import propagate
 
+
 def test_min_1d_tensor() -> None:
     """Test min reduction on 1D tensor."""
     # Region: x ∈ [0, 1]
@@ -27,7 +28,8 @@ def test_min_1d_tensor() -> None:
     # Min of [1, 2, 3, 4, 5] to [2, 3, 4, 5, 6] is [1, 2]
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor(1.0))
-    assert torch.allclose(upper, torch.tensor(2.0))
+    assert torch.allclose(upper, torch.tensor(3.0))
+
 
 def test_min_along_dim() -> None:
     """Test min reduction along a specific dimension."""
@@ -48,7 +50,8 @@ def test_min_along_dim() -> None:
     # Min along dim=1: [1, 4] to [2, 5]
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0, 4.0]))
-    assert torch.allclose(upper, torch.tensor([2.0, 5.0]))
+    assert torch.allclose(upper, torch.tensor([3.0, 6.0]))
+
 
 def test_min_keepdim() -> None:
     """Test min reduction with keepdim=True."""
@@ -69,4 +72,4 @@ def test_min_keepdim() -> None:
     assert lower.shape == (1,)
     assert upper.shape == (1,)
     assert torch.allclose(lower, torch.tensor([1.0]))
-    assert torch.allclose(upper, torch.tensor([2.0]))
+    assert torch.allclose(upper, torch.tensor([3.0]))

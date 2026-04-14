@@ -60,11 +60,10 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         )
 
     def _divide_by_constant(self, bounds: LinearBounds, divisor: object) -> LinearBounds:
-        positive_mask = divisor > 0
-
         divisor = torch.as_tensor(divisor, dtype=bounds.bias_lower.dtype, device=bounds.bias_lower.device).expand_as(
             bounds.bias_lower
         )
+        positive_mask = divisor > 0
 
         if bounds.linear_lower is not None and bounds.linear_upper is not None:
             linear_lower_pos = bounds.linear_lower / divisor.unsqueeze(-1)
@@ -102,12 +101,13 @@ class ForwardLBPDiv(ForwardLBPStrategy):
 
     def _constant_div(self, constant: object, bounds: LinearBounds) -> LinearBounds:
         lower_x, upper_x = bounds.concretize()
+        constant_tensor = torch.as_tensor(constant, dtype=lower_x.dtype, device=lower_x.device)
 
         if torch.any((lower_x <= 0) & (upper_x >= 0)):
             lower = torch.full_like(lower_x, float("-inf"))
             upper = torch.full_like(upper_x, float("inf"))
         else:
-            quotients = [constant / lower_x, constant / upper_x]
+            quotients = [constant_tensor / lower_x, constant_tensor / upper_x]
             lower = torch.min(torch.stack(quotients), dim=0)[0]
             upper = torch.max(torch.stack(quotients), dim=0)[0]
 

@@ -28,13 +28,29 @@ class ForwardLBPFlatten(ForwardLBPStrategy):
         start_dim = args[1] if len(args) > 1 else kwargs.get("start_dim", 0)
         end_dim = args[2] if len(args) > 2 else kwargs.get("end_dim", -1)
 
+        output_ndim = bounds.bias_lower.ndim
+        if start_dim < 0:
+            start_dim += output_ndim
+        if end_dim < 0:
+            end_dim += output_ndim
+
+        if start_dim < 0 or start_dim >= output_ndim or end_dim < 0 or end_dim >= output_ndim:
+            raise ValueError(
+                f"flatten dims must be in [0, {output_ndim - 1}], got start_dim={start_dim}, end_dim={end_dim}"
+            )
+
+        if end_dim < start_dim:
+            raise ValueError(f"flatten end_dim must be >= start_dim, got start_dim={start_dim}, end_dim={end_dim}")
+
         bias_lower = bounds.bias_lower.flatten(start_dim, end_dim)
         bias_upper = bounds.bias_upper.flatten(start_dim, end_dim)
+        linear_lower = bounds.linear_lower.flatten(start_dim, end_dim) if bounds.linear_lower is not None else None
+        linear_upper = bounds.linear_upper.flatten(start_dim, end_dim) if bounds.linear_upper is not None else None
 
         return LinearBounds(
             region=bounds.region,
-            linear_lower=bounds.linear_lower,
+            linear_lower=linear_lower,
             bias_lower=bias_lower,
-            linear_upper=bounds.linear_upper,
+            linear_upper=linear_upper,
             bias_upper=bias_upper,
         )

@@ -26,14 +26,4 @@ class ForwardLBPGetItem(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPGetItem requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        lower = lower[index]
-        upper = upper[index]
-
-        return LinearBounds(
-            region=bounds.region,
-            linear_lower=None,
-            bias_lower=lower,
-            linear_upper=None,
-            bias_upper=upper,
-        )
+        return bounds[index]

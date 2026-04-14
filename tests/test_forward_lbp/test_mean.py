@@ -8,6 +8,7 @@ from bound_propagation.regions import HyperRectangle
 
 from tests.helpers import propagate
 
+
 def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> LinearBounds:
     """Create identity linear bounds from a region with specific shape."""
     dim = region.lower.numel()
@@ -29,6 +30,7 @@ def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> Linea
         linear_upper=linear_reshaped,
         bias_upper=torch.zeros(shape),
     )
+
 
 def test_mean_along_last_dim() -> None:
     """Test mean reduction along the last dimension."""
@@ -70,6 +72,7 @@ def test_mean_along_last_dim() -> None:
     assert torch.allclose(lower, torch.tensor([0.0, 0.0]))
     assert torch.allclose(upper, torch.tensor([2.0, 2.0]))
 
+
 def test_mean_all_elements() -> None:
     """Test mean over all elements (no dim specified)."""
     # Region: x ∈ [1, 3] for 4 elements
@@ -82,9 +85,9 @@ def test_mean_all_elements() -> None:
 
     bounds = LinearBounds(
         region=region,
-        linear_lower=torch.eye(4).unsqueeze(0),
+        linear_lower=torch.eye(4),
         bias_lower=torch.zeros(4),
-        linear_upper=torch.eye(4).unsqueeze(0),
+        linear_upper=torch.eye(4),
         bias_upper=torch.zeros(4),
     )
 
@@ -100,6 +103,7 @@ def test_mean_all_elements() -> None:
     # Mean of [1, 3] across all elements is [1, 3]
     assert torch.allclose(lower, torch.tensor(1.0))
     assert torch.allclose(upper, torch.tensor(3.0))
+
 
 def test_mean_with_keepdim() -> None:
     """Test mean with keepdim=True."""

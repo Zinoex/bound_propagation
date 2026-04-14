@@ -56,32 +56,35 @@ class ForwardLBPMul(ForwardLBPStrategy):
         )
 
     def _multiply_by_constant(self, bounds: LinearBounds, constant: object) -> LinearBounds:
-        positive_mask = constant >= 0
+        constant_tensor = torch.as_tensor(
+            constant, dtype=bounds.bias_lower.dtype, device=bounds.bias_lower.device
+        ).expand_as(bounds.bias_lower)
+        positive_mask = constant_tensor >= 0
 
         if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            linear_lower_pos = constant.unsqueeze(-1) * bounds.linear_lower
-            linear_lower_neg = constant.unsqueeze(-1) * bounds.linear_upper
+            linear_lower_pos = constant_tensor.unsqueeze(-1) * bounds.linear_lower
+            linear_lower_neg = constant_tensor.unsqueeze(-1) * bounds.linear_upper
             linear_lower = torch.where(positive_mask.unsqueeze(-1), linear_lower_pos, linear_lower_neg)
 
-            linear_upper_pos = constant.unsqueeze(-1) * bounds.linear_upper
-            linear_upper_neg = constant.unsqueeze(-1) * bounds.linear_lower
+            linear_upper_pos = constant_tensor.unsqueeze(-1) * bounds.linear_upper
+            linear_upper_neg = constant_tensor.unsqueeze(-1) * bounds.linear_lower
             linear_upper = torch.where(positive_mask.unsqueeze(-1), linear_upper_pos, linear_upper_neg)
         elif bounds.linear_lower is not None:
-            linear_lower = constant.unsqueeze(-1) * bounds.linear_lower
-            linear_upper = constant.unsqueeze(-1) * bounds.linear_lower
+            linear_lower = constant_tensor.unsqueeze(-1) * bounds.linear_lower
+            linear_upper = constant_tensor.unsqueeze(-1) * bounds.linear_lower
         elif bounds.linear_upper is not None:
-            linear_lower = constant.unsqueeze(-1) * bounds.linear_upper
-            linear_upper = constant.unsqueeze(-1) * bounds.linear_upper
+            linear_lower = constant_tensor.unsqueeze(-1) * bounds.linear_upper
+            linear_upper = constant_tensor.unsqueeze(-1) * bounds.linear_upper
         else:
             linear_lower = None
             linear_upper = None
 
-        bias_lower_pos = constant * bounds.bias_lower
-        bias_lower_neg = constant * bounds.bias_upper
+        bias_lower_pos = constant_tensor * bounds.bias_lower
+        bias_lower_neg = constant_tensor * bounds.bias_upper
         bias_lower = torch.where(positive_mask, bias_lower_pos, bias_lower_neg)
 
-        bias_upper_pos = constant * bounds.bias_upper
-        bias_upper_neg = constant * bounds.bias_lower
+        bias_upper_pos = constant_tensor * bounds.bias_upper
+        bias_upper_neg = constant_tensor * bounds.bias_lower
         bias_upper = torch.where(positive_mask, bias_upper_pos, bias_upper_neg)
 
         return LinearBounds(

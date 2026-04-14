@@ -48,18 +48,45 @@ class LinearBounds(AbstractBounds):
         self.region = region
 
         # Validate shapes
-        if linear_lower is not None and linear_lower.shape[0] != bias_lower.shape[0]:
-            raise ValueError("linear_lower and bias_lower must have the same output dimension")
+        if bias_lower.shape != bias_upper.shape:
+            raise ValueError(
+                f"bias_lower and bias_upper must have the same shape: {bias_lower.shape} vs {bias_upper.shape}"
+            )
 
-        if linear_upper is not None and linear_upper.shape[0] != bias_upper.shape[0]:
-            raise ValueError("linear_upper and bias_upper must have the same output dimension")
+        if linear_lower is not None and linear_lower.shape[:-1] != bias_lower.shape:
+            raise ValueError(
+                f"linear_lower output shape must match bias_lower shape: {linear_lower.shape[:-1]} vs {bias_lower.shape}"
+            )
 
-        if linear_lower is not None and linear_upper is not None and linear_lower.shape[1] != linear_upper.shape[1]:
+        if linear_upper is not None and linear_upper.shape[:-1] != bias_upper.shape:
+            raise ValueError(
+                f"linear_upper output shape must match bias_upper shape: {linear_upper.shape[:-1]} vs {bias_upper.shape}"
+            )
+
+        if linear_lower is not None and linear_upper is not None and linear_lower.shape[-1] != linear_upper.shape[-1]:
             raise ValueError("linear_lower and linear_upper must have the same input dimension")
 
         # Validate that if one of linear_lower or linear_upper is provided, the other must also be provided
         if linear_lower is not None and linear_upper is None:
             raise ValueError("If linear_lower is provided, linear_upper must also be provided (and vice versa)")
+
+        if linear_upper is not None and linear_lower is None:
+            raise ValueError("If linear_upper is provided, linear_lower must also be provided (and vice versa)")
+
+        if linear_lower is not None:
+            region_input_dim = (
+                self.region.lower.numel()
+                if isinstance(self.region, HyperRectangle)
+                else torch.Size(self.region.shape).numel()
+            )
+            if linear_lower.shape[-1] != region_input_dim:
+                raise ValueError(
+                    f"linear_lower input dimension must match region input size: {linear_lower.shape[-1]} vs {region_input_dim}"
+                )
+            if linear_upper is not None and linear_upper.shape[-1] != region_input_dim:
+                raise ValueError(
+                    f"linear_upper input dimension must match region input size: {linear_upper.shape[-1]} vs {region_input_dim}"
+                )
 
         # Validate that the gap between lower and upper bounds is valid.
         # That is, `(linear_upper - linear_lower)x + (bias_upper - bias_lower)`
@@ -67,7 +94,19 @@ class LinearBounds(AbstractBounds):
         if linear_lower is not None and linear_upper is not None:
             gap_linear = linear_upper - linear_lower
             gap_bias = bias_upper - bias_lower
-            min_gap = self.region.minimize(gap_linear) + gap_bias
+
+            if isinstance(self.region, HyperRectangle):
+                input_lower = self.region.lower.flatten()
+                input_upper = self.region.upper.flatten()
+                contributions = torch.where(gap_linear > 0, gap_linear * input_lower, gap_linear * input_upper)
+                min_gap = contributions.sum(dim=-1) + gap_bias
+            else:
+                min_contrib = self.region.minimize(gap_linear)
+                if min_contrib.shape == gap_bias.shape:
+                    min_gap = min_contrib + gap_bias
+                else:
+                    min_gap = min_contrib.sum(dim=-1) + gap_bias
+
             if torch.any(min_gap < -1e-6):
                 num_violations = torch.sum(min_gap < -1e-6).item()
                 raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
@@ -133,13 +172,11 @@ class LinearBounds(AbstractBounds):
 
     def __getitem__(self, item) -> LinearBounds:
         """Slice/index the bounds."""
-        if isinstance(item, tuple) and Ellipsis in item:
-            linear_item = item + [slice(None)] * self.input_dim
-        else:
-            linear_item = item
+        linear_item = item if isinstance(item, tuple) else (item,)
+        linear_item = linear_item + (slice(None),)
 
         return LinearBounds(
-            region=self.region[item],
+            region=self.region,
             linear_lower=self.linear_lower[linear_item] if self.linear_lower is not None else None,
             bias_lower=self.bias_lower[item],
             linear_upper=self.linear_upper[linear_item] if self.linear_upper is not None else None,

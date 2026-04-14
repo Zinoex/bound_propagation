@@ -5,7 +5,6 @@ import torch
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.ibp.exp import IBPExp
 from bound_propagation.propagation.ibp.log import IBPLog
-
 from tests.helpers import propagate
 
 

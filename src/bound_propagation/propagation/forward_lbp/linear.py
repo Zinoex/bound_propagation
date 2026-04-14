@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
@@ -31,37 +32,64 @@ class ForwardLBPLinear(ForwardLBPStrategy):
             bias = getattr(module, "bias", None)
         else:
             # F.linear(input, weight, bias=None)
-            weight = args[1]
+            weight = args[1] if len(args) > 1 else kwargs.get("weight")
             bias = args[2] if len(args) > 2 else kwargs.get("bias")
+
+        if weight is None:
+            raise ValueError("ForwardLBPLinear requires a weight tensor")
+
+        if weight.ndim != 2:
+            raise ValueError(f"linear weight must be 2D, got shape {tuple(weight.shape)}")
+
+        if bounds.bias_lower.shape[-1] != weight.shape[1]:
+            raise ValueError(
+                f"linear dimension mismatch: bounds last dim {bounds.bias_lower.shape[-1]} vs weight second dim {weight.shape[1]}"
+            )
 
         weight_pos = weight.clamp(min=0)
         weight_neg = weight.clamp(max=0)
 
         # Lower bound: weight_pos @ lower_coeffs + weight_neg @ upper_coeffs
         if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            linear_lower = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_upper
+            linear_lower = torch.einsum("ok,...kd->...od", weight_pos, bounds.linear_lower) + torch.einsum(
+                "ok,...kd->...od", weight_neg, bounds.linear_upper
+            )
         elif bounds.linear_lower is not None:
-            linear_lower = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_lower
+            linear_lower = torch.einsum("ok,...kd->...od", weight_pos, bounds.linear_lower) + torch.einsum(
+                "ok,...kd->...od", weight_neg, bounds.linear_lower
+            )
         elif bounds.linear_upper is not None:
-            linear_lower = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_upper
+            linear_lower = torch.einsum("ok,...kd->...od", weight_pos, bounds.linear_upper) + torch.einsum(
+                "ok,...kd->...od", weight_neg, bounds.linear_upper
+            )
         else:
             linear_lower = None
 
-        bias_lower = weight_pos @ bounds.bias_lower + weight_neg @ bounds.bias_upper
+        bias_lower = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_lower) + torch.einsum(
+            "ok,...k->...o", weight_neg, bounds.bias_upper
+        )
         if bias is not None:
             bias_lower = bias_lower + bias
 
         # Upper bound: weight_pos @ upper_coeffs + weight_neg @ lower_coeffs
         if bounds.linear_lower is not None and bounds.linear_upper is not None:
-            linear_upper = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_lower
+            linear_upper = torch.einsum("ok,...kd->...od", weight_pos, bounds.linear_upper) + torch.einsum(
+                "ok,...kd->...od", weight_neg, bounds.linear_lower
+            )
         elif bounds.linear_upper is not None:
-            linear_upper = weight_pos @ bounds.linear_upper + weight_neg @ bounds.linear_upper
+            linear_upper = torch.einsum("ok,...kd->...od", weight_pos, bounds.linear_upper) + torch.einsum(
+                "ok,...kd->...od", weight_neg, bounds.linear_upper
+            )
         elif bounds.linear_lower is not None:
-            linear_upper = weight_pos @ bounds.linear_lower + weight_neg @ bounds.linear_lower
+            linear_upper = torch.einsum("ok,...kd->...od", weight_pos, bounds.linear_lower) + torch.einsum(
+                "ok,...kd->...od", weight_neg, bounds.linear_lower
+            )
         else:
             linear_upper = None
 
-        bias_upper = weight_pos @ bounds.bias_upper + weight_neg @ bounds.bias_lower
+        bias_upper = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_upper) + torch.einsum(
+            "ok,...k->...o", weight_neg, bounds.bias_lower
+        )
         if bias is not None:
             bias_upper = bias_upper + bias
 

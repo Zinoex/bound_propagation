@@ -29,10 +29,12 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
             region = left.region
         elif isinstance(left, LinearBounds):
             lower_a, upper_a = left.concretize()
-            lower_b, upper_b = right, right
+            right_tensor = torch.as_tensor(right, dtype=lower_a.dtype, device=lower_a.device)
+            lower_b, upper_b = right_tensor, right_tensor
             region = left.region
         elif isinstance(right, LinearBounds):
-            lower_a, upper_a = left, left
+            left_tensor = torch.as_tensor(left, dtype=right.bias_lower.dtype, device=right.bias_lower.device)
+            lower_a, upper_a = left_tensor, left_tensor
             lower_b, upper_b = right.concretize()
             region = right.region
         else:

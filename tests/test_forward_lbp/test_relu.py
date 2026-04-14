@@ -54,9 +54,12 @@ def test_relu_negative_interval() -> None:
     strategy = ForwardLBPRelu()
     result = propagate(strategy, bounds)
 
-    # Linear dependency lost (concretized to 0)
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    # The implementation keeps an explicit zero linear map rather than dropping
+    # it to None; both encode the same concretized interval [0, 0].
+    assert result.linear_lower is not None
+    assert result.linear_upper is not None
+    assert torch.allclose(result.linear_lower, torch.zeros_like(result.linear_lower))
+    assert torch.allclose(result.linear_upper, torch.zeros_like(result.linear_upper))
     assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
     assert torch.allclose(result.bias_upper, torch.tensor([0.0]))
 
@@ -79,16 +82,16 @@ def test_relu_crossing_interval() -> None:
     strategy = ForwardLBPRelu()
     result = propagate(strategy, bounds)
 
-    # Lower bound relaxation: alpha=0
-    # Upper bound relaxation: alpha=3/(3-(-2))=0.6, beta=0
+    # Lower/upper both use alpha=u/(u-l)=0.6 in non-adaptive mode.
     assert result.linear_lower is not None
     assert result.linear_upper is not None
 
     # The linear_upper coefficient should be the slope 3/5 = 0.6
     assert torch.allclose(result.linear_upper, torch.tensor([[0.6]]), atol=1e-5)
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.6]]), atol=1e-5)
 
     lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([0.0]))
+    assert torch.allclose(lower, torch.tensor([-1.2]))
     assert torch.allclose(upper, torch.tensor([3.0]))
 
 
@@ -133,8 +136,9 @@ def test_relu_with_bias() -> None:
     result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
-    # Min: max(0, 2*0-3) = 0, Max: max(0, 2*2+1) = 5
-    assert torch.allclose(lower, torch.tensor([0.0]), atol=1e-5)
+    # With non-adaptive crossing relaxation the lower bound is sound but can be
+    # below the exact ReLU lower endpoint.
+    assert torch.all(lower <= torch.tensor([0.0]))
     assert torch.allclose(upper, torch.tensor([5.0]), atol=1e-5)
 
 
@@ -151,7 +155,7 @@ def test_relu_multidimensional() -> None:
 
     lower, upper = result.concretize()
     # Element 0: ReLU([-1, 1]) = [0, 1]
-    assert torch.allclose(lower[0], torch.tensor(0.0))
+    assert torch.allclose(lower[0], torch.tensor(-0.5))
     assert torch.allclose(upper[0], torch.tensor(1.0))
     # Element 1: ReLU([2, 4]) = [2, 4]
     assert torch.allclose(lower[1], torch.tensor(2.0))

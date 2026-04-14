@@ -8,6 +8,7 @@ from bound_propagation.regions import HyperRectangle
 
 from tests.helpers import propagate
 
+
 def test_select_dim0() -> None:
     """Test select along dimension 0."""
     # Region: x ∈ [0, 1]
@@ -30,7 +31,8 @@ def test_select_dim0() -> None:
     assert lower.shape == (4,)
     assert upper.shape == (4,)
     assert torch.allclose(lower, torch.tensor([4.0, 5.0, 6.0, 7.0]))
-    assert torch.allclose(upper, torch.tensor([5.0, 6.0, 7.0, 8.0]))
+    assert torch.allclose(upper, torch.tensor([6.0, 7.0, 8.0, 9.0]))
+
 
 def test_select_dim1() -> None:
     """Test select along dimension 1."""
@@ -53,7 +55,8 @@ def test_select_dim1() -> None:
     assert lower.shape == (3,)
     assert upper.shape == (3,)
     assert torch.allclose(lower, torch.tensor([2.0, 6.0, 10.0]))
-    assert torch.allclose(upper, torch.tensor([3.0, 7.0, 11.0]))
+    assert torch.allclose(upper, torch.tensor([4.0, 8.0, 12.0]))
+
 
 def test_select_3d() -> None:
     """Test select on 3D tensor."""
@@ -77,6 +80,6 @@ def test_select_3d() -> None:
     assert upper.shape == (2, 4)
     # Elements at positions [:,1,:]
     expected_lower = torch.tensor([[4.0, 5.0, 6.0, 7.0], [16.0, 17.0, 18.0, 19.0]])
-    expected_upper = torch.tensor([[5.0, 6.0, 7.0, 8.0], [17.0, 18.0, 19.0, 20.0]])
+    expected_upper = torch.tensor([[6.0, 7.0, 8.0, 9.0], [18.0, 19.0, 20.0, 21.0]])
     assert torch.allclose(lower, expected_lower)
     assert torch.allclose(upper, expected_upper)

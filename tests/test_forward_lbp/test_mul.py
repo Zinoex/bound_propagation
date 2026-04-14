@@ -131,9 +131,12 @@ def test_mul_abstract_constant_zero() -> None:
     strategy = ForwardLBPMul()
     result = propagate(strategy, bounds, 0.0)
 
-    # Linear dependency removed (multiplied by 0)
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    # Multiplication by zero can be represented either as no linear term or as
+    # explicit zero coefficients; both are equivalent after concretization.
+    assert result.linear_lower is not None
+    assert result.linear_upper is not None
+    assert torch.allclose(result.linear_lower, torch.zeros_like(result.linear_lower))
+    assert torch.allclose(result.linear_upper, torch.zeros_like(result.linear_upper))
     # Bias: 0 * 0 = 0
     assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
     assert torch.allclose(result.bias_upper, torch.tensor([0.0]))

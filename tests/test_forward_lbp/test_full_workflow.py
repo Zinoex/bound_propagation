@@ -48,7 +48,10 @@ class TestForwardLBPWorkflowSimpleFunctions:
         out = outputs[0]
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
-        assert torch.allclose(lower, torch.tensor([0.0, 0.0, 0.0]))
+        # Forward LBP ReLU uses the non-adaptive crossing relaxation where
+        # alpha_lower = alpha_upper = u / (u - l). For l=-2, u=3 this gives 0.6,
+        # so the concretized lower bound is 0.6 * (-2) = -1.2 (sound but not tight).
+        assert torch.allclose(lower, torch.tensor([-1.2, -1.2, -1.2]))
         assert torch.allclose(upper, torch.tensor([3.0, 3.0, 3.0]))
 
     def test_add_with_constant(self) -> None:

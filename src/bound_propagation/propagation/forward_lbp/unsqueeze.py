@@ -27,6 +27,12 @@ class ForwardLBPUnsqueeze(ForwardLBPStrategy):
 
         dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
 
+        output_ndim = bounds.bias_lower.ndim
+        if dim < 0:
+            dim += output_ndim + 1
+        if dim < 0 or dim > output_ndim:
+            raise ValueError(f"unsqueeze dim must be in [0, {output_ndim}], got {dim}")
+
         linear_lower = bounds.linear_lower.unsqueeze(dim) if bounds.linear_lower is not None else None
         linear_upper = bounds.linear_upper.unsqueeze(dim) if bounds.linear_upper is not None else None
         bias_lower = bounds.bias_lower.unsqueeze(dim)
