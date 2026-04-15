@@ -41,6 +41,16 @@ def test_sqrt_positive_interval() -> None:
     # For sqrt: derivative at x is 1/(2*sqrt(x))
     # Lower bound (secant): slope = (sqrt(4) - sqrt(1)) / (4 - 1) = 1/3
     # Upper bound (tangent at midpoint x=2.5): slope = 1/(2*sqrt(2.5))
+    lower_x = torch.tensor(1.0)
+    upper_x = torch.tensor(4.0)
+    secant_slope = (torch.sqrt(upper_x) - torch.sqrt(lower_x)) / (upper_x - lower_x)
+    midpoint = (lower_x + upper_x) / 2.0
+    midpoint_slope = 1.0 / (2.0 * torch.sqrt(midpoint))
+
+    assert torch.allclose(result.linear_lower, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (torch.sqrt(lower_x) - secant_slope * lower_x).reshape(1))
+    assert torch.allclose(result.linear_upper, midpoint_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (torch.sqrt(midpoint) - midpoint_slope * midpoint).reshape(1))
 
     lower, upper = result.concretize()
     # At x=1: lower ≈ 1/4*1 + 1 = 1.25, upper = 1/3*1 + 2/3 = 1
@@ -82,6 +92,11 @@ def test_sqrt_zero_width_interval() -> None:
 
     strategy = ForwardLBPSqrt()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([3.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([3.0]))
 
     lower, upper = result.concretize()
     # For zero-width interval, relaxation should be tight

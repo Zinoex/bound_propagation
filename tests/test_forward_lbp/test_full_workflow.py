@@ -174,6 +174,28 @@ class TestForwardLBPWorkflowSimpleFunctions:
         assert torch.all(lower <= 1.01)
         assert torch.all(upper >= 1.99)
 
+    def test_constant_division_with_mixed_denominator_regimes(self) -> None:
+        def const_div_fn(x):
+            return torch.tensor([6.0, -6.0]) / x
+
+        gm = _trace_and_annotate(const_div_fn, (torch.randn(2),))
+        propagator = ForwardLBPPropagator(gm)
+
+        input_region = HyperRectangle(
+            lower=torch.tensor([-1.0, 2.0]),
+            upper=torch.tensor([1.0, 4.0]),
+        )
+        outputs = propagator.propagate([input_region])
+
+        out = outputs[0]
+        assert isinstance(out, LinearBounds)
+        lower, upper = out.concretize()
+
+        assert torch.isneginf(lower[0])
+        assert torch.isposinf(upper[0])
+        assert lower[1].item() <= -3.0 + 1e-6
+        assert upper[1].item() >= -1.5 - 1e-6
+
 
 class TestForwardLBPWorkflowModules:
     """Test Forward LBP workflow with PyTorch modules."""

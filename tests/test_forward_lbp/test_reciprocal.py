@@ -42,6 +42,11 @@ def test_reciprocal_positive_interval() -> None:
     assert result.linear_lower is not None
     assert result.linear_upper is not None
 
+    assert torch.allclose(result.linear_lower, torch.tensor([[-1.0 / 9.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([2.0 / 3.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[-0.125]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([0.75]))
+
     lower, upper = result.concretize()
     # At x=2: lower = -1/9 * 2 + 2/3 = -2/9 + 6/9 = 4/9 ≈ 0.444
     #         upper = -0.125 * 2 + 0.75 = 0.5
@@ -75,6 +80,11 @@ def test_reciprocal_negative_interval() -> None:
 
     strategy = ForwardLBPReciprocal()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[-0.125]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([-0.75]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[-1.0 / 9.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([-2.0 / 3.0]))
 
     lower, upper = result.concretize()
     # Lower bound should be in [-0.5, -0.25]
@@ -121,6 +131,11 @@ def test_reciprocal_crossing_zero() -> None:
     strategy = ForwardLBPReciprocal()
     result = propagate(strategy, bounds)
 
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.isneginf(result.bias_lower).all()
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.isposinf(result.bias_upper).all()
+
     lower, upper = result.concretize()
     # Should be unbounded
     assert torch.isneginf(lower).all()
@@ -138,6 +153,11 @@ def test_reciprocal_zero_lower_bound() -> None:
 
     strategy = ForwardLBPReciprocal()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([0.0]))
 
     lower, upper = result.concretize()
     # Implementation returns safe bounds (0, 0) for intervals touching zero
@@ -157,6 +177,11 @@ def test_reciprocal_zero_upper_bound() -> None:
     strategy = ForwardLBPReciprocal()
     result = propagate(strategy, bounds)
 
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([0.0]))
+
     lower, upper = result.concretize()
     # Implementation returns safe bounds (0, 0) for intervals touching zero
     assert torch.all(lower >= -0.1)
@@ -173,6 +198,11 @@ def test_reciprocal_point_interval() -> None:
 
     strategy = ForwardLBPReciprocal()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[-1.0 / 16.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([0.5]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([0.25]))
 
     lower, upper = result.concretize()
     # For zero-width interval, relaxation should be tight

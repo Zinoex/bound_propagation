@@ -37,6 +37,15 @@ def test_cos_small_positive_interval() -> None:
     assert result.linear_lower is not None
     assert result.linear_upper is not None
 
+    lower_x = torch.tensor(0.0)
+    upper_x = torch.tensor(math.pi / 4)
+    secant_slope = (torch.cos(upper_x) - torch.cos(lower_x)) / (upper_x - lower_x)
+
+    assert torch.allclose(result.linear_lower, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, torch.tensor([1.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([1.0]), atol=1e-6)
+
     lower, upper = result.concretize()
     # cos(π/4) ≈ 0.707, cos(0) = 1
     assert torch.all(lower >= 0.70)
@@ -76,6 +85,12 @@ def test_cos_crossing_minimum() -> None:
     strategy = ForwardLBPCos()
     result = propagate(strategy, bounds)
 
+    # Crossing the cosine minimum yields constant lower -1 and constant upper at the endpoint max.
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([-1.0]), atol=1e-6)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([0.0]), atol=1e-5)
+
     lower, upper = result.concretize()
     # Should contain [-1, 0]
     assert torch.all(lower >= -1.01)
@@ -94,6 +109,11 @@ def test_cos_full_period() -> None:
 
     strategy = ForwardLBPCos()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([-1.0]), atol=1e-6)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([1.0]), atol=1e-6)
 
     lower, upper = result.concretize()
     # Should contain full range [-1, 1]
@@ -132,6 +152,11 @@ def test_cos_zero_width() -> None:
 
     strategy = ForwardLBPCos()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([0.5]), atol=1e-5)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([0.5]), atol=1e-5)
 
     lower, upper = result.concretize()
     # For point interval, should be tight

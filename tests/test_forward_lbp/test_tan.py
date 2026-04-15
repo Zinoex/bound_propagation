@@ -30,6 +30,16 @@ def test_tan_small_positive_interval() -> None:
     strategy = ForwardLBPTan()
     result = propagate(strategy, bounds)
 
+    lower_x = torch.tensor(0.1)
+    upper_x = torch.tensor(0.5)
+    secant_slope = (torch.tan(upper_x) - torch.tan(lower_x)) / (upper_x - lower_x)
+    lower_prime = 1.0 / (torch.cos(lower_x) ** 2 + 1e-8)
+
+    assert torch.allclose(result.linear_lower, lower_prime.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (torch.tan(lower_x) - lower_prime * lower_x).reshape(1))
+    assert torch.allclose(result.linear_upper, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (torch.tan(upper_x) - secant_slope * upper_x).reshape(1))
+
     lower, upper = result.concretize()
     assert torch.all(lower >= 0.09)
     assert torch.all(lower <= 0.11)
@@ -46,6 +56,16 @@ def test_tan_small_negative_interval() -> None:
 
     strategy = ForwardLBPTan()
     result = propagate(strategy, bounds)
+
+    lower_x = torch.tensor(-0.5)
+    upper_x = torch.tensor(-0.1)
+    secant_slope = (torch.tan(upper_x) - torch.tan(lower_x)) / (upper_x - lower_x)
+    upper_prime = 1.0 / (torch.cos(upper_x) ** 2 + 1e-8)
+
+    assert torch.allclose(result.linear_lower, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (torch.tan(lower_x) - secant_slope * lower_x).reshape(1))
+    assert torch.allclose(result.linear_upper, upper_prime.reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (torch.tan(upper_x) - upper_prime * upper_x).reshape(1))
 
     lower, upper = result.concretize()
     assert torch.all(lower >= -0.56)
@@ -64,6 +84,11 @@ def test_tan_at_zero() -> None:
     strategy = ForwardLBPTan()
     result = propagate(strategy, bounds)
 
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]), atol=1e-6)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([0.0]), atol=1e-6)
+
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([0.0]), atol=1e-6)
     assert torch.allclose(upper, torch.tensor([0.0]), atol=1e-6)
@@ -78,6 +103,12 @@ def test_tan_crossing_zero() -> None:
 
     strategy = ForwardLBPTan()
     result = propagate(strategy, bounds)
+
+    offset = torch.tan(torch.tensor(0.3)) - torch.tensor(0.3)
+    assert torch.allclose(result.linear_lower, torch.tensor([[1.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, (-offset).reshape(1), atol=1e-6)
+    assert torch.allclose(result.linear_upper, torch.tensor([[1.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, offset.reshape(1), atol=1e-6)
 
     lower, upper = result.concretize()
     assert torch.all(lower >= -0.32)

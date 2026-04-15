@@ -32,6 +32,16 @@ def test_log_positive_interval() -> None:
     strategy = ForwardLBPLog()
     result = propagate(strategy, bounds)
 
+    lower_x = torch.tensor(1.0)
+    upper_x = torch.tensor(4.0)
+    secant_slope = (torch.log(upper_x) - torch.log(lower_x)) / (upper_x - lower_x)
+    midpoint = (lower_x + upper_x) / 2.0
+
+    assert torch.allclose(result.linear_lower, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (torch.log(lower_x) - secant_slope * lower_x).reshape(1))
+    assert torch.allclose(result.linear_upper, (1.0 / midpoint).reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (torch.log(midpoint) - 1.0).reshape(1))
+
     lower, upper = result.concretize()
     # log(1) = 0, log(4) ≈ 1.386
     assert torch.all(lower >= -0.1)
@@ -49,6 +59,16 @@ def test_log_small_positive_interval() -> None:
 
     strategy = ForwardLBPLog()
     result = propagate(strategy, bounds)
+
+    lower_x = torch.tensor(0.5)
+    upper_x = torch.tensor(1.0)
+    secant_slope = (torch.log(upper_x) - torch.log(lower_x)) / (upper_x - lower_x)
+    midpoint = (lower_x + upper_x) / 2.0
+
+    assert torch.allclose(result.linear_lower, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (torch.log(lower_x) - secant_slope * lower_x).reshape(1))
+    assert torch.allclose(result.linear_upper, (1.0 / midpoint).reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (torch.log(midpoint) - 1.0).reshape(1))
 
     lower, upper = result.concretize()
     # log(0.5) ≈ -0.693, log(1) = 0
@@ -85,6 +105,11 @@ def test_log_point_at_e() -> None:
 
     strategy = ForwardLBPLog()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([1.0]), atol=1e-3)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([1.0]), atol=1e-3)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0]), atol=1e-3)

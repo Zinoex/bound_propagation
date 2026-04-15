@@ -6,7 +6,9 @@ import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
+from ..linear_relaxations.constant_div import compute_constant_div_alpha_beta
 from .base import ForwardLBPStrategy
+from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -120,25 +122,6 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         )
 
     def _constant_div(self, constant: object, bounds: LinearBounds) -> LinearBounds:
-        # TODO: implement a more precise method that tracks linear terms instead of just concretizing and re-abstracting
         lower_x, upper_x = bounds.concretize()
-        constant_tensor = torch.as_tensor(constant, dtype=lower_x.dtype, device=lower_x.device)
-
-        crosses_zero = (lower_x <= 0) & (upper_x >= 0)
-        safe_lower_x = torch.where(crosses_zero, 1, lower_x)
-        safe_upper_x = torch.where(crosses_zero, 1, upper_x)
-
-        quotients = [constant_tensor / safe_lower_x, constant_tensor / safe_upper_x]
-        finite_lower = torch.min(torch.stack(quotients), dim=0)[0]
-        finite_upper = torch.max(torch.stack(quotients), dim=0)[0]
-
-        lower = torch.where(crosses_zero, float("-inf"), finite_lower)
-        upper = torch.where(crosses_zero, float("inf"), finite_upper)
-
-        return LinearBounds(
-            regions=[],
-            linear_lower=[],
-            bias_lower=lower,
-            linear_upper=[],
-            bias_upper=upper,
-        )
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_constant_div_alpha_beta(lower_x, upper_x, constant)
+        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

@@ -30,6 +30,20 @@ def test_tanh_positive_interval() -> None:
     strategy = ForwardLBPTanh()
     result = propagate(strategy, bounds)
 
+    lower_x = torch.tensor(1.0)
+    upper_x = torch.tensor(2.0)
+    lower_t = torch.tanh(lower_x)
+    upper_t = torch.tanh(upper_x)
+    secant_slope = (upper_t - lower_t) / (upper_x - lower_x)
+    midpoint = (lower_x + upper_x) / 2.0
+    midpoint_t = torch.tanh(midpoint)
+    midpoint_prime = 1.0 - midpoint_t * midpoint_t
+
+    assert torch.allclose(result.linear_lower, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (lower_t - secant_slope * lower_x).reshape(1))
+    assert torch.allclose(result.linear_upper, midpoint_prime.reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (midpoint_t - midpoint_prime * midpoint).reshape(1))
+
     lower, upper = result.concretize()
     assert torch.all(lower >= 0.75)
     assert torch.all(lower <= 0.77)
@@ -64,6 +78,18 @@ def test_tanh_mixed_sign_interval() -> None:
     strategy = ForwardLBPTanh()
     result = propagate(strategy, bounds)
 
+    lower_x = torch.tensor(-1.0)
+    upper_x = torch.tensor(1.0)
+    lower_t = torch.tanh(lower_x)
+    upper_t = torch.tanh(upper_x)
+    lower_prime = 1.0 - lower_t * lower_t
+    upper_prime = 1.0 - upper_t * upper_t
+
+    assert torch.allclose(result.linear_lower, lower_prime.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (lower_t - lower_prime * lower_x).reshape(1))
+    assert torch.allclose(result.linear_upper, upper_prime.reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (upper_t - upper_prime * upper_x).reshape(1))
+
     lower, upper = result.concretize()
     assert torch.all(lower >= -0.77)
     assert torch.all(lower <= -0.75)
@@ -80,6 +106,11 @@ def test_tanh_at_zero() -> None:
 
     strategy = ForwardLBPTanh()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]), atol=1e-6)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([0.0]), atol=1e-6)
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([0.0]), atol=1e-6)

@@ -82,6 +82,15 @@ def test_abs_mixed_sign_interval() -> None:
     strategy = ForwardLBPAbs()
     result = propagate(strategy, bounds)
 
+    # Cross-zero case:
+    # slope = (|4| - |-3|) / (4 - (-3)) = 1/7
+    # lower: (1/7) x + 0
+    # upper: (1/7) x + 24/7
+    assert torch.allclose(result.linear_lower, torch.tensor([[1.0 / 7.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[1.0 / 7.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([24.0 / 7.0]))
+
     lower, upper = result.concretize()
     # A linear lower bound on abs in the crosses-zero case can be negative
     # (since the linear function must lower-bound abs everywhere).
@@ -103,6 +112,15 @@ def test_abs_mixed_sign_larger_negative() -> None:
     strategy = ForwardLBPAbs()
     result = propagate(strategy, bounds)
 
+    # Cross-zero case:
+    # slope = (|3| - |-7|) / (3 - (-7)) = -0.4
+    # lower: -0.4 x + 0
+    # upper: -0.4 x + 4.2
+    assert torch.allclose(result.linear_lower, torch.tensor([[-0.4]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[-0.4]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([4.2]))
+
     lower, upper = result.concretize()
     # Linear lower bound can be negative in crosses-zero case
     assert torch.all(upper <= 7.1)  # slight tolerance
@@ -121,6 +139,12 @@ def test_abs_symmetric_interval() -> None:
 
     strategy = ForwardLBPAbs()
     result = propagate(strategy, bounds)
+
+    # Symmetric cross-zero case: slope = 0, upper intercept = 5
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([5.0]))
 
     lower, upper = result.concretize()
     # Lower should be 0 at x=0
@@ -141,6 +165,12 @@ def test_abs_zero_interval() -> None:
     strategy = ForwardLBPAbs()
     result = propagate(strategy, bounds)
 
+    # Zero-width interval uses constant lines at |x|.
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([0.0]))
+
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([0.0]), atol=1e-6)
     assert torch.allclose(upper, torch.tensor([0.0]), atol=1e-6)
@@ -156,6 +186,12 @@ def test_abs_point_interval() -> None:
 
     strategy = ForwardLBPAbs()
     result = propagate(strategy, bounds)
+
+    # Zero-width interval at x=3 maps to constant |3| = 3.
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([3.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([3.0]))
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([3.0]), atol=1e-6)

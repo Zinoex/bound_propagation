@@ -33,6 +33,16 @@ def test_exp_positive_interval() -> None:
     strategy = ForwardLBPExp()
     result = propagate(strategy, bounds)
 
+    exp_mid = torch.exp(torch.tensor(1.5))
+    exp_lower = torch.exp(torch.tensor(1.0))
+    exp_upper = torch.exp(torch.tensor(2.0))
+    secant_slope = exp_upper - exp_lower
+
+    assert torch.allclose(result.linear_lower, exp_mid.reshape(1, 1))
+    assert torch.allclose(result.bias_lower, (exp_mid - exp_mid * 1.5).reshape(1))
+    assert torch.allclose(result.linear_upper, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (exp_lower - secant_slope).reshape(1))
+
     lower, upper = result.concretize()
     # Tangent at midpoint=1.5: slope=exp(1.5)≈4.48, at x=1 gives ≈2.24
     # Secant from (1,e) to (2,e²): at x=2 gives e²≈7.389
@@ -71,6 +81,15 @@ def test_exp_mixed_sign_interval() -> None:
     strategy = ForwardLBPExp()
     result = propagate(strategy, bounds)
 
+    exp_lower = torch.exp(torch.tensor(-1.0))
+    exp_upper = torch.exp(torch.tensor(1.0))
+    secant_slope = (exp_upper - exp_lower) / 2.0
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[1.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([1.0]))
+    assert torch.allclose(result.linear_upper, secant_slope.reshape(1, 1))
+    assert torch.allclose(result.bias_upper, (exp_lower + secant_slope).reshape(1))
+
     lower, upper = result.concretize()
     # Tangent at midpoint=0: y=x+1, at x=-1 gives 0
     # Secant: at x=1 gives e≈2.718
@@ -89,6 +108,11 @@ def test_exp_zero_interval() -> None:
 
     strategy = ForwardLBPExp()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_lower, torch.tensor([1.0]))
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]))
+    assert torch.allclose(result.bias_upper, torch.tensor([1.0]))
 
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0]), atol=1e-6)

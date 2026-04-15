@@ -336,3 +336,18 @@ def test_forward_lbp_operations_support_varied_input_axes(
     assert tuple(lower.shape) == expected_bias_shape
     assert tuple(upper.shape) == expected_bias_shape
     assert torch.all(lower <= upper + 1e-6)
+
+
+@pytest.mark.parametrize("input_shape", INPUT_SHAPES)
+def test_forward_lbp_div_constant_over_bounds_preserves_input_axes(input_shape: tuple[int, ...]) -> None:
+    """Constant / bounds division should preserve input-axis structure for all supported shapes."""
+    denominator_bounds = make_identity_bounds(input_shape=input_shape, input_id=1)
+    result = propagate(ForwardLBPDiv(), 2.0, denominator_bounds)
+
+    assert isinstance(result, LinearBounds)
+    assert [tuple(region.shape) for region in result.regions] == [input_shape]
+    assert len(result.input_ids) == 1
+    assert result.input_ids[0] == 1
+    assert len(result.linear_lowers) == 1
+    assert len(result.linear_uppers) == 1
+    assert_input_axes_match_regions(result)

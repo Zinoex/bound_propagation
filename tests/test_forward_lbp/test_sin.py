@@ -36,6 +36,12 @@ def test_sin_small_positive_interval() -> None:
     assert result.linear_lower is not None
     assert result.linear_upper is not None
 
+    # Implementation falls back to conservative constant bounds when interval touches an inflection point.
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([0.0]), atol=1e-6)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([math.sqrt(2.0) / 2.0]), atol=1e-6)
+
     lower, upper = result.concretize()
     # sin(0) = 0, sin(π/4) ≈ 0.707
     assert torch.all(lower >= -0.01)
@@ -73,6 +79,15 @@ def test_sin_crossing_maximum() -> None:
     strategy = ForwardLBPSin()
     result = propagate(strategy, bounds)
 
+    endpoint_min = torch.tensor(math.sin(math.pi / 4))
+    upper_slope = torch.tensor(-math.sqrt(2.0) / 2.0)
+    upper_bias = torch.tensor(math.sqrt(2.0) / 2.0 + (math.sqrt(2.0) / 2.0) * (3.0 * math.pi / 4.0))
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, endpoint_min.reshape(1), atol=1e-6)
+    assert torch.allclose(result.linear_upper, upper_slope.reshape(1, 1), atol=1e-6)
+    assert torch.allclose(result.bias_upper, upper_bias.reshape(1), atol=1e-6)
+
     lower, upper = result.concretize()
     # Should contain [√2/2, 1] ≈ [0.707, 1]
     assert torch.all(lower <= 0.72)
@@ -89,6 +104,11 @@ def test_sin_full_period() -> None:
 
     strategy = ForwardLBPSin()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([-1.0]), atol=1e-6)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([1.0]), atol=1e-6)
 
     lower, upper = result.concretize()
     # Should contain full range [-1, 1]
@@ -125,6 +145,11 @@ def test_sin_zero_width() -> None:
 
     strategy = ForwardLBPSin()
     result = propagate(strategy, bounds)
+
+    assert torch.allclose(result.linear_lower, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_lower, torch.tensor([0.5]), atol=1e-5)
+    assert torch.allclose(result.linear_upper, torch.tensor([[0.0]]), atol=1e-6)
+    assert torch.allclose(result.bias_upper, torch.tensor([0.5]), atol=1e-5)
 
     lower, upper = result.concretize()
     # For point interval, should be tight

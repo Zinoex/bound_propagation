@@ -10,10 +10,10 @@ import torch
 
 from bound_propagation.bounds import LinearBounds
 from bound_propagation.passes import MetadataPass
-from bound_propagation.propagation import ForwardLBPPropagator, TargetRegistry
+from bound_propagation.propagation import ForwardLBPPropagator
 from bound_propagation.propagation.forward_lbp import (
     ForwardLBPAdd,
-    ForwardLBPMatmul,
+    ForwardLBPDiv,
     ForwardLBPMul,
     create_default_forward_lbp_registry,
 )
@@ -66,6 +66,54 @@ class TestForwardLBPConstantHandling:
         lower, upper = result.concretize()
         assert torch.allclose(lower, torch.tensor([2.0, -3.0]))
         assert torch.allclose(upper, torch.tensor([6.0, -1.0]))
+
+    def test_div_constant_and_abstract(self) -> None:
+        """Constant / abstract should dispatch to the division strategy and remain sound."""
+        region = HyperRectangle(
+            lower=torch.tensor([2.0, 2.0]),
+            upper=torch.tensor([4.0, 4.0]),
+        )
+        bounds = LinearBounds(
+            regions=[region],
+            linear_lower=torch.eye(2),
+            bias_lower=torch.zeros(2),
+            linear_upper=torch.eye(2),
+            bias_upper=torch.zeros(2),
+        )
+
+        result = propagate(ForwardLBPDiv(), torch.tensor([6.0, -6.0]), bounds)
+
+        assert isinstance(result, LinearBounds)
+        lower, upper = result.concretize()
+        assert lower[0].item() <= 1.5 + 1e-6
+        assert upper[0].item() >= 3.0 - 1e-6
+        assert lower[1].item() <= -3.0 + 1e-6
+        assert upper[1].item() >= -1.5 - 1e-6
+
+    def test_div_constant_and_abstract_crossing_zero(self) -> None:
+        """Constant / abstract should become unbounded only where denominator crosses zero."""
+        region = HyperRectangle(
+            lower=torch.tensor([-1.0, 2.0]),
+            upper=torch.tensor([1.0, 3.0]),
+        )
+        bounds = LinearBounds(
+            regions=[region],
+            linear_lower=torch.eye(2),
+            bias_lower=torch.zeros(2),
+            linear_upper=torch.eye(2),
+            bias_upper=torch.zeros(2),
+        )
+
+        result = propagate(ForwardLBPDiv(), torch.tensor(6.0), bounds)
+
+        assert isinstance(result, LinearBounds)
+        lower, upper = result.concretize()
+        assert torch.isneginf(lower[0])
+        assert torch.isposinf(upper[0])
+        assert torch.isfinite(lower[1])
+        assert torch.isfinite(upper[1])
+        assert lower[1].item() <= 2.0 + 1e-6
+        assert upper[1].item() >= 3.0 - 1e-6
 
 
 class TestForwardLBPEndToEndDispatch:
