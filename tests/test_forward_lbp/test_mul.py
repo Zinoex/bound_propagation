@@ -49,15 +49,17 @@ def test_mul_abstract_abstract_concretizes() -> None:
     strategy = ForwardLBPMul()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    # Should have no linear dependency (concretized)
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    W_l = result.linear_lowers[0]   # shape (2, 2)
+    b_l = result.bias_lower
+    W_u = result.linear_uppers[0]
+    b_u = result.bias_upper
 
-    # First element: [1, 2] * [0, 0] = [0, 0]
-    # Second element: [0, 0] * [3, 4] = [0, 0]
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([0.0, 0.0]))
-    assert torch.allclose(upper, torch.tensor([0.0, 0.0]))
+    # Both products are identically zero: a[0]*b[0] = x0*0 and a[1]*b[1] = 0*x1.
+    # McCormick produces all-zero linear coefficients and zero bias, so the
+    # linear bound evaluates to exactly zero at every input point.
+    for x in [torch.tensor([1.0, 3.0]), torch.tensor([2.0, 4.0]), torch.tensor([1.5, 3.5])]:
+        assert torch.allclose(W_l @ x + b_l, torch.zeros(2), atol=1e-6)
+        assert torch.allclose(W_u @ x + b_u, torch.zeros(2), atol=1e-6)
 
 
 def test_mul_abstract_constant_positive_scalar() -> None:

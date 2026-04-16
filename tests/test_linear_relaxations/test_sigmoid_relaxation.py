@@ -7,7 +7,7 @@ linear relaxations produce valid upper and lower bounds.
 
 import torch
 
-from bound_propagation.propagation.linear_relaxations.sigmoid import compute_sigmoid_alpha_beta
+from bound_propagation.propagation.linear_relaxations.sigmoid import compute_sigmoid_relaxation
 
 
 class TestSigmoidRelaxationSoundness:
@@ -63,7 +63,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-0.1])
         upper = torch.tensor([0.1])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Crossing zero (narrow): {message}"
@@ -73,7 +77,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([0.01])
         upper = torch.tensor([5.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Crossing zero (wide, lower=0.01, upper=5): {message}"
@@ -83,7 +91,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-5.0])
         upper = torch.tensor([-0.01])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Crossing zero (wide negative): {message}"
@@ -93,7 +105,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([2.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Crossing zero (symmetric): {message}"
@@ -103,7 +119,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-0.5])
         upper = torch.tensor([3.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Crossing zero (asymmetric positive): {message}"
@@ -113,7 +133,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([0.5])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Crossing zero (asymmetric negative): {message}"
@@ -123,7 +147,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([3.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"All positive: {message}"
@@ -133,7 +161,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([-1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"All negative: {message}"
@@ -143,7 +175,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, num_samples=10
@@ -155,7 +191,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([[-3.0, -0.1, 1.0], [-5.0, 0.01, -3.0]])
         upper = torch.tensor([[-1.0, 0.1, 3.0], [-0.01, 5.0, -1.0]])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Batch mixed regimes: {message}"
@@ -165,7 +205,11 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-10.0, -1.0, 1.0])
         upper = torch.tensor([-5.0, 10.0, 10.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        relaxation = compute_sigmoid_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Extreme values: {message}"
@@ -186,12 +230,16 @@ class TestSigmoidRelaxationSymmetry:
         lower_neg = torch.tensor([-x])
         upper_neg = torch.tensor([-0.1])
 
-        alpha_lower_pos, beta_lower_pos, alpha_upper_pos, beta_upper_pos = compute_sigmoid_alpha_beta(
-            lower_pos, upper_pos
-        )
-        alpha_lower_neg, beta_lower_neg, alpha_upper_neg, beta_upper_neg = compute_sigmoid_alpha_beta(
-            lower_neg, upper_neg
-        )
+        r = compute_sigmoid_relaxation(lower_pos, upper_pos)
+        alpha_lower_pos = r.alpha_lower
+        beta_lower_pos = r.beta_lower
+        alpha_upper_pos = r.alpha_upper
+        beta_upper_pos = r.beta_upper
+        r = compute_sigmoid_relaxation(lower_neg, upper_neg)
+        alpha_lower_neg = r.alpha_lower
+        beta_lower_neg = r.beta_lower
+        alpha_upper_neg = r.alpha_upper
+        beta_upper_neg = r.beta_upper
 
         # For symmetric intervals, the bounds should have related properties
         # This is more of a sanity check than a strict requirement

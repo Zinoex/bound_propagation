@@ -14,7 +14,7 @@ import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from bound_propagation.propagation.linear_relaxations.log import compute_log_alpha_beta
+from bound_propagation.propagation.linear_relaxations.log import compute_log_relaxation
 
 
 class TestLogRelaxationSoundness:
@@ -61,7 +61,11 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([0.1])
         upper = torch.tensor([0.5])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Small positive range: {message}"
@@ -71,7 +75,11 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([3.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Moderate positive range: {message}"
@@ -81,7 +89,11 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([0.5])
         upper = torch.tensor([2.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Around one: {message}"
@@ -91,7 +103,11 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([5.0])
         upper = torch.tensor([10.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Large positive range: {message}"
@@ -101,7 +117,11 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([2.0])
         upper = torch.tensor([2.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, num_samples=10
@@ -113,7 +133,11 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([0.01])
         upper = torch.tensor([0.1])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Near zero: {message}"
@@ -123,7 +147,11 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([[0.1, 1.0, 0.5], [5.0, 0.01, 2.0]])
         upper = torch.tensor([[0.5, 3.0, 2.0], [10.0, 0.1, 2.0]])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # Test each element separately
         for i in range(lower.shape[0]):
@@ -147,7 +175,11 @@ class TestLogRelaxationInvalidInputs:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([0.5])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # Should get nan for invalid inputs
         assert torch.isnan(alpha_lower).all()
@@ -160,7 +192,11 @@ class TestLogRelaxationInvalidInputs:
         lower = torch.tensor([0.0])
         upper = torch.tensor([1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # Should get nan for invalid inputs
         assert torch.isnan(alpha_lower).all()
@@ -173,7 +209,11 @@ class TestLogRelaxationInvalidInputs:
         lower = torch.tensor([[0.1, -1.0, 1.0], [0.0, 2.0, 0.5]])
         upper = torch.tensor([[0.5, 0.5, 3.0], [1.0, 5.0, 2.0]])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # First element [0,0] should be valid
         assert not torch.isnan(alpha_lower[0, 0])

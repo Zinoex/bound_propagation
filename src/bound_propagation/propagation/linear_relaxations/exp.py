@@ -1,9 +1,11 @@
 import torch
 
+from .base import ElementwiseLinearRelaxation
 
-def compute_exp_alpha_beta(
+
+def compute_exp_relaxation(
     lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> ElementwiseLinearRelaxation:
     """
     Compute alpha/beta parameters for exp linear relaxation.
 
@@ -16,7 +18,7 @@ def compute_exp_alpha_beta(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
+        ElementwiseLinearRelaxation encapsulating the relaxation
     """
     zero_width = torch.isclose(lower, upper, atol=zero_threshold)
     midpoint = (lower + upper) / 2
@@ -33,4 +35,9 @@ def compute_exp_alpha_beta(
     alpha_upper = torch.where(zero_width, 0, slope)
     beta_upper = torch.where(zero_width, exp_upper, exp_lower - slope * lower)
 
-    return alpha_lower, beta_lower, alpha_upper, beta_upper
+    return ElementwiseLinearRelaxation(
+        alpha_lower=alpha_lower,
+        beta_lower=beta_lower,
+        alpha_upper=alpha_upper,
+        beta_upper=beta_upper,
+    )

@@ -60,15 +60,27 @@ def test_div_abstract_abstract_positive() -> None:
     strategy = ForwardLBPDiv()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    # Division loses linear dependency
-    assert result.linear_lowers == []
-    assert result.linear_uppers == []
-    assert torch.allclose(result.bias_lower, torch.tensor([2.0]))
-    assert torch.allclose(result.bias_upper, torch.tensor([6.0]))
+    W_l = result.linear_lowers[0]   # shape (1, 2)
+    b_l = result.bias_lower
+    W_u = result.linear_uppers[0]
+    b_u = result.bias_upper
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([2.0]))
-    assert torch.allclose(upper, torch.tensor([6.0]))
+    # Evaluate the linear bounds at the four corners and verify both the exact
+    # predicted values and that they form a valid lower/upper bound on x0/x1.
+    # The secant-based upper relaxation is tight at the corners (12, 2) and (12, 3).
+    for x0, x1, true_val, exp_lower, exp_upper in [
+        (6.0,  2.0, 3.0, 2.76, 4.08),
+        (6.0,  3.0, 2.0, 0.84, 2.08),
+        (12.0, 2.0, 6.0, 5.76, 6.0),   # upper tight here
+        (12.0, 3.0, 4.0, 3.84, 4.0),   # upper tight here
+    ]:
+        x = torch.tensor([x0, x1])
+        lower_val = (W_l @ x + b_l).item()
+        upper_val = (W_u @ x + b_u).item()
+        assert abs(lower_val - exp_lower) < 1e-3, f"lower at ({x0},{x1}): got {lower_val}, expected {exp_lower}"
+        assert abs(upper_val - exp_upper) < 1e-3, f"upper at ({x0},{x1}): got {upper_val}, expected {exp_upper}"
+        assert lower_val <= true_val + 1e-5, f"lower bound not sound at ({x0},{x1})"
+        assert upper_val >= true_val - 1e-5, f"upper bound not sound at ({x0},{x1})"
 
 
 def test_div_abstract_constant_positive() -> None:
@@ -140,9 +152,16 @@ def test_div_crossing_zero_divisor() -> None:
     strategy = ForwardLBPDiv()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    lower, upper = result.concretize()
-    assert torch.isneginf(lower).all()
-    assert torch.isposinf(upper).all()
+    W_l = result.linear_lowers[0]   # shape (1, 2)
+    b_l = result.bias_lower
+    W_u = result.linear_uppers[0]
+    b_u = result.bias_upper
+
+    # All linear coefficients are zeroed and bias = ±∞, so the bound evaluates
+    # to [-∞, +∞] at every input point.
+    for x in [torch.tensor([4.0, -1.0]), torch.tensor([8.0, 0.5]), torch.tensor([6.0, 0.0])]:
+        assert (W_l @ x + b_l).isneginf().all()
+        assert (W_u @ x + b_u).isposinf().all()
 
 
 def test_div_crossing_zero_divisor_is_elementwise() -> None:
@@ -170,12 +189,31 @@ def test_div_crossing_zero_divisor_is_elementwise() -> None:
     strategy = ForwardLBPDiv()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    lower, upper = result.concretize()
+    W_l = result.linear_lowers[0]   # shape (2, 3)
+    b_l = result.bias_lower
+    W_u = result.linear_uppers[0]
+    b_u = result.bias_upper
 
-    assert torch.isneginf(lower[0])
-    assert torch.isposinf(upper[0])
-    assert torch.allclose(lower[1], torch.tensor(2.0))
-    assert torch.allclose(upper[1], torch.tensor(6.0))
+    # Output 0 (x1 crosses zero): linear coefficients are zeroed, bias = ±∞.
+    for x in [torch.tensor([9.0, -1.0, 2.5]), torch.tensor([6.0, 0.0, 3.0])]:
+        assert (W_l @ x + b_l)[0].isneginf()
+        assert (W_u @ x + b_u)[0].isposinf()
+
+    # Output 1 (x2 ∈ [2, 3]): McCormick via reciprocal relaxation.
+    # The x1 coefficient is zero, so only x0 and x2 matter.
+    # Secant-based upper bound is tight at (x0=12, x2=2) and (x0=12, x2=3).
+    for x0, x2, true_val, exp_lower, exp_upper in [
+        (6.0,  3.0, 2.0, 0.84, 2.08),
+        (12.0, 2.0, 6.0, 5.76, 6.0),   # upper tight here
+        (12.0, 3.0, 4.0, 3.84, 4.0),   # upper tight here
+    ]:
+        x = torch.tensor([x0, 0.0, x2])
+        lower_val = (W_l @ x + b_l)[1].item()
+        upper_val = (W_u @ x + b_u)[1].item()
+        assert abs(lower_val - exp_lower) < 1e-3, f"lower at ({x0},{x2}): got {lower_val}, expected {exp_lower}"
+        assert abs(upper_val - exp_upper) < 1e-3, f"upper at ({x0},{x2}): got {upper_val}, expected {exp_upper}"
+        assert lower_val <= true_val + 1e-5, f"lower bound not sound at ({x0},{x2})"
+        assert upper_val >= true_val - 1e-5, f"upper bound not sound at ({x0},{x2})"
 
 
 def test_constant_div_crossing_zero_divisor_is_elementwise() -> None:

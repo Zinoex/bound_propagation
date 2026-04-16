@@ -5,9 +5,8 @@ from typing import TYPE_CHECKING
 import torch.fx as fx
 
 from ...bounds import LinearBounds
-from ..linear_relaxations.clamp import compute_clamp_alpha_beta
+from ..linear_relaxations.clamp import compute_clamp_relaxation
 from .base import ForwardLBPStrategy
-from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -31,5 +30,5 @@ class ForwardLBPClamp(ForwardLBPStrategy):
         max_val = args[2] if len(args) > 2 else kwargs.get("max")
 
         lower, upper = bounds.concretize()
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
-        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        return relaxation.forward_compose([bounds])

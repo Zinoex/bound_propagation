@@ -6,9 +6,9 @@ import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
-from ..linear_relaxations.constant_div import compute_constant_div_alpha_beta
+from ..linear_relaxations.constant_div import compute_constant_div_relaxation
+from ..linear_relaxations.div import compute_div_relaxation
 from .base import ForwardLBPStrategy
-from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -22,7 +22,7 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         node: fx.Node,
         ctx: PropagationContext,
     ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
+        args, _kwargs = ctx.resolve_args(node)
         left, right = args[0], args[1]
 
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
@@ -37,35 +37,28 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         raise TypeError(f"ForwardLBPDiv requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
     def _div_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
-        # TODO: implement a more precise method that tracks linear terms instead of just concretizing and re-abstracting
+        """Bound z = a / b for abstract numerator and denominator.
+
+        Decomposes as z = a * (1/b):
+          1. Linearise 1/b via a reciprocal relaxation applied to b's concrete bounds.
+          2. Compose that relaxation with b's LinearBounds to get LinearBounds for w = 1/b.
+          3. Apply a McCormick relaxation for z = a * w.
+
+        When an element of b's domain crosses zero the reciprocal is undefined, so
+        the output for that element is set to [-∞, +∞].  To prevent NaN from
+        propagating through the McCormick computation (which arises from ±∞ in
+        the reciprocal when zero is crossed), crossing elements are temporarily
+        replaced with safe dummy values [1, 2] before computing the relaxation;
+        their outputs are then overridden unconditionally to [-∞, +∞].
+        """
         lower_a, upper_a = a.concretize()
         lower_b, upper_b = b.concretize()
 
-        crosses_zero = (lower_b <= 0) & (upper_b >= 0)
-        safe_lower_b = torch.where(crosses_zero, 1, lower_b)
-        safe_upper_b = torch.where(crosses_zero, 1, upper_b)
+        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
 
-        quotients = [
-            lower_a / safe_lower_b,
-            lower_a / safe_upper_b,
-            upper_a / safe_lower_b,
-            upper_a / safe_upper_b,
-        ]
-        finite_lower = torch.min(torch.stack(quotients), dim=0)[0]
-        finite_upper = torch.max(torch.stack(quotients), dim=0)[0]
+        return relaxation.forward_compose([a, b])
 
-        lower = torch.where(crosses_zero, float("-inf"), finite_lower)
-        upper = torch.where(crosses_zero, float("inf"), finite_upper)
-
-        return LinearBounds(
-            regions=[],
-            linear_lower=[],
-            bias_lower=lower,
-            linear_upper=[],
-            bias_upper=upper,
-        )
-
-    def _divide_by_constant(self, bounds: LinearBounds, divisor: object) -> LinearBounds:
+    def _divide_by_constant(self, bounds: LinearBounds, divisor: torch.Tensor | torch.types.Number) -> LinearBounds:
         divisor = torch.as_tensor(divisor, dtype=bounds.bias_lower.dtype, device=bounds.bias_lower.device).expand_as(
             bounds.bias_lower
         )
@@ -121,7 +114,7 @@ class ForwardLBPDiv(ForwardLBPStrategy):
             input_ids=bounds.input_ids,
         )
 
-    def _constant_div(self, constant: object, bounds: LinearBounds) -> LinearBounds:
+    def _constant_div(self, constant: torch.Tensor | torch.types.Number, bounds: LinearBounds) -> LinearBounds:
         lower_x, upper_x = bounds.concretize()
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_constant_div_alpha_beta(lower_x, upper_x, constant)
-        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)
+        relaxation = compute_constant_div_relaxation(lower_x, upper_x, constant)
+        return relaxation.forward_compose([bounds])

@@ -14,7 +14,7 @@ import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from bound_propagation.propagation.linear_relaxations.clamp import compute_clamp_alpha_beta
+from bound_propagation.propagation.linear_relaxations.clamp import compute_clamp_relaxation
 
 
 class TestClampRelaxationSoundness:
@@ -64,7 +64,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([3.0])
         min_val, max_val = -5.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -81,7 +85,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([-6.0])
         min_val, max_val = -5.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -98,7 +106,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([10.0])
         min_val, max_val = -5.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -115,7 +127,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([2.0])
         min_val, max_val = 0.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -128,7 +144,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([7.0])
         min_val, max_val = -5.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -141,7 +161,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([10.0])
         min_val, max_val = -2.0, 2.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -154,9 +178,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([5.0])
         min_val = 0.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(
-            lower, upper, min_val=min_val, max_val=None
-        )
+        relaxation = compute_clamp_relaxation(lower, upper, min_val=min_val, max_val=None)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val=min_val, max_val=None
@@ -169,9 +195,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([5.0])
         max_val = 2.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(
-            lower, upper, min_val=None, max_val=max_val
-        )
+        relaxation = compute_clamp_relaxation(lower, upper, min_val=None, max_val=max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val=None, max_val=max_val
@@ -184,7 +212,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([2.0])
         min_val, max_val = 0.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val, num_samples=10
@@ -197,7 +229,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([-5.0])
         min_val, max_val = 0.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val, num_samples=10
@@ -210,7 +246,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([10.0])
         min_val, max_val = 0.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val, num_samples=10
@@ -223,7 +263,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([[3.0, -6.0, 10.0], [2.0, 7.0, 10.0]])
         min_val, max_val = -5.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # Test each element separately
         for i in range(lower.shape[0]):
@@ -244,7 +288,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([0.5])
         min_val, max_val = 0.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -257,7 +305,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([5.5])
         min_val, max_val = -5.0, 5.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val
@@ -270,7 +322,11 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([3.0])
         min_val, max_val = -1.0, 1.0
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_clamp_alpha_beta(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, min_val, max_val

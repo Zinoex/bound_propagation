@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
 from ..strategy import ForwardBoundingStrategy
-from .utils import apply_linear_relaxation_backward, compute_sigmoid_alpha_beta, verify_linear_bounds
+from .utils import apply_linear_relaxation_backward, compute_sigmoid_relaxation, verify_linear_bounds
 
 if TYPE_CHECKING:
     from ...bounds import AbstractBounds
@@ -53,7 +53,7 @@ class BackwardLBPSigmoidStrategy(ForwardBoundingStrategy):
         lower, upper = bounds.concretize()
 
         # Compute alpha/beta parameters for sigmoid relaxation
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_alpha_beta(lower, upper)
+        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sigmoid_relaxation(lower, upper)
 
         # Apply the linear relaxation to the bounds using backward composition
         return apply_linear_relaxation_backward(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)

@@ -1,9 +1,11 @@
 import torch
 
+from .base import ElementwiseLinearRelaxation
 
-def compute_reciprocal_alpha_beta(
+
+def compute_reciprocal_relaxation(
     lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> ElementwiseLinearRelaxation:
     """
     Compute alpha/beta parameters for reciprocal (1/x) linear relaxation.
 
@@ -17,7 +19,7 @@ def compute_reciprocal_alpha_beta(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
+        ElementwiseLinearRelaxation encapsulating the relaxation
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -87,4 +89,9 @@ def compute_reciprocal_alpha_beta(
     alpha_lower[all_negative] = slope[all_negative]
     beta_lower[all_negative] = upper_act[all_negative] - slope[all_negative] * upper_safe[all_negative]
 
-    return alpha_lower, beta_lower, alpha_upper, beta_upper
+    return ElementwiseLinearRelaxation(
+        alpha_lower=alpha_lower,
+        beta_lower=beta_lower,
+        alpha_upper=alpha_upper,
+        beta_upper=beta_upper,
+    )

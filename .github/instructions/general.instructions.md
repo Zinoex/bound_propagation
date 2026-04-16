@@ -112,7 +112,7 @@ numeric-translators = { workspace = true }
 - When using `plum.dispatch` overloads that redefine the same function name, add `# noqa: F811` on the redefined function declarations so Ruff does not flag the intentional override
 
 ### Python Style Guidelines
-- Follow PEP 8 conventions, except use a modern maximum line length of 180 characters instead of the default PEP 8 limit
+- Follow PEP 8 conventions, except use a modern maximum line length of 120 characters instead of the default PEP 8 limit
 - Use type hints where appropriate (the project includes `py.typed` markers)
 - Use docstrings for public APIs following NumPy-style documentation format
 - All operations should adhere to NumPy broadcast semantics where applicable

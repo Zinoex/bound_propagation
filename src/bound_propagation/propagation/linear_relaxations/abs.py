@@ -1,11 +1,13 @@
 import torch
 
+from .base import ElementwiseLinearRelaxation
 
-def compute_abs_alpha_beta(
+
+def compute_abs_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> ElementwiseLinearRelaxation:
     """
     Compute alpha/beta parameters for abs linear relaxation.
 
@@ -19,7 +21,7 @@ def compute_abs_alpha_beta(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
+        ElementwiseLinearRelaxation encapsulating the relaxation
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -61,4 +63,9 @@ def compute_abs_alpha_beta(
     # For lower bound, use upper bound slope but zero intercept (line through the origin)
     alpha_lower[crosses_zero] = slope
 
-    return alpha_lower, beta_lower, alpha_upper, beta_upper
+    return ElementwiseLinearRelaxation(
+        alpha_lower=alpha_lower,
+        beta_lower=beta_lower,
+        alpha_upper=alpha_upper,
+        beta_upper=beta_upper,
+    )

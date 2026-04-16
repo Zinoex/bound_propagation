@@ -2,12 +2,14 @@ import math
 
 import torch
 
+from .base import ElementwiseLinearRelaxation
 
-def compute_sin_alpha_beta(
+
+def compute_sin_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> ElementwiseLinearRelaxation:
     """
     Compute alpha/beta parameters for sin linear relaxation.
 
@@ -25,7 +27,7 @@ def compute_sin_alpha_beta(
         zero_threshold: Threshold for considering an interval as zero-width
 
     Returns:
-        Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
+        ElementwiseLinearRelaxation encapsulating the relaxation
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -43,7 +45,12 @@ def compute_sin_alpha_beta(
 
     non_zero = ~zero_width
     if not torch.any(non_zero):
-        return alpha_lower, beta_lower, alpha_upper, beta_upper
+        return ElementwiseLinearRelaxation(
+            alpha_lower=alpha_lower,
+            beta_lower=beta_lower,
+            alpha_upper=alpha_upper,
+            beta_upper=beta_upper,
+        )
 
     # Work with non-zero width intervals
     lower_nz = lower[non_zero]
@@ -217,4 +224,9 @@ def compute_sin_alpha_beta(
     alpha_upper[non_zero] = alpha_nz_upper
     beta_upper[non_zero] = beta_nz_upper
 
-    return alpha_lower, beta_lower, alpha_upper, beta_upper
+    return ElementwiseLinearRelaxation(
+        alpha_lower=alpha_lower,
+        beta_lower=beta_lower,
+        alpha_upper=alpha_upper,
+        beta_upper=beta_upper,
+    )

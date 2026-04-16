@@ -2,34 +2,36 @@ from typing import overload
 
 import torch
 
+from .base import ElementwiseLinearRelaxation
+
 
 @overload
-def compute_clamp_alpha_beta(
+def compute_clamp_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     min_val: float | None,
     max_val: float | None,
     zero_threshold: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ...
+) -> ElementwiseLinearRelaxation: ...
 
 
 @overload
-def compute_clamp_alpha_beta(
+def compute_clamp_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     min_val: torch.Tensor | None,
     max_val: torch.Tensor | None,
     zero_threshold: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]: ...
+) -> ElementwiseLinearRelaxation: ...
 
 
-def compute_clamp_alpha_beta(
+def compute_clamp_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     min_val: float | torch.Tensor | None = None,
     max_val: float | torch.Tensor | None = None,
     zero_threshold: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> ElementwiseLinearRelaxation:
     """
     Compute alpha/beta parameters for clamp linear relaxation.
 
@@ -43,7 +45,7 @@ def compute_clamp_alpha_beta(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        Tuple of (alpha_lower, beta_lower, alpha_upper, beta_upper)
+        ElementwiseLinearRelaxation encapsulating the relaxation
     """
 
     # TODO: assert the overload inputs
@@ -128,4 +130,9 @@ def compute_clamp_alpha_beta(
     alpha_upper[crosses_both] = 0
     beta_upper[crosses_both] = max_val[crosses_both] if isinstance(max_val, torch.Tensor) else max_val
 
-    return alpha_lower, beta_lower, alpha_upper, beta_upper
+    return ElementwiseLinearRelaxation(
+        alpha_lower=alpha_lower,
+        beta_lower=beta_lower,
+        alpha_upper=alpha_upper,
+        beta_upper=beta_upper,
+    )

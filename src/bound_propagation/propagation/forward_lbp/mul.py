@@ -6,6 +6,7 @@ import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
+from ..linear_relaxations.base import PairedLinearRelaxation
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
@@ -35,25 +36,51 @@ class ForwardLBPMul(ForwardLBPStrategy):
         raise TypeError(f"ForwardLBPMul requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
     def _mul_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
-        lower_a, upper_a = a.concretize()
-        lower_b, upper_b = b.concretize()
+        """McCormick relaxation for element-wise z = a * b.
 
-        products = [
-            lower_a * lower_b,
-            lower_a * upper_b,
-            upper_a * lower_b,
-            upper_a * upper_b,
-        ]
-        lower = torch.stack(products).min(dim=0)[0]
-        upper = torch.stack(products).max(dim=0)[0]
+        Uses PairedLinearRelaxation to preserve linear structure from both inputs.
+        At each element, we choose element-wise between the two McCormick lower bounds
+        and the two McCormick upper bounds by evaluating tightness at the midpoint.
 
-        return LinearBounds(
-            regions=[],
-            linear_lower=[],
-            bias_lower=lower,
-            linear_upper=[],
-            bias_upper=upper,
+        McCormick lower bounds (both valid):
+          z ≥ lb * a + la * b - la*lb
+          z ≥ ub * a + ua * b - ua*ub
+
+        McCormick upper bounds (both valid):
+          z ≤ ub * a + la * b - la*ub
+          z ≤ lb * a + ua * b - ua*lb
+        """
+        la, ua = a.concretize()
+        lb, ub = b.concretize()
+
+        ma = (la + ua) / 2
+        mb = (lb + ub) / 2
+
+        # Evaluate lower bound candidates at midpoint; pick tighter (larger)
+        lb1_mid = lb * ma + la * mb - la * lb
+        lb2_mid = ub * ma + ua * mb - ua * ub
+        use_lb1 = lb1_mid >= lb2_mid
+
+        alpha1_lower = torch.where(use_lb1, lb, ub)   # coeff of a
+        alpha2_lower = torch.where(use_lb1, la, ua)   # coeff of b
+        bias_lower   = torch.where(use_lb1, -la * lb, -ua * ub)
+
+        # Evaluate upper bound candidates at midpoint; pick tighter (smaller)
+        ub1_mid = lb * ma + ua * mb - ua * lb
+        ub2_mid = ub * ma + la * mb - la * ub
+        use_ub1 = ub1_mid <= ub2_mid
+
+        alpha1_upper = torch.where(use_ub1, lb, ub)   # coeff of a
+        alpha2_upper = torch.where(use_ub1, ua, la)   # coeff of b
+        bias_upper   = torch.where(use_ub1, -ua * lb, -la * ub)
+
+        relaxation = PairedLinearRelaxation(
+            coeffs_lower=[alpha1_lower, alpha2_lower],
+            coeffs_upper=[alpha1_upper, alpha2_upper],
+            bias_lower=bias_lower,
+            bias_upper=bias_upper,
         )
+        return relaxation.forward_compose([a, b])
 
     def _multiply_by_constant(self, bounds: LinearBounds, constant: object) -> LinearBounds:
         constant_tensor = torch.as_tensor(

@@ -14,7 +14,7 @@ import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from bound_propagation.propagation.linear_relaxations.exp import compute_exp_alpha_beta
+from bound_propagation.propagation.linear_relaxations.exp import compute_exp_relaxation
 
 
 class TestExpRelaxationSoundness:
@@ -61,7 +61,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([0.1])
         upper = torch.tensor([0.5])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Small positive range: {message}"
@@ -71,7 +75,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([3.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Moderate positive range: {message}"
@@ -81,7 +89,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([-0.5])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Negative range: {message}"
@@ -91,7 +103,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Crossing zero: {message}"
@@ -101,7 +117,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([3.0])
         upper = torch.tensor([5.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Large positive range: {message}"
@@ -111,7 +131,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([1.5])
         upper = torch.tensor([1.5])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, num_samples=10
@@ -123,7 +147,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([-10.0])
         upper = torch.tensor([-5.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Very negative: {message}"
@@ -133,7 +161,11 @@ class TestExpRelaxationSoundness:
         lower = torch.tensor([[0.1, -2.0, 1.0], [-1.0, 3.0, -10.0]])
         upper = torch.tensor([[0.5, -0.5, 3.0], [1.0, 5.0, -5.0]])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_exp_alpha_beta(lower, upper)
+        relaxation = compute_exp_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # Test each element separately
         for i in range(lower.shape[0]):

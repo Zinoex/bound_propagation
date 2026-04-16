@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from ...bounds import LinearBounds
-from ..linear_relaxations.abs import compute_abs_alpha_beta
+from ..linear_relaxations.abs import compute_abs_relaxation
 from .base import ForwardLBPStrategy
-from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     import torch.fx as fx
@@ -28,5 +27,5 @@ class ForwardLBPAbs(ForwardLBPStrategy):
             raise TypeError("ForwardLBPAbs requires input to be LinearBounds")
 
         lower, upper = bounds.concretize()
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_abs_alpha_beta(lower, upper)
-        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)
+        relaxation = compute_abs_relaxation(lower, upper)
+        return relaxation.forward_compose([bounds])

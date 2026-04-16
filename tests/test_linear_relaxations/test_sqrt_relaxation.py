@@ -7,7 +7,7 @@ linear relaxations produce valid upper and lower bounds.
 
 import torch
 
-from bound_propagation.propagation.linear_relaxations.sqrt import compute_sqrt_alpha_beta
+from bound_propagation.propagation.linear_relaxations.sqrt import compute_sqrt_relaxation
 
 
 class TestSqrtRelaxationSoundness:
@@ -63,7 +63,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.01])
         upper = torch.tensor([1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Small to one: {message}"
@@ -73,7 +77,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.1])
         upper = torch.tensor([4.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Moderate range: {message}"
@@ -83,7 +91,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([9.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Larger range: {message}"
@@ -93,7 +105,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.0])
         upper = torch.tensor([1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Starting from zero: {message}"
@@ -103,7 +119,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([4.0])
         upper = torch.tensor([4.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(
             lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper, num_samples=10
@@ -115,7 +135,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.25])
         upper = torch.tensor([16.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Wide range: {message}"
@@ -125,7 +149,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([[0.01, 0.1, 1.0], [0.0, 4.0, 0.25]])
         upper = torch.tensor([[1.0, 4.0, 9.0], [1.0, 4.0, 16.0]])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Batch processing: {message}"
@@ -135,7 +163,11 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.0001, 1.0, 100.0])
         upper = torch.tensor([0.01, 100.0, 10000.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         is_sound, message = self.verify_bounds_sound(lower, upper, alpha_lower, beta_lower, alpha_upper, beta_upper)
         assert is_sound, f"Extreme values: {message}"
@@ -149,7 +181,11 @@ class TestSqrtRelaxationInvalidInputs:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # All parameters should be nan for invalid inputs
         assert torch.isnan(alpha_lower).all()
@@ -162,7 +198,11 @@ class TestSqrtRelaxationInvalidInputs:
         lower = torch.tensor([-5.0])
         upper = torch.tensor([-1.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # All parameters should be nan for invalid inputs
         assert torch.isnan(alpha_lower).all()
@@ -175,7 +215,11 @@ class TestSqrtRelaxationInvalidInputs:
         lower = torch.tensor([0.1, -1.0, 1.0])
         upper = torch.tensor([1.0, 1.0, 4.0])
 
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_sqrt_alpha_beta(lower, upper)
+        relaxation = compute_sqrt_relaxation(lower, upper)
+        alpha_lower = relaxation.alpha_lower
+        beta_lower = relaxation.beta_lower
+        alpha_upper = relaxation.alpha_upper
+        beta_upper = relaxation.beta_upper
 
         # First and third should be valid, second should be nan
         assert not torch.isnan(alpha_lower[0])

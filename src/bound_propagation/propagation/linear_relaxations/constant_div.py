@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import torch
 
-from .reciprocal import compute_reciprocal_alpha_beta
+from .base import ElementwiseLinearRelaxation
+from .reciprocal import compute_reciprocal_relaxation
 
 
-def compute_constant_div_alpha_beta(
+def compute_constant_div_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     constant: object,
     zero_threshold: float = 1e-8,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> ElementwiseLinearRelaxation:
     """Compute linear-relaxation parameters for constant-over-bounds division ``constant / x``.
 
     The function ``f(x) = c / x`` is a scaled reciprocal.
@@ -26,7 +27,7 @@ def compute_constant_div_alpha_beta(
         zero_threshold: Threshold used by reciprocal relaxation for zero-width handling.
 
     Returns:
-        Tuple of ``(alpha_lower, beta_lower, alpha_upper, beta_upper)``.
+        ElementwiseLinearRelaxation encapsulating the relaxation.
     """
     if not isinstance(lower, torch.Tensor):
         raise TypeError(f"lower must be a torch.Tensor, got {type(lower)!r}")
@@ -47,19 +48,17 @@ def compute_constant_div_alpha_beta(
             f"got constant shape {constant_shape}"
         ) from error
 
-    recip_alpha_lower, recip_beta_lower, recip_alpha_upper, recip_beta_upper = compute_reciprocal_alpha_beta(
-        lower, upper, zero_threshold=zero_threshold
-    )
+    recip = compute_reciprocal_relaxation(lower, upper, zero_threshold=zero_threshold)
 
     positive_constant = constant_tensor > 0
     zero_constant = constant_tensor == 0
     crosses_zero = (lower < 0) & (upper > 0)
 
     # Multiplication by a negative constant flips lower/upper inequalities.
-    alpha_lower = constant_tensor * torch.where(positive_constant, recip_alpha_lower, recip_alpha_upper)
-    beta_lower = constant_tensor * torch.where(positive_constant, recip_beta_lower, recip_beta_upper)
-    alpha_upper = constant_tensor * torch.where(positive_constant, recip_alpha_upper, recip_alpha_lower)
-    beta_upper = constant_tensor * torch.where(positive_constant, recip_beta_upper, recip_beta_lower)
+    alpha_lower = constant_tensor * torch.where(positive_constant, recip.alpha_lower, recip.alpha_upper)
+    beta_lower = constant_tensor * torch.where(positive_constant, recip.beta_lower, recip.beta_upper)
+    alpha_upper = constant_tensor * torch.where(positive_constant, recip.alpha_upper, recip.alpha_lower)
+    beta_upper = constant_tensor * torch.where(positive_constant, recip.beta_upper, recip.beta_lower)
 
     # For intervals crossing zero, the function contains asymptotes, so return infinite bounds.
     alpha_lower[crosses_zero] = 0.0
@@ -74,4 +73,9 @@ def compute_constant_div_alpha_beta(
     alpha_upper[zero_constant] = 0.0
     beta_upper[zero_constant] = 0.0
 
-    return alpha_lower, beta_lower, alpha_upper, beta_upper
+    return ElementwiseLinearRelaxation(
+        alpha_lower=alpha_lower,
+        beta_lower=beta_lower,
+        alpha_upper=alpha_upper,
+        beta_upper=beta_upper,
+    )

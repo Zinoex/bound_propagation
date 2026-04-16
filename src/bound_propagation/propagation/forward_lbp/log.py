@@ -5,9 +5,8 @@ from typing import TYPE_CHECKING
 import torch.fx as fx
 
 from ...bounds import LinearBounds
-from ..linear_relaxations.log import compute_log_alpha_beta
+from ..linear_relaxations.log import compute_log_relaxation
 from .base import ForwardLBPStrategy
-from .utils import apply_linear_relaxation
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -28,5 +27,5 @@ class ForwardLBPLog(ForwardLBPStrategy):
             raise TypeError("ForwardLBPLog requires input to be LinearBounds")
 
         lower, upper = bounds.concretize()
-        alpha_lower, beta_lower, alpha_upper, beta_upper = compute_log_alpha_beta(lower, upper)
-        return apply_linear_relaxation(bounds, alpha_lower, beta_lower, alpha_upper, beta_upper)
+        relaxation = compute_log_relaxation(lower, upper)
+        return relaxation.forward_compose([bounds])
