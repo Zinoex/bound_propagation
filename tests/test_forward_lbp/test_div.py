@@ -67,12 +67,13 @@ def test_div_abstract_abstract_positive() -> None:
 
     # Evaluate the linear bounds at the four corners and verify both the exact
     # predicted values and that they form a valid lower/upper bound on x0/x1.
-    # The secant-based upper relaxation is tight at the corners (12, 2) and (12, 3).
+    # eta=0.5 selects the McCormick convex-combination midpoint; the upper relaxation
+    # is tight at (x0=6, x1=3) and (x0=12, x1=2).
     for x0, x1, true_val, exp_lower, exp_upper in [
-        (6.0,  2.0, 3.0, 2.76, 4.08),
-        (6.0,  3.0, 2.0, 0.84, 2.08),
-        (12.0, 2.0, 6.0, 5.76, 6.0),   # upper tight here
-        (12.0, 3.0, 4.0, 3.84, 4.0),   # upper tight here
+        (6.0,  2.0, 3.0, 2.82, 3.50),
+        (6.0,  3.0, 2.0, 1.38, 2.00),   # upper tight here
+        (12.0, 2.0, 6.0, 5.32, 6.00),   # upper tight here
+        (12.0, 3.0, 4.0, 3.88, 4.50),
     ]:
         x = torch.tensor([x0, x1])
         lower_val = (W_l @ x + b_l).item()
@@ -201,11 +202,11 @@ def test_div_crossing_zero_divisor_is_elementwise() -> None:
 
     # Output 1 (x2 ∈ [2, 3]): McCormick via reciprocal relaxation.
     # The x1 coefficient is zero, so only x0 and x2 matter.
-    # Secant-based upper bound is tight at (x0=12, x2=2) and (x0=12, x2=3).
+    # eta=0.5 makes the upper tight at (x0=6, x2=3) and (x0=12, x2=2).
     for x0, x2, true_val, exp_lower, exp_upper in [
-        (6.0,  3.0, 2.0, 0.84, 2.08),
-        (12.0, 2.0, 6.0, 5.76, 6.0),   # upper tight here
-        (12.0, 3.0, 4.0, 3.84, 4.0),   # upper tight here
+        (6.0,  3.0, 2.0, 1.38, 2.00),   # upper tight here
+        (12.0, 2.0, 6.0, 5.32, 6.00),   # upper tight here
+        (12.0, 3.0, 4.0, 3.88, 4.50),
     ]:
         x = torch.tensor([x0, 0.0, x2])
         lower_val = (W_l @ x + b_l)[1].item()
