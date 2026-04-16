@@ -6,6 +6,7 @@ import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
+from ..linear_relaxations.minimum import compute_minimum_relaxation
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
@@ -24,23 +25,33 @@ class ForwardLBPMinimum(ForwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
-            lower_a, upper_a = left.concretize()
-            lower_b, upper_b = right.concretize()
-        elif isinstance(left, LinearBounds):
-            lower_a, upper_a = left.concretize()
-            right_tensor = torch.as_tensor(right, dtype=lower_a.dtype, device=lower_a.device)
-            lower_b, upper_b = right_tensor, right_tensor
-        elif isinstance(right, LinearBounds):
-            left_tensor = torch.as_tensor(left, dtype=right.bias_lower.dtype, device=right.bias_lower.device)
-            lower_a, upper_a = left_tensor, left_tensor
-            lower_b, upper_b = right.concretize()
-        else:
-            raise TypeError(f"ForwardLBPMinimum requires at least one LinearBounds, got {type(left)} and {type(right)}")
+            return self._min_bounds(left, right)
 
+        if isinstance(left, LinearBounds):
+            return self._min_bounds(left, self._constant_to_bounds(right, left))
+
+        if isinstance(right, LinearBounds):
+            return self._min_bounds(self._constant_to_bounds(left, right), right)
+
+        raise TypeError(f"ForwardLBPMinimum requires at least one LinearBounds, got {type(left)} and {type(right)}")
+
+    @staticmethod
+    def _constant_to_bounds(constant: object, reference: LinearBounds) -> LinearBounds:
+        constant_tensor = torch.as_tensor(
+            constant, dtype=reference.bias_lower.dtype, device=reference.bias_lower.device
+        )
+        constant_tensor = constant_tensor.expand_as(reference.bias_lower)
         return LinearBounds(
             regions=[],
             linear_lower=[],
-            bias_lower=torch.minimum(lower_a, lower_b),
+            bias_lower=constant_tensor,
             linear_upper=[],
-            bias_upper=torch.minimum(upper_a, upper_b),
+            bias_upper=constant_tensor,
         )
+
+    @staticmethod
+    def _min_bounds(a: LinearBounds, b: LinearBounds) -> LinearBounds:
+        lower_a, upper_a = a.concretize()
+        lower_b, upper_b = b.concretize()
+        relaxation = compute_minimum_relaxation(lower_a, upper_a, lower_b, upper_b)
+        return relaxation.forward_compose([a, b])

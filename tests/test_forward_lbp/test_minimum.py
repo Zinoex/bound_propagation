@@ -22,13 +22,19 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     )
 
 
-def test_minimum_abstract_abstract_concretizes() -> None:
-    """Test element-wise minimum of two abstract bounds concretizes."""
-    # Region: x0 ∈ [1, 3], x1 ∈ [2, 4]
-    # Bounds A: [x0, x0]
-    # Bounds B: [x1, x1]
-    # min(x0, x1): Must concretize due to independent variation
-    # Result: [min(1, 2), min(3, 4)] = [1, 3]
+def _check_soundness(result: LinearBounds, region: HyperRectangle, fn, n_samples: int = 200) -> None:
+    """Check that the linear relaxation is a sound over-approximation via sampling."""
+    lower, upper = result.concretize()
+    dim = region.lower.numel()
+    samples = region.lower + (region.upper - region.lower) * torch.rand(n_samples, dim)
+    for x in samples:
+        true_val = fn(x)
+        assert torch.all(lower <= true_val + 1e-6), f"Lower bound {lower} > true value {true_val}"
+        assert torch.all(upper >= true_val - 1e-6), f"Upper bound {upper} < true value {true_val}"
+
+
+def test_minimum_abstract_abstract_preserves_linear() -> None:
+    """Test element-wise minimum of two abstract bounds preserves linear structure."""
     region = HyperRectangle(lower=torch.tensor([1.0, 2.0]), upper=torch.tensor([3.0, 4.0]))
 
     bounds_a = LinearBounds(
@@ -49,69 +55,55 @@ def test_minimum_abstract_abstract_concretizes() -> None:
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    # Should concretize
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    # Should preserve linear structure
+    assert len(result.linear_lowers) > 0
 
-    # First element: min([1, 3], [0, 0]) = [0, 0]
-    # Second element: min([0, 0], [2, 4]) = [0, 0]
+    # Soundness check
     lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([0.0, 0.0]))
-    assert torch.allclose(upper, torch.tensor([0.0, 0.0]))
+    # First element: min(x0, 0) where x0 ∈ [1, 3] → [0, 0]
+    # Second element: min(0, x1) where x1 ∈ [2, 4] → [0, 0]
+    assert torch.all(lower <= torch.tensor([0.0, 0.0]) + 1e-6)
+    assert torch.all(upper >= torch.tensor([0.0, 0.0]) - 1e-6)
 
 
 def test_minimum_abstract_constant_positive() -> None:
     """Test element-wise minimum with a positive constant."""
-    # Region: x ∈ [0, 5]
-    # Bounds: lower = x, upper = x
-    # Constant: 3
-    # min(x, 3): [min(0, 3), min(5, 3)] = [0, 3]
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, bounds, 3.0)
 
-    # Concretizes
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    # Should preserve linear structure
+    assert len(result.linear_lowers) > 0
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([0.0]))
-    assert torch.allclose(upper, torch.tensor([3.0]))
+    _check_soundness(result, region, lambda x: torch.minimum(x, torch.tensor(3.0)))
 
 
 def test_minimum_abstract_constant_above_range() -> None:
-    """Test minimum with constant above the input range."""
-    # Region: x ∈ [1, 3]
-    # Bounds: lower = x, upper = x
-    # Constant: 5
-    # min(x, 5) = x (since x <= 3 < 5)
+    """Test minimum with constant above the input range — identity passthrough."""
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([3.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, bounds, 5.0)
 
-    # Result is the input interval
+    # a dominates: min(x, 5) = x when x <= 3 < 5
+    assert len(result.linear_lowers) > 0
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0]))
     assert torch.allclose(upper, torch.tensor([3.0]))
 
 
 def test_minimum_abstract_constant_below_range() -> None:
-    """Test minimum with constant below the input range."""
-    # Region: x ∈ [3, 7]
-    # Bounds: lower = x, upper = x
-    # Constant: 1
-    # min(x, 1) = 1 (since x >= 3 > 1)
+    """Test minimum with constant below the input range — constant output."""
     region = HyperRectangle(lower=torch.tensor([3.0]), upper=torch.tensor([7.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, bounds, 1.0)
 
-    # Result is constant 1
+    # b dominates: min(x, 1) = 1 when x >= 3 > 1
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([1.0]))
     assert torch.allclose(upper, torch.tensor([1.0]))
@@ -119,10 +111,6 @@ def test_minimum_abstract_constant_below_range() -> None:
 
 def test_minimum_abstract_constant_tensor() -> None:
     """Test minimum with a tensor constant."""
-    # Region: x0 ∈ [0, 4], x1 ∈ [1, 5]
-    # Bounds: identity
-    # Constant: [2, 3]
-    # min([x0, x1], [2, 3]): ([min(0, 2), min(4, 2)], [min(1, 3), min(5, 3)]) = ([0, 2], [1, 3])
     region = HyperRectangle(lower=torch.tensor([0.0, 1.0]), upper=torch.tensor([4.0, 5.0]))
     bounds = _make_linear_bounds(region)
 
@@ -130,57 +118,68 @@ def test_minimum_abstract_constant_tensor() -> None:
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, bounds, constant)
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([0.0, 1.0]))
-    assert torch.allclose(upper, torch.tensor([2.0, 3.0]))
+    _check_soundness(result, region, lambda x: torch.minimum(x, constant))
 
 
 def test_minimum_constant_abstract() -> None:
     """Test minimum with constant as first operand (commutative)."""
-    # Region: x ∈ [1, 6]
-    # Constant: 4
-    # Bounds: lower = x, upper = x
-    # min(4, x): [min(4, 1), min(4, 6)] = [1, 4]
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([6.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, 4.0, bounds)
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([1.0]))
-    assert torch.allclose(upper, torch.tensor([4.0]))
+    _check_soundness(result, region, lambda x: torch.minimum(torch.tensor(4.0), x))
 
 
 def test_minimum_negative_values() -> None:
     """Test minimum with negative values."""
-    # Region: x ∈ [-5, -1]
-    # Bounds: lower = x, upper = x
-    # Constant: -3
-    # min(x, -3): [min(-5, -3), min(-1, -3)] = [-5, -3]
     region = HyperRectangle(lower=torch.tensor([-5.0]), upper=torch.tensor([-1.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, bounds, -3.0)
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([-5.0]))
-    assert torch.allclose(upper, torch.tensor([-3.0]))
+    _check_soundness(result, region, lambda x: torch.minimum(x, torch.tensor(-3.0)))
 
 
 def test_minimum_crossing_zero() -> None:
     """Test minimum with interval crossing zero."""
-    # Region: x ∈ [-2, 3]
-    # Bounds: lower = x, upper = x
-    # Constant: 0
-    # min(x, 0): [min(-2, 0), min(3, 0)] = [-2, 0]
     region = HyperRectangle(lower=torch.tensor([-2.0]), upper=torch.tensor([3.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMinimum()
     result = propagate(strategy, bounds, 0.0)
 
+    _check_soundness(result, region, lambda x: torch.minimum(x, torch.tensor(0.0)))
+
+
+def test_minimum_crossing_tightness() -> None:
+    """Test that the relaxation is reasonably tight in the crossing case."""
+    region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([4.0]))
+    bounds = _make_linear_bounds(region)
+
+    strategy = ForwardLBPMinimum()
+    result = propagate(strategy, bounds, 2.0)
+
     lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([-2.0]))
-    assert torch.allclose(upper, torch.tensor([0.0]))
+    # min(x, 2) for x ∈ [0, 4]: true range is [0, 2]
+    assert lower.item() <= 0.0 + 1e-6
+    assert upper.item() >= 2.0 - 1e-6
+    gap = (upper - lower).item()
+    assert gap < 4.0
+
+
+def test_minimum_abstract_abstract_same_bounds() -> None:
+    """Test minimum of two identical abstract bounds — sound over-approximation of identity."""
+    region = HyperRectangle(lower=torch.tensor([1.0, 2.0]), upper=torch.tensor([3.0, 4.0]))
+    bounds = _make_linear_bounds(region)
+
+    strategy = ForwardLBPMinimum()
+    result = propagate(strategy, bounds, bounds)
+
+    # min(x, x) = x — relaxation treats inputs as independent over the box,
+    # so it's sound but not tight for this degenerate case.
+    lower, upper = result.concretize()
+    assert torch.all(lower <= region.lower + 1e-5)
+    assert torch.all(upper >= region.upper - 1e-5)

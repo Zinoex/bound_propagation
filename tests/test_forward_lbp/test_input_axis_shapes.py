@@ -271,10 +271,10 @@ def expected_structure(operation: str, input_shape: tuple[int, ...]) -> tuple[tu
         return (4, 3), [input_shape, input_shape]
 
     if operation == "stack":
-        return (2, 2, 3), []
+        return (2, 2, 3), [input_shape, input_shape]
 
     if operation in {"maximum", "minimum"}:
-        return (2, 3), []
+        return (2, 3), [input_shape, input_shape]
 
     if operation in {"max", "mean", "min", "sum"}:
         return (), []

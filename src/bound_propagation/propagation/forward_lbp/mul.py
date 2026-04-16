@@ -6,7 +6,7 @@ import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
-from ..linear_relaxations.base import PairedLinearRelaxation
+from ..linear_relaxations.mul import compute_mul_relaxation
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
@@ -53,33 +53,7 @@ class ForwardLBPMul(ForwardLBPStrategy):
         la, ua = a.concretize()
         lb, ub = b.concretize()
 
-        ma = (la + ua) / 2
-        mb = (lb + ub) / 2
-
-        # Evaluate lower bound candidates at midpoint; pick tighter (larger)
-        lb1_mid = lb * ma + la * mb - la * lb
-        lb2_mid = ub * ma + ua * mb - ua * ub
-        use_lb1 = lb1_mid >= lb2_mid
-
-        alpha1_lower = torch.where(use_lb1, lb, ub)   # coeff of a
-        alpha2_lower = torch.where(use_lb1, la, ua)   # coeff of b
-        bias_lower   = torch.where(use_lb1, -la * lb, -ua * ub)
-
-        # Evaluate upper bound candidates at midpoint; pick tighter (smaller)
-        ub1_mid = lb * ma + ua * mb - ua * lb
-        ub2_mid = ub * ma + la * mb - la * ub
-        use_ub1 = ub1_mid <= ub2_mid
-
-        alpha1_upper = torch.where(use_ub1, lb, ub)   # coeff of a
-        alpha2_upper = torch.where(use_ub1, ua, la)   # coeff of b
-        bias_upper   = torch.where(use_ub1, -ua * lb, -la * ub)
-
-        relaxation = PairedLinearRelaxation(
-            coeffs_lower=[alpha1_lower, alpha2_lower],
-            coeffs_upper=[alpha1_upper, alpha2_upper],
-            bias_lower=bias_lower,
-            bias_upper=bias_upper,
-        )
+        relaxation = compute_mul_relaxation(la, ua, lb, ub)
         return relaxation.forward_compose([a, b])
 
     def _multiply_by_constant(self, bounds: LinearBounds, constant: object) -> LinearBounds:

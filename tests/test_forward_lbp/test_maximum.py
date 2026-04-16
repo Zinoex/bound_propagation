@@ -22,13 +22,19 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     )
 
 
-def test_maximum_abstract_abstract_concretizes() -> None:
-    """Test element-wise maximum of two abstract bounds concretizes."""
-    # Region: x0 ∈ [1, 3], x1 ∈ [2, 4]
-    # Bounds A: [x0, x0]
-    # Bounds B: [x1, x1]
-    # max(x0, x1): Since x0 and x1 vary independently, we must concretize
-    # Result: [max(1, 2), max(3, 4)] = [2, 4]
+def _check_soundness(result: LinearBounds, region: HyperRectangle, fn, n_samples: int = 200) -> None:
+    """Check that the linear relaxation is a sound over-approximation via sampling."""
+    lower, upper = result.concretize()
+    dim = region.lower.numel()
+    samples = region.lower + (region.upper - region.lower) * torch.rand(n_samples, dim)
+    for x in samples:
+        true_val = fn(x)
+        assert torch.all(lower <= true_val + 1e-6), f"Lower bound {lower} > true value {true_val}"
+        assert torch.all(upper >= true_val - 1e-6), f"Upper bound {upper} < true value {true_val}"
+
+
+def test_maximum_abstract_abstract_preserves_linear() -> None:
+    """Test element-wise maximum of two abstract bounds preserves linear structure."""
     region = HyperRectangle(lower=torch.tensor([1.0, 2.0]), upper=torch.tensor([3.0, 4.0]))
 
     bounds_a = LinearBounds(
@@ -49,69 +55,56 @@ def test_maximum_abstract_abstract_concretizes() -> None:
     strategy = ForwardLBPMaximum()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    # Should concretize (lose linear dependency)
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    # Should preserve linear structure (not concretize)
+    assert len(result.linear_lowers) > 0
 
-    # First element: max([1, 3], [0, 0]) = [1, 3]
-    # Second element: max([0, 0], [2, 4]) = [2, 4]
+    # Soundness check
     lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([1.0, 2.0]))
-    assert torch.allclose(upper, torch.tensor([3.0, 4.0]))
+    # First element: max(x0, 0) where x0 ∈ [1, 3] → [1, 3]
+    # Second element: max(0, x1) where x1 ∈ [2, 4] → [2, 4]
+    assert torch.all(lower <= torch.tensor([1.0, 2.0]) + 1e-6)
+    assert torch.all(upper >= torch.tensor([3.0, 4.0]) - 1e-6)
 
 
 def test_maximum_abstract_constant_positive() -> None:
     """Test element-wise maximum with a positive constant."""
-    # Region: x ∈ [0, 5]
-    # Bounds: lower = x, upper = x
-    # Constant: 2
-    # max(x, 2): [max(0, 2), max(5, 2)] = [2, 5]
     region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([5.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMaximum()
     result = propagate(strategy, bounds, 2.0)
 
-    # Concretizes
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    # Should preserve linear structure
+    assert len(result.linear_lowers) > 0
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([2.0]))
-    assert torch.allclose(upper, torch.tensor([5.0]))
+    _check_soundness(result, region, lambda x: torch.maximum(x, torch.tensor(2.0)))
 
 
 def test_maximum_abstract_constant_below_range() -> None:
-    """Test maximum with constant below the input range."""
-    # Region: x ∈ [3, 7]
-    # Bounds: lower = x, upper = x
-    # Constant: 1
-    # max(x, 1) = x (since x >= 3 > 1)
+    """Test maximum with constant below the input range — identity passthrough."""
     region = HyperRectangle(lower=torch.tensor([3.0]), upper=torch.tensor([7.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMaximum()
     result = propagate(strategy, bounds, 1.0)
 
-    # Still concretizes but result is the input interval
+    # a dominates: max(x, 1) = x when x >= 3 > 1
+    # Should be identity passthrough with linear structure
+    assert len(result.linear_lowers) > 0
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([3.0]))
     assert torch.allclose(upper, torch.tensor([7.0]))
 
 
 def test_maximum_abstract_constant_above_range() -> None:
-    """Test maximum with constant above the input range."""
-    # Region: x ∈ [1, 3]
-    # Bounds: lower = x, upper = x
-    # Constant: 5
-    # max(x, 5) = 5 (since x <= 3 < 5)
+    """Test maximum with constant above the input range — constant output."""
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([3.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMaximum()
     result = propagate(strategy, bounds, 5.0)
 
-    # Result is constant 5
+    # b dominates: max(x, 5) = 5 when x <= 3 < 5
     lower, upper = result.concretize()
     assert torch.allclose(lower, torch.tensor([5.0]))
     assert torch.allclose(upper, torch.tensor([5.0]))
@@ -119,10 +112,6 @@ def test_maximum_abstract_constant_above_range() -> None:
 
 def test_maximum_abstract_constant_tensor() -> None:
     """Test maximum with a tensor constant."""
-    # Region: x0 ∈ [0, 4], x1 ∈ [1, 5]
-    # Bounds: identity
-    # Constant: [2, 3]
-    # max([x0, x1], [2, 3]): ([max(0, 2), max(4, 2)], [max(1, 3), max(5, 3)]) = ([2, 4], [3, 5])
     region = HyperRectangle(lower=torch.tensor([0.0, 1.0]), upper=torch.tensor([4.0, 5.0]))
     bounds = _make_linear_bounds(region)
 
@@ -130,40 +119,60 @@ def test_maximum_abstract_constant_tensor() -> None:
     strategy = ForwardLBPMaximum()
     result = propagate(strategy, bounds, constant)
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([2.0, 3.0]))
-    assert torch.allclose(upper, torch.tensor([4.0, 5.0]))
+    _check_soundness(result, region, lambda x: torch.maximum(x, constant))
 
 
 def test_maximum_constant_abstract() -> None:
     """Test maximum with constant as first operand (commutative)."""
-    # Region: x ∈ [1, 6]
-    # Constant: 3
-    # Bounds: lower = x, upper = x
-    # max(3, x): [max(3, 1), max(3, 6)] = [3, 6]
     region = HyperRectangle(lower=torch.tensor([1.0]), upper=torch.tensor([6.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMaximum()
     result = propagate(strategy, 3.0, bounds)
 
-    lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([3.0]))
-    assert torch.allclose(upper, torch.tensor([6.0]))
+    _check_soundness(result, region, lambda x: torch.maximum(torch.tensor(3.0), x))
 
 
 def test_maximum_negative_values() -> None:
     """Test maximum with negative values."""
-    # Region: x ∈ [-5, -1]
-    # Bounds: lower = x, upper = x
-    # Constant: -3
-    # max(x, -3): [max(-5, -3), max(-1, -3)] = [-3, -1]
     region = HyperRectangle(lower=torch.tensor([-5.0]), upper=torch.tensor([-1.0]))
     bounds = _make_linear_bounds(region)
 
     strategy = ForwardLBPMaximum()
     result = propagate(strategy, bounds, -3.0)
 
+    _check_soundness(result, region, lambda x: torch.maximum(x, torch.tensor(-3.0)))
+
+
+def test_maximum_crossing_tightness() -> None:
+    """Test that the relaxation is reasonably tight in the crossing case."""
+    region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([4.0]))
+    bounds = _make_linear_bounds(region)
+
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, bounds, 2.0)
+
     lower, upper = result.concretize()
-    assert torch.allclose(lower, torch.tensor([-3.0]))
-    assert torch.allclose(upper, torch.tensor([-1.0]))
+    # max(x, 2) for x ∈ [0, 4]: true range is [2, 4]
+    # Lower bound should be <= 2, upper should be >= 4
+    assert lower.item() <= 2.0 + 1e-6
+    assert upper.item() >= 4.0 - 1e-6
+    # Gap should be less than naive interval (which would be [0, 4] gap = 4)
+    # With linear relaxation gap should be tighter
+    gap = (upper - lower).item()
+    assert gap < 4.0
+
+
+def test_maximum_abstract_abstract_same_bounds() -> None:
+    """Test maximum of two identical abstract bounds — sound over-approximation of identity."""
+    region = HyperRectangle(lower=torch.tensor([1.0, 2.0]), upper=torch.tensor([3.0, 4.0]))
+    bounds = _make_linear_bounds(region)
+
+    strategy = ForwardLBPMaximum()
+    result = propagate(strategy, bounds, bounds)
+
+    # max(x, x) = x — relaxation treats inputs as independent over the box,
+    # so it's sound but not tight for this degenerate case.
+    lower, upper = result.concretize()
+    assert torch.all(lower <= region.lower + 1e-5)
+    assert torch.all(upper >= region.upper - 1e-5)

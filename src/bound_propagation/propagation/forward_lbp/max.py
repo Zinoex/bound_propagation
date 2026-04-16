@@ -31,11 +31,11 @@ class ForwardLBPMax(ForwardLBPStrategy):
         lower, upper = bounds.concretize()
 
         if dim is not None:
-            lower = lower.max(dim=dim, keepdim=keepdim).values
-            upper = upper.max(dim=dim, keepdim=keepdim).values
+            lower = lower.amax(dim=dim, keepdim=keepdim)
+            upper = upper.amax(dim=dim, keepdim=keepdim)
         else:
-            lower = lower.max()
-            upper = upper.max()
+            lower = lower.amax()
+            upper = upper.amax()
 
         return LinearBounds(
             regions=[],
