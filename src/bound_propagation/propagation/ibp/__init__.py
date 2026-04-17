@@ -45,9 +45,9 @@ __all__ = [
 ]
 
 
-def create_default_ibp_registry() -> TargetRegistry:
+def create_default_ibp_registry() -> TargetRegistry[ForwardIBPStrategy]:
     """Create a :class:`TargetRegistry` pre-populated with all built-in IBP strategies."""
-    registry = TargetRegistry()
+    registry = TargetRegistry[ForwardIBPStrategy]()
 
     # -- Arithmetic (binary, merged constant variants) ---------------------
     registry.register_many([torch.add, operator.add], IBPAdd())

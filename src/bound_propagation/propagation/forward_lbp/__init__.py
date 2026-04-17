@@ -44,9 +44,9 @@ __all__ = [
 ]
 
 
-def create_default_forward_lbp_registry() -> TargetRegistry:
+def create_default_forward_lbp_registry() -> TargetRegistry[ForwardLBPStrategy]:
     """Create a :class:`TargetRegistry` pre-populated with all built-in Forward LBP strategies."""
-    registry = TargetRegistry()
+    registry = TargetRegistry[ForwardLBPStrategy]()
 
     # -- Arithmetic (binary, merged constant variants) ---------------------
     registry.register_many([torch.add, operator.add], ForwardLBPAdd())

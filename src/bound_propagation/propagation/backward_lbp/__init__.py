@@ -50,9 +50,9 @@ __all__ = [
 ]
 
 
-def create_default_backward_lbp_registry() -> TargetRegistry:
+def create_default_backward_lbp_registry() -> TargetRegistry[BackwardLBPStrategy]:
     """Create a TargetRegistry pre-populated with built-in backward LBP strategies."""
-    registry = TargetRegistry()
+    registry = TargetRegistry[BackwardLBPStrategy]()
 
     # -- Arithmetic -----------------------------------------------------------
     registry.register_many([torch.add, operator.add], BackwardLBPAdd())

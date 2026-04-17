@@ -46,9 +46,11 @@ class BackwardLBPPropagator(BoundPropagator):
     def __init__(
         self,
         graph_module: fx.GraphModule,
-        registry: TargetRegistry | None = None,
+        registry: TargetRegistry[BackwardLBPStrategy] | None = None,
     ) -> None:
-        super().__init__(graph_module, registry or create_default_backward_lbp_registry())
+        super().__init__(graph_module)
+
+        self._registry = registry or create_default_backward_lbp_registry()
 
     @property
     def method_name(self) -> str:
@@ -87,6 +89,11 @@ class BackwardLBPPropagator(BoundPropagator):
     # Internal
     # ------------------------------------------------------------------
 
+    @property
+    def registry(self) -> TargetRegistry[BackwardLBPStrategy]:
+        """The strategy registry used for dispatch."""
+        return self._registry
+
     def _new_context(self) -> PropagationContext[SymbolicLinearRelaxation]:
         """Create a fresh :class:`PropagationContext`."""
         return PropagationContext[SymbolicLinearRelaxation](self._graph_module)
@@ -120,12 +127,12 @@ class BackwardLBPPropagator(BoundPropagator):
             if isinstance(output_node, (tuple, list)):
                 # Multi-output: use the matching element's meta
                 idx = list(output_values).index(val)
-                meta_node = node.args[0][idx]
+                meta_node = node.args[0][idx]  # ty:ignore[invalid-argument-type, not-subscriptable]
             else:
                 meta_node = output_node
 
-            output_shape = meta_node.meta["tensor_meta"]["shape"]
-            dtype = meta_node.meta["tensor_meta"]["dtype"]
+            output_shape = meta_node.meta["tensor_meta"]["shape"]  # ty:ignore[unresolved-attribute]
+            dtype = meta_node.meta["tensor_meta"]["dtype"]  # ty:ignore[unresolved-attribute]
             device = self._infer_device()
 
             out_relaxation = OutputLinearRelaxation(inputs=[val], output_shape=output_shape)
@@ -145,10 +152,10 @@ class BackwardLBPPropagator(BoundPropagator):
         args, kwargs = ctx.resolve_args(node)
         target = node.target
         if node.op == "call_function":
-            return target(*args, **kwargs)
+            return target(*args, **kwargs)  # ty:ignore[call-non-callable]
         if node.op == "call_method":
-            return getattr(args[0], target)(*args[1:], **kwargs)
+            return getattr(args[0], target)(*args[1:], **kwargs)  # ty:ignore[invalid-argument-type]
         if node.op == "call_module":
-            module = ctx.get_module(target)
+            module = ctx.get_module(target)  # ty:ignore[invalid-argument-type]
             return module(*args, **kwargs)
         raise ValueError(f"Cannot evaluate node op={node.op!r}")

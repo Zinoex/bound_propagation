@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import operator
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Generic, TypeVar
 
 import torch
 import torch.fx as fx
@@ -70,28 +70,31 @@ def normalize_target(node: fx.Node, graph_module: fx.GraphModule) -> Callable[..
         ValueError: If the target cannot be normalized.
     """
     if node.op == "call_function":
-        return node.target  # type: ignore[return-value]
+        return node.target  # ty:ignore[invalid-return-type]
 
     if node.op == "call_method":
         # TODO: the method to call depends on the type of the first
         # argument (e.g. "relu" could be Tensor.relu for a torch.Tensor
         # input, or a .relu method from some custom class). For now we
         # assume the common case of Tensor methods.
-        name: str = node.target  # type: ignore[assignment]
+        name: str = node.target  # ty:ignore[invalid-assignment]
         canonical = _METHOD_MAP.get(name)
         if canonical is None:
             raise ValueError(f"Unsupported call_method target: {name!r}")
         return canonical
 
     if node.op == "call_module":
-        target_str: str = node.target  # type: ignore[assignment]
+        target_str: str = node.target  # ty:ignore[invalid-assignment]
         module = graph_module.get_submodule(target_str)
         return type(module)
 
     raise ValueError(f"Cannot normalize target for node op={node.op!r}")
 
 
-class TargetRegistry:
+T = TypeVar("T", bound=BoundingStrategy)
+
+
+class TargetRegistry(Generic[T]):
     """Maps normalized fx targets to bounding-strategy instances.
 
     Each propagation method (IBP, Forward LBP, Backward LBP) maintains its
@@ -99,7 +102,7 @@ class TargetRegistry:
 
     Usage::
 
-        registry = TargetRegistry()
+        registry = TargetRegistry[MyReluStrategy]()
         registry.register(torch.relu, MyReluStrategy())
         registry.register(torch.nn.ReLU, MyReluStrategy())
 
@@ -107,7 +110,7 @@ class TargetRegistry:
     """
 
     def __init__(self) -> None:
-        self._strategies: dict[Callable[..., Any] | type, BoundingStrategy] = {}
+        self._strategies: dict[Callable[..., Any] | type, T] = {}
 
     # ------------------------------------------------------------------
     # Registration
@@ -116,7 +119,7 @@ class TargetRegistry:
     def register(
         self,
         target: Callable[..., Any] | type,
-        strategy: BoundingStrategy,
+        strategy: T,
     ) -> None:
         """Register a strategy for a single target.
 
@@ -130,7 +133,7 @@ class TargetRegistry:
     def register_many(
         self,
         targets: list[Callable[..., Any] | type],
-        strategy: BoundingStrategy,
+        strategy: T,
     ) -> None:
         """Register the same strategy for multiple targets."""
         for t in targets:
@@ -140,7 +143,7 @@ class TargetRegistry:
     # Lookup
     # ------------------------------------------------------------------
 
-    def get_strategy(self, node: fx.Node, graph_module: fx.GraphModule) -> BoundingStrategy:
+    def get_strategy(self, node: fx.Node, graph_module: fx.GraphModule) -> T:
         """Look up the strategy for *node*.
 
         Raises:

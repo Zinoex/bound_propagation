@@ -14,8 +14,6 @@ import torch.fx as fx
 
 from ...bounds import AbstractBounds
 from ...regions import SimpleRegion
-from ..context import PropagationContext
-from ..registry import TargetRegistry
 
 
 class BoundPropagator(ABC):
@@ -32,19 +30,13 @@ class BoundPropagator(ABC):
             bounding strategies.
     """
 
-    def __init__(self, graph_module: fx.GraphModule, registry: TargetRegistry) -> None:
+    def __init__(self, graph_module: fx.GraphModule):
         self._graph_module = graph_module
-        self._registry = registry
 
     @property
     def graph_module(self) -> fx.GraphModule:
         """The ``fx.GraphModule`` being propagated through."""
         return self._graph_module
-
-    @property
-    def registry(self) -> TargetRegistry:
-        """The strategy registry used for dispatch."""
-        return self._registry
 
     @abstractmethod
     def propagate(

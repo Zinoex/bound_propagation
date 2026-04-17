@@ -14,7 +14,7 @@ import torch.fx as fx
 from ...bounds import IntervalBounds
 from ...regions import SimpleRegion
 from ..context import PropagationContext
-from ..ibp import create_default_ibp_registry
+from ..ibp import ForwardIBPStrategy, create_default_ibp_registry
 from ..registry import TargetRegistry
 from .base import BoundPropagator
 
@@ -35,9 +35,10 @@ class IBPPropagator(BoundPropagator):
     def __init__(
         self,
         graph_module: fx.GraphModule,
-        registry: TargetRegistry | None = None,
+        registry: TargetRegistry[ForwardIBPStrategy] | None = None,
     ) -> None:
-        super().__init__(graph_module, registry or create_default_ibp_registry())
+        super().__init__(graph_module)
+        self._registry = registry or create_default_ibp_registry()
 
     @property
     def method_name(self) -> str:
@@ -86,6 +87,11 @@ class IBPPropagator(BoundPropagator):
     # Internal
     # ------------------------------------------------------------------
 
+    @property
+    def registry(self) -> TargetRegistry[ForwardIBPStrategy]:
+        """The strategy registry used for dispatch."""
+        return self._registry
+
     def _new_context(self) -> PropagationContext[IntervalBounds]:
         """Create a fresh :class:`PropagationContext`."""
         return PropagationContext[IntervalBounds](self._graph_module)
@@ -109,10 +115,10 @@ class IBPPropagator(BoundPropagator):
         args, kwargs = ctx.resolve_args(node)
         target = node.target
         if node.op == "call_function":
-            return target(*args, **kwargs)
+            return target(*args, **kwargs)  # ty:ignore[call-non-callable]
         if node.op == "call_method":
-            return getattr(args[0], target)(*args[1:], **kwargs)
+            return getattr(args[0], target)(*args[1:], **kwargs)  # ty:ignore[invalid-argument-type]
         if node.op == "call_module":
-            module = ctx.get_module(target)
+            module = ctx.get_module(target)  # ty:ignore[invalid-argument-type]
             return module(*args, **kwargs)
         raise ValueError(f"Cannot evaluate node op={node.op!r}")
