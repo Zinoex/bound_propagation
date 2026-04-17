@@ -86,7 +86,11 @@ class IBPPropagator(BoundPropagator):
     # Internal
     # ------------------------------------------------------------------
 
-    def _propagate_operation(self, node: fx.Node, ctx: PropagationContext) -> None:
+    def _new_context(self) -> PropagationContext[IntervalBounds]:
+        """Create a fresh :class:`PropagationContext`."""
+        return PropagationContext[IntervalBounds](self._graph_module)
+
+    def _propagate_operation(self, node: fx.Node, ctx: PropagationContext[IntervalBounds]) -> None:
         """Dispatch *node* to its IBP strategy or evaluate concretely."""
         is_abstract = node.meta.get("is_abstract", True)
 
@@ -100,7 +104,7 @@ class IBPPropagator(BoundPropagator):
         ctx.store(node, result)
 
     @staticmethod
-    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext) -> torch.Tensor:
+    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[IntervalBounds]) -> torch.Tensor:
         """Concretely evaluate a non-abstract node."""
         args, kwargs = ctx.resolve_args(node)
         target = node.target

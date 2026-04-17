@@ -6,15 +6,17 @@ refcount-based memory management during graph traversal.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
-import torch
-import torch.fx as fx
+if TYPE_CHECKING:
+    import torch
+    import torch.fx as fx
 
-from ..bounds import AbstractBounds
+
+T = TypeVar("T")
 
 
-class PropagationContext:
+class PropagationContext(Generic[T]):
     """Context for propagating bounds through a torch.fx graph.
 
     Manages:
@@ -29,7 +31,7 @@ class PropagationContext:
 
     def __init__(self, graph_module: fx.GraphModule) -> None:
         self._graph_module = graph_module
-        self._store: dict[str, AbstractBounds | torch.Tensor | torch.types.Number] = {}
+        self._store: dict[str, T | torch.Tensor | torch.types.Number] = {}
         self._refcounts: dict[str, int] = {}
         self._init_refcounts()
 
@@ -68,7 +70,7 @@ class PropagationContext:
     # Store / resolve
     # ------------------------------------------------------------------
 
-    def store(self, node: fx.Node, value: AbstractBounds | torch.Tensor | torch.types.Number) -> None:
+    def store(self, node: fx.Node, value: T | torch.Tensor | torch.types.Number) -> None:
         """Store a bound or concrete value for *node*."""
         self._store[node.name] = value
 
@@ -150,5 +152,5 @@ class PropagationContext:
     def __contains__(self, node: fx.Node) -> bool:
         return node.name in self._store
 
-    def __getitem__(self, node: fx.Node) -> AbstractBounds | torch.Tensor | torch.types.Number:
+    def __getitem__(self, node: fx.Node) -> T | torch.Tensor | torch.types.Number:
         return self._store[node.name]

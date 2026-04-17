@@ -87,7 +87,11 @@ class BackwardLBPPropagator(BoundPropagator):
     # Internal
     # ------------------------------------------------------------------
 
-    def _propagate_operation(self, node: fx.Node, ctx: PropagationContext) -> None:
+    def _new_context(self) -> PropagationContext[SymbolicLinearRelaxation]:
+        """Create a fresh :class:`PropagationContext`."""
+        return PropagationContext[SymbolicLinearRelaxation](self._graph_module)
+
+    def _propagate_operation(self, node: fx.Node, ctx: PropagationContext[SymbolicLinearRelaxation]) -> None:
         """Build symbolic node or evaluate concretely."""
         is_abstract = node.meta.get("is_abstract", True)
 
@@ -97,13 +101,11 @@ class BackwardLBPPropagator(BoundPropagator):
 
         strategy = self.registry.get_strategy(node, self._graph_module)
         if not isinstance(strategy, BackwardLBPStrategy):
-            raise TypeError(
-                f"Expected BackwardLBPStrategy for node {node.name!r}, got {type(strategy).__name__}"
-            )
+            raise TypeError(f"Expected BackwardLBPStrategy for node {node.name!r}, got {type(strategy).__name__}")
         sym = strategy.build_symbolic(node, ctx)
         ctx.store(node, sym)
 
-    def _handle_output(self, node: fx.Node, ctx: PropagationContext) -> list[LinearBounds]:
+    def _handle_output(self, node: fx.Node, ctx: PropagationContext[SymbolicLinearRelaxation]) -> list[LinearBounds]:
         """Backward-concretize each output symbolic relaxation."""
         args, _ = ctx.resolve_args(node)
         output_values = args[0] if isinstance(args[0], (tuple, list)) else args

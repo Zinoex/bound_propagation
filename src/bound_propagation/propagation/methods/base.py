@@ -70,10 +70,6 @@ class BoundPropagator(ABC):
     # Helpers shared by forward propagators
     # ------------------------------------------------------------------
 
-    def _new_context(self) -> PropagationContext:
-        """Create a fresh :class:`PropagationContext`."""
-        return PropagationContext(self._graph_module)
-
     def _placeholder_nodes(self) -> list[fx.Node]:
         """Return placeholder nodes in order."""
         return [n for n in self._graph_module.graph.nodes if n.op == "placeholder"]

@@ -85,8 +85,11 @@ class ForwardLBPPropagator(BoundPropagator):
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
+    def _new_context(self) -> PropagationContext[LinearBounds]:
+        """Create a fresh :class:`PropagationContext`."""
+        return PropagationContext[LinearBounds](self._graph_module)
 
-    def _propagate_operation(self, node: fx.Node, ctx: PropagationContext) -> None:
+    def _propagate_operation(self, node: fx.Node, ctx: PropagationContext[LinearBounds]) -> None:
         """Dispatch *node* to its Forward LBP strategy or evaluate concretely."""
         is_abstract = node.meta.get("is_abstract", True)
 
@@ -99,7 +102,7 @@ class ForwardLBPPropagator(BoundPropagator):
         ctx.store(node, result)
 
     @staticmethod
-    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext) -> torch.Tensor:
+    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[LinearBounds]) -> torch.Tensor:
         """Concretely evaluate a non-abstract node."""
         args, kwargs = ctx.resolve_args(node)
         target = node.target
