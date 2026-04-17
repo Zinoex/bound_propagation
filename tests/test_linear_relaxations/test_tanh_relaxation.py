@@ -7,7 +7,7 @@ linear relaxations produce valid upper and lower bounds.
 
 import torch
 
-from bound_propagation.propagation.linear_relaxations.tanh import compute_tanh_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_tanh_relaxation
 
 
 class TestTanhRelaxationSoundness:
@@ -224,6 +224,7 @@ class TestTanhRelaxationSymmetry:
         beta_lower_pos = r.beta_lower
         alpha_upper_pos = r.alpha_upper
         beta_upper_pos = r.beta_upper
+
         r = compute_tanh_relaxation(lower_neg, upper_neg)
         alpha_lower_neg = r.alpha_lower
         beta_lower_neg = r.beta_lower
@@ -236,17 +237,15 @@ class TestTanhRelaxationSymmetry:
         tanh_neg = torch.tanh(-x_val)
         assert torch.allclose(tanh_pos, -tanh_neg, atol=1e-5)
 
-        # For perfectly symmetric intervals around zero
-        # Note: The linear relaxations need not preserve odd-function symmetry (beta=0)
-        # What matters is that they provide sound bounds (verified in other tests)
-        lower_sym = torch.tensor([-x])
-        upper_sym = torch.tensor([x])
-        r = compute_tanh_relaxation(lower_sym, upper_sym)
-        alpha_l_sym = r.alpha_lower
-        beta_l_sym = r.beta_lower
-        alpha_u_sym = r.alpha_upper
-        beta_u_sym = r.beta_upper
+        # For symmetric intervals, the bounds should have related properties
+        # The actual symmetry is: tanh(-x) = -tanh(x)
 
-        # Just verify we got reasonable bounds (non-zero alphas for non-trivial intervals)
-        assert alpha_l_sym > 0
-        assert alpha_u_sym > 0
+        alpha_lower_neg_expected = alpha_upper_pos
+        beta_lower_neg_expected = -beta_upper_pos
+        alpha_upper_neg_expected = alpha_lower_pos
+        beta_upper_neg_expected = -beta_lower_pos
+
+        assert torch.allclose(alpha_lower_neg, alpha_lower_neg_expected, atol=1e-5), "Lower alpha symmetry failed"
+        assert torch.allclose(beta_lower_neg, beta_lower_neg_expected, atol=1e-5), "Lower beta symmetry failed"
+        assert torch.allclose(alpha_upper_neg, alpha_upper_neg_expected, atol=1e-5), "Upper alpha symmetry failed"
+        assert torch.allclose(beta_upper_neg, beta_upper_neg_expected, atol=1e-5), "Upper beta symmetry failed"

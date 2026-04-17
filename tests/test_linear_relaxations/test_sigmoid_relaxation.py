@@ -7,7 +7,7 @@ linear relaxations produce valid upper and lower bounds.
 
 import torch
 
-from bound_propagation.propagation.linear_relaxations.sigmoid import compute_sigmoid_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_sigmoid_relaxation
 
 
 class TestSigmoidRelaxationSoundness:
@@ -235,6 +235,7 @@ class TestSigmoidRelaxationSymmetry:
         beta_lower_pos = r.beta_lower
         alpha_upper_pos = r.alpha_upper
         beta_upper_pos = r.beta_upper
+
         r = compute_sigmoid_relaxation(lower_neg, upper_neg)
         alpha_lower_neg = r.alpha_lower
         beta_lower_neg = r.beta_lower
@@ -242,12 +243,14 @@ class TestSigmoidRelaxationSymmetry:
         beta_upper_neg = r.beta_upper
 
         # For symmetric intervals, the bounds should have related properties
-        # This is more of a sanity check than a strict requirement
-        # The actual symmetry would be: sigmoid(-x) = 1 - sigmoid(x)
+        # The actual symmetry is: sigmoid(-x) = 1 - sigmoid(x)
 
-        # Verify sigmoid symmetry: sigmoid(x) + sigmoid(-x) = 1
-        x_val = torch.tensor([1.5])
-        sig_pos = torch.sigmoid(x_val)
-        sig_neg = torch.sigmoid(-x_val)
+        alpha_lower_neg_expected = alpha_upper_pos
+        beta_lower_neg_expected = 1 - beta_upper_pos
+        alpha_upper_neg_expected = alpha_lower_pos
+        beta_upper_neg_expected = 1 - beta_lower_pos
 
-        assert torch.allclose(sig_pos + sig_neg, torch.ones_like(sig_pos), atol=1e-5)
+        assert torch.allclose(alpha_lower_neg, alpha_lower_neg_expected, atol=1e-5), "Lower alpha symmetry failed"
+        assert torch.allclose(beta_lower_neg, beta_lower_neg_expected, atol=1e-5), "Lower beta symmetry failed"
+        assert torch.allclose(alpha_upper_neg, alpha_upper_neg_expected, atol=1e-5), "Upper alpha symmetry failed"
+        assert torch.allclose(beta_upper_neg, beta_upper_neg_expected, atol=1e-5), "Upper beta symmetry failed"

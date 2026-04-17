@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.div import ForwardLBPDiv
+from bound_propagation.propagation.forward_lbp.pairwise import ForwardLBPDiv
 from bound_propagation.regions import HyperRectangle
 from tests.helpers import propagate
 
@@ -60,7 +60,7 @@ def test_div_abstract_abstract_positive() -> None:
     strategy = ForwardLBPDiv()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    W_l = result.linear_lowers[0]   # shape (1, 2)
+    W_l = result.linear_lowers[0]  # shape (1, 2)
     b_l = result.bias_lower
     W_u = result.linear_uppers[0]
     b_u = result.bias_upper
@@ -70,9 +70,9 @@ def test_div_abstract_abstract_positive() -> None:
     # eta=0.5 selects the McCormick convex-combination midpoint; the upper relaxation
     # is tight at (x0=6, x1=3) and (x0=12, x1=2).
     for x0, x1, true_val, exp_lower, exp_upper in [
-        (6.0,  2.0, 3.0, 2.82, 3.50),
-        (6.0,  3.0, 2.0, 1.38, 2.00),   # upper tight here
-        (12.0, 2.0, 6.0, 5.32, 6.00),   # upper tight here
+        (6.0, 2.0, 3.0, 2.82, 3.50),
+        (6.0, 3.0, 2.0, 1.38, 2.00),  # upper tight here
+        (12.0, 2.0, 6.0, 5.32, 6.00),  # upper tight here
         (12.0, 3.0, 4.0, 3.88, 4.50),
     ]:
         x = torch.tensor([x0, x1])
@@ -153,7 +153,7 @@ def test_div_crossing_zero_divisor() -> None:
     strategy = ForwardLBPDiv()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    W_l = result.linear_lowers[0]   # shape (1, 2)
+    W_l = result.linear_lowers[0]  # shape (1, 2)
     b_l = result.bias_lower
     W_u = result.linear_uppers[0]
     b_u = result.bias_upper
@@ -190,7 +190,7 @@ def test_div_crossing_zero_divisor_is_elementwise() -> None:
     strategy = ForwardLBPDiv()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    W_l = result.linear_lowers[0]   # shape (2, 3)
+    W_l = result.linear_lowers[0]  # shape (2, 3)
     b_l = result.bias_lower
     W_u = result.linear_uppers[0]
     b_u = result.bias_upper
@@ -204,8 +204,8 @@ def test_div_crossing_zero_divisor_is_elementwise() -> None:
     # The x1 coefficient is zero, so only x0 and x2 matter.
     # eta=0.5 makes the upper tight at (x0=6, x2=3) and (x0=12, x2=2).
     for x0, x2, true_val, exp_lower, exp_upper in [
-        (6.0,  3.0, 2.0, 1.38, 2.00),   # upper tight here
-        (12.0, 2.0, 6.0, 5.32, 6.00),   # upper tight here
+        (6.0, 3.0, 2.0, 1.38, 2.00),  # upper tight here
+        (12.0, 2.0, 6.0, 5.32, 6.00),  # upper tight here
         (12.0, 3.0, 4.0, 3.88, 4.50),
     ]:
         x = torch.tensor([x0, 0.0, x2])

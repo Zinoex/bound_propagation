@@ -1,6 +1,6 @@
 """
-Tests for ElementwiseLinearRelaxation.forward_compose and
-PairedLinearRelaxation.forward_compose.
+Tests for ElementwiseLinearRelaxation.forward and
+PairedLinearRelaxation.forward.
 
 Adapted from legacy tests that lived on LinearBounds directly, extended with
 edge cases for multi-region bounds, shared input IDs, and mixed-sign coefficients.
@@ -10,15 +10,13 @@ import pytest
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.linear_relaxations.base import (
-    ElementwiseLinearRelaxation,
-    PairedLinearRelaxation,
-)
+from bound_propagation.propagation.linear_relaxations.elementwise import ElementwiseLinearRelaxation
+from bound_propagation.propagation.linear_relaxations.pairwise import PairedLinearRelaxation
 from bound_propagation.regions import HyperRectangle
 
 
 class TestElementwiseLinearRelaxationForwardCompose:
-    """Tests for ElementwiseLinearRelaxation.forward_compose."""
+    """Tests for ElementwiseLinearRelaxation.forward."""
 
     def test_basic_positive_alpha(self):
         """Positive alpha: lower uses lower input, upper uses upper input."""
@@ -38,7 +36,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([1.0]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         # Lower: 1*(2*x + 1) + 0.5 = 2*x + 1.5
         assert result.linear_lower is not None
@@ -72,7 +70,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([1.0]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         # Lower: (-2) uses upper input (wu=3), bias uses bu=2
         #   linear: -2 * 3 = -6;  bias: -2*2 + 0.5 = -3.5
@@ -105,7 +103,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([0.0, 0.0]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         # Output 0 (+alpha): lower uses lower, upper uses upper
         #   lower[0] = +1 * [1, 0] = [1, 0]
@@ -136,7 +134,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([2.0]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         # Output only depends on beta; linear coefficients are zero
         assert torch.allclose(result.bias_lower, torch.tensor([1.0]))
@@ -163,7 +161,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.zeros(2),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         assert result.linear_lower is not None
         assert result.linear_upper is not None
@@ -191,7 +189,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([0.5]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         # No linear terms propagate
         assert result.linear_lower is None
@@ -218,7 +216,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([0.0]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         # Lower: 0*bias_lower + (-1)*bias_upper + 0 = -3
         assert torch.allclose(result.bias_lower, torch.tensor([-3.0]))
@@ -245,7 +243,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([0.5]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         # alpha_lower=2>0: lower uses lower input coefficients
         # region1 lower: 2 * 1  = 2;  region2 lower: 2 * (-1) = -2
@@ -285,7 +283,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([0.5, 1.0]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         assert result.linear_lower is not None
         assert result.linear_lower.shape == (2, 2)
@@ -319,7 +317,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([0.0]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         assert result.input_ids == [99]
         assert result.regions[0] is region
@@ -349,7 +347,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.tensor([[1.0], [0.5]]),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         assert result.linear_lower is not None
         assert result.linear_lower.shape == (2, 1, 1)
@@ -389,7 +387,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             beta_upper=torch.ones(2, 2, 1),
         )
 
-        result = relaxation.forward_compose([input_bounds])
+        result = relaxation.forward([input_bounds])
 
         assert result.linear_lower is not None
         assert result.linear_lower.shape == (2, 2, 1, 1)
@@ -419,14 +417,14 @@ class TestElementwiseLinearRelaxationForwardCompose:
         )
 
         with pytest.raises(ValueError, match="expects 1 input"):
-            relaxation.forward_compose([])
+            relaxation.forward([])
 
         with pytest.raises(ValueError, match="expects 1 input"):
-            relaxation.forward_compose([bounds, bounds])
+            relaxation.forward([bounds, bounds])
 
 
 class TestPairedLinearRelaxationForwardCompose:
-    """Tests for PairedLinearRelaxation.forward_compose."""
+    """Tests for PairedLinearRelaxation.forward."""
 
     def test_basic_positive_coeffs_distinct_input_ids(self):
         """Both coefficients positive, distinct input IDs: contributions remain separate."""
@@ -459,7 +457,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([0.5]),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         assert len(result.linear_lowers) == 2
         assert len(result.linear_uppers) == 2
@@ -506,7 +504,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([0.0]),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         idx1 = result.input_ids.index(1)
         idx2 = result.input_ids.index(2)
@@ -550,7 +548,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([0.0]),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         # Shared id: single merged entry
         assert len(result.linear_lowers) == 1
@@ -592,7 +590,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([0.0]),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         assert len(result.linear_lowers) == 1
         assert result.input_ids == [99]
@@ -630,7 +628,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([1.0]),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         assert result.linear_lower is None
         assert result.linear_upper is None
@@ -665,7 +663,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([0.0]),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         assert len(result.linear_lowers) == 1
         assert result.input_ids == [5]
@@ -706,7 +704,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([1.0, 1.0]),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         assert len(result.linear_lowers) == 2
         assert result.linear_lowers[0].shape == (2, 2)
@@ -757,7 +755,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.zeros(2, 1),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         assert result.bias_lower.shape == (2, 1)
         assert result.bias_upper.shape == (2, 1)
@@ -803,7 +801,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.zeros(2, 2, 1),
         )
 
-        result = relaxation.forward_compose([bounds1, bounds2])
+        result = relaxation.forward([bounds1, bounds2])
 
         # Shared id: single merged linear term
         assert len(result.linear_lowers) == 1
@@ -832,10 +830,10 @@ class TestPairedLinearRelaxationForwardCompose:
         )
 
         with pytest.raises(ValueError, match="expects 2 input"):
-            relaxation.forward_compose([bounds])
+            relaxation.forward([bounds])
 
         with pytest.raises(ValueError, match="expects 2 input"):
-            relaxation.forward_compose([bounds, bounds, bounds])
+            relaxation.forward([bounds, bounds, bounds])
 
     def test_invalid_construction_non_binary(self):
         """PairedLinearRelaxation requires exactly 2 input coefficients."""

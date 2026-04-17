@@ -11,7 +11,7 @@ Tan has asymptotes at x = π/2 + nπ and alternates between convex and concave r
 
 import torch
 
-from bound_propagation.propagation.linear_relaxations.tan import compute_tan_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_tan_relaxation
 
 
 class TestTanRelaxationSoundness:
@@ -274,14 +274,14 @@ class TestTanRelaxationSoundness:
         # Test each element separately since some might have infinite bounds
         for i in range(lower.shape[0]):
             for j in range(lower.shape[1]):
-                l = lower[i, j : j + 1]
-                u = upper[i, j : j + 1]
+                lo = lower[i, j : j + 1]
+                up = upper[i, j : j + 1]
                 al = alpha_lower[i, j : j + 1]
                 bl = beta_lower[i, j : j + 1]
                 au = alpha_upper[i, j : j + 1]
                 bu = beta_upper[i, j : j + 1]
 
-                is_sound, message, _ = self.verify_bounds_sound(l, u, al, bl, au, bu)
+                is_sound, message, _ = self.verify_bounds_sound(lo, up, al, bl, au, bu)
                 assert is_sound, f"Batch element [{i},{j}]: {message}"
 
 
@@ -297,13 +297,12 @@ class TestTanRelaxationAsymptotes:
         upper = torch.tensor([1.65])
 
         relaxation = compute_tan_relaxation(lower, upper)
-        alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
-        alpha_upper = relaxation.alpha_upper
         beta_upper = relaxation.beta_upper
 
         # Should have infinite bounds
-        assert torch.isinf(beta_lower) or torch.isinf(beta_upper), "Should detect asymptote crossing"
+        assert torch.isinf(beta_lower), "Should detect asymptote crossing"
+        assert torch.isinf(beta_upper), "Should detect asymptote crossing"
 
     def test_near_asymptote_not_crossing(self):
         """Test interval near but not crossing asymptote."""
@@ -320,3 +319,5 @@ class TestTanRelaxationAsymptotes:
         # This might still cross depending on exact value, but test it doesn't crash
         assert alpha_lower is not None
         assert beta_lower is not None
+        assert alpha_upper is not None
+        assert beta_upper is not None

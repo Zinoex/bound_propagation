@@ -3,10 +3,8 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.propagation.ibp.add import IBPAdd
-from bound_propagation.propagation.ibp.cos import IBPCos
-from bound_propagation.propagation.ibp.neg import IBPNeg
-from bound_propagation.propagation.ibp.sin import IBPSin
+from bound_propagation.propagation.ibp.elementwise import IBPCos, IBPSin
+from bound_propagation.propagation.ibp.linear import IBPAdd, IBPNeg
 from tests.helpers import propagate
 
 

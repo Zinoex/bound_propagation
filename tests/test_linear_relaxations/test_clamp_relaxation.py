@@ -7,14 +7,9 @@ linear relaxations produce valid upper and lower bounds.
 Clamp is piecewise linear: clamp(x, min, max) = min(max(x, min), max).
 """
 
-import sys
-from pathlib import Path
-
-import pytest
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from bound_propagation.propagation.linear_relaxations.clamp import compute_clamp_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_clamp_relaxation
 
 
 class TestClampRelaxationSoundness:
@@ -28,8 +23,8 @@ class TestClampRelaxationSoundness:
         beta_lower: torch.Tensor,
         alpha_upper: torch.Tensor,
         beta_upper: torch.Tensor,
-        min_val: float = None,
-        max_val: float = None,
+        min_val: float | None = None,
+        max_val: float | None = None,
         num_samples: int = 1000,
     ):
         """Verify that linear bounds are sound by sampling points in [lower, upper]."""
@@ -272,14 +267,14 @@ class TestClampRelaxationSoundness:
         # Test each element separately
         for i in range(lower.shape[0]):
             for j in range(lower.shape[1]):
-                l = lower[i, j : j + 1]
-                u = upper[i, j : j + 1]
+                lo = lower[i, j : j + 1]
+                up = upper[i, j : j + 1]
                 al = alpha_lower[i, j : j + 1]
                 bl = beta_lower[i, j : j + 1]
                 au = alpha_upper[i, j : j + 1]
                 bu = beta_upper[i, j : j + 1]
 
-                is_sound, message = self.verify_bounds_sound(l, u, al, bl, au, bu, min_val, max_val)
+                is_sound, message = self.verify_bounds_sound(lo, up, al, bl, au, bu, min_val, max_val)
                 assert is_sound, f"Batch element [{i},{j}]: {message}"
 
     def test_narrow_crossing_min(self):

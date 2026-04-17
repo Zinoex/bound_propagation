@@ -7,14 +7,9 @@ linear relaxations produce valid upper and lower bounds.
 Reciprocal is convex on (0, ∞) and convex on (-∞, 0), with a discontinuity at 0.
 """
 
-import sys
-from pathlib import Path
-
-import pytest
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from bound_propagation.propagation.linear_relaxations.reciprocal import compute_reciprocal_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_reciprocal_relaxation
 
 
 class TestReciprocalRelaxationSoundness:
@@ -191,14 +186,14 @@ class TestReciprocalRelaxationSoundness:
         # Test each element separately
         for i in range(lower.shape[0]):
             for j in range(lower.shape[1]):
-                l = lower[i, j : j + 1]
-                u = upper[i, j : j + 1]
+                lo = lower[i, j : j + 1]
+                up = upper[i, j : j + 1]
                 al = alpha_lower[i, j : j + 1]
                 bl = beta_lower[i, j : j + 1]
                 au = alpha_upper[i, j : j + 1]
                 bu = beta_upper[i, j : j + 1]
 
-                is_sound, message = self.verify_bounds_sound(l, u, al, bl, au, bu)
+                is_sound, message = self.verify_bounds_sound(lo, up, al, bl, au, bu)
                 assert is_sound, f"Batch element [{i},{j}]: {message}"
 
     def test_near_zero_positive(self):

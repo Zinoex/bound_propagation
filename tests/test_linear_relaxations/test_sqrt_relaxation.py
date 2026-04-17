@@ -7,7 +7,7 @@ linear relaxations produce valid upper and lower bounds.
 
 import torch
 
-from bound_propagation.propagation.linear_relaxations.sqrt import compute_sqrt_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_sqrt_relaxation
 
 
 class TestSqrtRelaxationSoundness:
@@ -225,3 +225,15 @@ class TestSqrtRelaxationInvalidInputs:
         assert not torch.isnan(alpha_lower[0])
         assert torch.isnan(alpha_lower[1])
         assert not torch.isnan(alpha_lower[2])
+
+        assert not torch.isnan(beta_lower[0])
+        assert torch.isnan(beta_lower[1])
+        assert not torch.isnan(beta_lower[2])
+
+        assert not torch.isnan(alpha_upper[0])
+        assert torch.isnan(alpha_upper[1])
+        assert not torch.isnan(alpha_upper[2])
+
+        assert not torch.isnan(beta_upper[0])
+        assert torch.isnan(beta_upper[1])
+        assert not torch.isnan(beta_upper[2])

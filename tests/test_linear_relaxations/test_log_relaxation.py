@@ -7,14 +7,9 @@ linear relaxations produce valid upper and lower bounds.
 Log is a concave function for x > 0.
 """
 
-import sys
-from pathlib import Path
-
-import pytest
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from bound_propagation.propagation.linear_relaxations.log import compute_log_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_log_relaxation
 
 
 class TestLogRelaxationSoundness:
@@ -156,14 +151,14 @@ class TestLogRelaxationSoundness:
         # Test each element separately
         for i in range(lower.shape[0]):
             for j in range(lower.shape[1]):
-                l = lower[i, j : j + 1]
-                u = upper[i, j : j + 1]
+                lo = lower[i, j : j + 1]
+                up = upper[i, j : j + 1]
                 al = alpha_lower[i, j : j + 1]
                 bl = beta_lower[i, j : j + 1]
                 au = alpha_upper[i, j : j + 1]
                 bu = beta_upper[i, j : j + 1]
 
-                is_sound, message = self.verify_bounds_sound(l, u, al, bl, au, bu)
+                is_sound, message = self.verify_bounds_sound(lo, up, al, bl, au, bu)
                 assert is_sound, f"Batch element [{i},{j}]: {message}"
 
 
@@ -217,12 +212,30 @@ class TestLogRelaxationInvalidInputs:
 
         # First element [0,0] should be valid
         assert not torch.isnan(alpha_lower[0, 0])
+        assert not torch.isnan(beta_lower[0, 0])
+        assert not torch.isnan(alpha_upper[0, 0])
+        assert not torch.isnan(beta_upper[0, 0])
 
         # Elements [0,1] and [1,0] should be nan (invalid)
         assert torch.isnan(alpha_lower[0, 1])
         assert torch.isnan(alpha_lower[1, 0])
+        assert torch.isnan(beta_lower[0, 1])
+        assert torch.isnan(beta_lower[1, 0])
+        assert torch.isnan(alpha_upper[0, 1])
+        assert torch.isnan(alpha_upper[1, 0])
+        assert torch.isnan(beta_upper[0, 1])
+        assert torch.isnan(beta_upper[1, 0])
 
         # Other valid elements should not be nan
         assert not torch.isnan(alpha_lower[0, 2])
         assert not torch.isnan(alpha_lower[1, 1])
         assert not torch.isnan(alpha_lower[1, 2])
+        assert not torch.isnan(beta_lower[0, 2])
+        assert not torch.isnan(beta_lower[1, 1])
+        assert not torch.isnan(beta_lower[1, 2])
+        assert not torch.isnan(alpha_upper[0, 2])
+        assert not torch.isnan(alpha_upper[1, 1])
+        assert not torch.isnan(alpha_upper[1, 2])
+        assert not torch.isnan(beta_upper[0, 2])
+        assert not torch.isnan(beta_upper[1, 1])
+        assert not torch.isnan(beta_upper[1, 2])

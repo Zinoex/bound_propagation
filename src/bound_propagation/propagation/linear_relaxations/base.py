@@ -2,7 +2,7 @@
 AbstractLinearRelaxation: Type hierarchy for linear approximations of operations.
 
 Provides:
-  AbstractLinearRelaxation – base class guaranteeing forward_compose and backward_compose.
+  AbstractLinearRelaxation – base class guaranteeing forward and backward_compose.
   ElementwiseLinearRelaxation – for unary element-wise operations: y ≥ alpha*x + beta.
   PairedLinearRelaxation – for binary operations: z ≥ alpha1*x + alpha2*y + beta.
 """
@@ -23,12 +23,12 @@ class AbstractLinearRelaxation(ABC):
     """
     Abstract base for linear relaxations of operations.
 
-    Subtypes must implement forward_compose to compose the relaxation with
-    incoming linear bounds.
+    Subtypes must implement forward and backward_compose to compose
+    the relaxation with linear bounds in the forward and backward directions.
     """
 
     @abstractmethod
-    def forward_compose(self, input_bounds: list[LinearBounds]) -> LinearBounds:
+    def forward(self, input_bounds: list[LinearBounds]) -> LinearBounds:
         """
         Compose this relaxation with incoming linear bounds (forward direction).
 
@@ -43,189 +43,201 @@ class AbstractLinearRelaxation(ABC):
             LinearBounds representing the output bounds in terms of x0.
         """
 
+    @abstractmethod
+    def symbolic_forward(self, inputs: list[SymbolicLinearRelaxation]) -> SymbolicLinearRelaxation:
+        """
+        Compose this relaxation with incoming symbolic relaxations (forward direction).
+
+        Similar to forward but operates on symbolic relaxations instead of
+        concretized LinearBounds. This allows maintaining a symbolic representation
+        of the relaxations during forward propagation.
+
+        Args:
+            inputs: One SymbolicLinearRelaxation per input of the relaxed operation.
+
+        Returns:
+            A SymbolicLinearRelaxation representing the output relaxation.
+        """
+        ...
+
+
+class SymbolicLinearRelaxation(ABC):
+    @abstractmethod
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        """
+        Compose backward through this symbolic relaxation.
+
+        Propagates A-matrices backward through the relaxation tree.  Given
+        coefficients A that linearly combine this node's outputs, produce
+        LinearBounds expressing the same combination in terms of the network
+        inputs.
+
+        A tensors have shape ``(*batch, *bounded_out, *node_out)`` where:
+        - ``*batch`` are leading batch dimensions (count = ``batch_ndim``),
+        - ``*bounded_out`` are the output dimensions being bounded,
+        - ``*node_out`` are this node's output feature dimensions.
+
+        Args:
+            A_lower: Lower-bound coefficient matrix.
+            A_upper: Upper-bound coefficient matrix.
+            batch_ndim: Number of leading batch dimensions shared by A
+                and the relaxation parameters (alpha / beta / coeffs).
+
+        Returns:
+            LinearBounds expressing the bounded quantity in terms of the
+            network inputs.
+        """
+        ...
+
 
 @final
 @dataclass
-class ElementwiseLinearRelaxation(AbstractLinearRelaxation):
-    """
-    Element-wise linear relaxation for unary operations y = f(x).
+class OutputLinearRelaxation(SymbolicLinearRelaxation):
+    """Wrapper around the final output node's symbolic input(s).
 
-    Stores four element-wise tensors (same shape as x / y):
-        y_lower >= alpha_lower * x + beta_lower
-        y_upper <= alpha_upper * x + beta_upper
-
-    The abstract dimension convention for LinearBounds linear terms is
-    (*batch_dims, *output_dims, *input_dims).  alpha and beta live in
-    (*batch_dims, *output_dims); forward_compose appends the input trailing
-    axes via broadcasting.
-
-    Attributes:
-        alpha_lower: Element-wise slopes for the lower bound.
-        beta_lower:  Element-wise biases for the lower bound.
-        alpha_upper: Element-wise slopes for the upper bound.
-        beta_upper:  Element-wise biases for the upper bound.
+    Not composed via ``backward``; instead, the propagator calls
+    ``concretize`` which constructs identity A-matrices and kicks off
+    the recursive backward pass.
     """
 
-    alpha_lower: torch.Tensor
-    beta_lower: torch.Tensor
-    alpha_upper: torch.Tensor
-    beta_upper: torch.Tensor
+    inputs: list[SymbolicLinearRelaxation]
+    output_shape: tuple[int, ...]
 
-    # ------------------------------------------------------------------
-    # Forward composition
-    # ------------------------------------------------------------------
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        raise NotImplementedError("OutputLinearRelaxation does not support backward composition")
 
-    def forward_compose(self, input_bounds: list[LinearBounds]) -> LinearBounds:
+    def concretize(self, batch_ndim: int, dtype: torch.dtype, device: torch.device) -> LinearBounds:
+        """Build identity A-matrices and backward-propagate to obtain LinearBounds.
+
+        Args:
+            batch_ndim: Number of leading batch dimensions in the output shape.
+            dtype: Tensor dtype for the identity matrices.
+            device: Tensor device for the identity matrices.
         """
-        Compose: y = alpha * x + beta  composed with  x = W @ x0 + b  →  y = W_new @ x0 + b_new.
+        if len(self.inputs) != 1:
+            raise ValueError(f"OutputLinearRelaxation expects exactly one input, got {len(self.inputs)}")
 
-        Linear terms have shape (*batch_dims, *output_dims, *input_dims).
-        alpha/beta have shape (*batch_dims, *output_dims); trailing input axes are
-        broadcast by appending ones.
+        batch_shape = self.output_shape[:batch_ndim]
+        feature_shape = self.output_shape[batch_ndim:]
+        feature_numel = 1
+        for d in feature_shape:
+            feature_numel *= d
 
-        Handles signed alpha via positive/negative clamping so the result is always
-        a valid lower/upper bound.
-        """
-        if len(input_bounds) != 1:
-            raise ValueError(f"ElementwiseLinearRelaxation expects 1 input bound, got {len(input_bounds)}")
-        bounds = input_bounds[0]
+        # Identity over features: each output element maps to itself.
+        identity = torch.eye(feature_numel, dtype=dtype, device=device)
+        identity = identity.reshape(*feature_shape, *feature_shape)
 
-        al_pos = self.alpha_lower.clamp(min=0)
-        al_neg = self.alpha_lower.clamp(max=0)
-        au_pos = self.alpha_upper.clamp(min=0)
-        au_neg = self.alpha_upper.clamp(max=0)
+        if batch_shape:
+            identity = identity.expand(*batch_shape, *identity.shape)
 
-        def broadcast(alpha: torch.Tensor, linear: torch.Tensor) -> torch.Tensor:
-            # alpha: (*batch_dims, *output_dims)
-            # linear: (*batch_dims, *output_dims, *input_dims)
-            # Append one dimension per input axis so broadcasting is correct.
-            extra = linear.ndim - alpha.ndim
-            return alpha.reshape(alpha.shape + (1,) * extra)
+        return self.inputs[0].backward(identity, identity, batch_ndim)
 
-        # Lower bound: alpha_lower_pos * W_lower  +  alpha_lower_neg * W_upper
-        linear_lower = [
-            broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
-            for wl, wu in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
-        bias_lower = al_pos * bounds.bias_lower + al_neg * bounds.bias_upper + self.beta_lower
 
-        # Upper bound: alpha_upper_pos * W_upper  +  alpha_upper_neg * W_lower
-        linear_upper = [
-            broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
-            for wl, wu in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
-        bias_upper = au_pos * bounds.bias_upper + au_neg * bounds.bias_lower + self.beta_upper
+@final
+@dataclass
+class InputIdentityRelaxation(SymbolicLinearRelaxation):
+    """Identity relaxation at a network input (placeholder) node.
 
+    ``backward`` produces LinearBounds whose linear terms are the
+    incoming A-matrices themselves (the identity composition) and whose
+    biases are zero.
+    """
+
+    input_region: SimpleRegion
+
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        input_ndim = len(self.input_region.shape) - batch_ndim
+        bias_shape = A_lower.shape[: A_lower.ndim - input_ndim]
         return LinearBounds(
-            regions=bounds.regions,
-            linear_lower=linear_lower or None,
-            bias_lower=bias_lower,
-            linear_upper=linear_upper or None,
-            bias_upper=bias_upper,
-            input_ids=bounds.input_ids or None,
+            regions=[self.input_region],
+            linear_lower=[A_lower],
+            bias_lower=torch.zeros(bias_shape, dtype=A_lower.dtype, device=A_lower.device),
+            linear_upper=[A_upper],
+            bias_upper=torch.zeros(bias_shape, dtype=A_upper.dtype, device=A_upper.device),
+            input_ids=[id(self.input_region)],
+            validate=False,
         )
 
 
+def _merge_backward_bounds(
+    bounds_list: list[LinearBounds],
+    bias_lower: torch.Tensor,
+    bias_upper: torch.Tensor,
+) -> LinearBounds:
+    """Merge LinearBounds from multiple backward calls by input_id."""
+    merged: dict[int, tuple[SimpleRegion, torch.Tensor, torch.Tensor]] = {}
+    ordered_ids: list[int] = []
+
+    for bounds in bounds_list:
+        for iid, region, wl, wu in zip(
+            bounds.input_ids, bounds.regions, bounds.linear_lowers, bounds.linear_uppers, strict=True
+        ):
+            if iid in merged:
+                merged[iid] = (merged[iid][0], merged[iid][1] + wl, merged[iid][2] + wu)
+            else:
+                ordered_ids.append(iid)
+                merged[iid] = (region, wl, wu)
+
+        bias_lower = bias_lower + bounds.bias_lower
+        bias_upper = bias_upper + bounds.bias_upper
+
+    regions = [merged[iid][0] for iid in ordered_ids]
+    linear_lower = [merged[iid][1] for iid in ordered_ids]
+    linear_upper = [merged[iid][2] for iid in ordered_ids]
+
+    return LinearBounds(
+        regions=regions,
+        linear_lower=linear_lower or None,
+        bias_lower=bias_lower,
+        linear_upper=linear_upper or None,
+        bias_upper=bias_upper,
+        input_ids=ordered_ids or None,
+        validate=False,
+    )
+
+
+# ======================================================================
+# Symbolic types for exact (non-relaxation) operations
+# ======================================================================
+
+
 @final
 @dataclass
-class PairedLinearRelaxation(AbstractLinearRelaxation):
-    """
-    Paired linear relaxation for binary operations z = f(x1, x2).
+class SymbolicIntervalLeaf(SymbolicLinearRelaxation):
+    """Leaf node holding fixed interval bounds (no linear dependency on inputs).
 
-    Represents:
-        z_lower >= alpha1_lower * x1 + alpha2_lower * x2 + beta_lower
-        z_upper <= alpha1_upper * x1 + alpha2_upper * x2 + beta_upper
-
-    The abstract dimension convention for linear terms is
-    (*batch_dims, *output_dims, *input_dims).  Each element of coeffs_lower /
-    coeffs_upper lives in (*batch_dims, *output_dims); the corresponding input's
-    trailing axes are broadcast in forward_compose.
-
-    Attributes:
-        coeffs_lower: List of element-wise coefficient tensors, one per input,
-                      giving the lower-bound relaxation slopes.
-        coeffs_upper: Same structure for the upper-bound relaxation slopes.
-        bias_lower:   Element-wise bias for the lower bound.
-        bias_upper:   Element-wise bias for the upper bound.
+    Used for constants or for operations that break the symbolic chain
+    (e.g., nonlinear reductions).  On ``backward``, produces bias-only
+    LinearBounds by contracting A over the interval via sign decomposition.
     """
 
-    coeffs_lower: list[torch.Tensor]
-    coeffs_upper: list[torch.Tensor]
-    bias_lower: torch.Tensor
-    bias_upper: torch.Tensor
+    lower: torch.Tensor
+    upper: torch.Tensor
 
-    def __post_init__(self) -> None:
-        if len(self.coeffs_lower) != len(self.coeffs_upper):
-            raise ValueError(
-                f"coeffs_lower and coeffs_upper must have the same length, "
-                f"got {len(self.coeffs_lower)} vs {len(self.coeffs_upper)}"
-            )
-        if len(self.coeffs_lower) != 2:
-            raise ValueError("PairedLinearRelaxation requires exactly 2 input coefficients")
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        node_ndim = self.lower.ndim - batch_ndim
+        bounded_ndim = A_lower.ndim - self.lower.ndim
 
-    # ------------------------------------------------------------------
-    # Forward composition
-    # ------------------------------------------------------------------
+        def bc(t: torch.Tensor) -> torch.Tensor:
+            return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
 
-    def forward_compose(self, input_bounds: list[LinearBounds]) -> LinearBounds:
-        """
-        Compose z = sum_i(alpha_i * x_i) + beta with linear bounds on each x_i.
+        A_l_pos = A_lower.clamp(min=0)
+        A_l_neg = A_lower.clamp(max=0)
+        A_u_pos = A_upper.clamp(min=0)
+        A_u_neg = A_upper.clamp(max=0)
 
-        Linear terms have shape (*batch_dims, *output_dims, *input_dims).
-        Contributions from all inputs are merged by input_id so that shared regions
-        are accumulated correctly.
-        """
-        if len(input_bounds) != 2:
-            raise ValueError(f"PairedLinearRelaxation expects 2 input bounds, got {len(input_bounds)}")
-
-        def broadcast(alpha: torch.Tensor, linear: torch.Tensor) -> torch.Tensor:
-            # alpha: (*batch_dims, *output_dims)
-            # linear: (*batch_dims, *output_dims, *input_dims)
-            extra = linear.ndim - alpha.ndim
-            return alpha.reshape(alpha.shape + (1,) * extra)
-
-        # Merge linear contributions by input_id (handles shared regions)
-        merged_lower: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
-        merged_upper: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
-        ordered_ids: list[int] = []
-
-        bias_lower = self.bias_lower.clone()
-        bias_upper = self.bias_upper.clone()
-
-        for alpha_lower, alpha_upper, bounds in zip(self.coeffs_lower, self.coeffs_upper, input_bounds, strict=True):
-            al_pos = alpha_lower.clamp(min=0)
-            al_neg = alpha_lower.clamp(max=0)
-            au_pos = alpha_upper.clamp(min=0)
-            au_neg = alpha_upper.clamp(max=0)
-
-            # Bias contribution from this input
-            bias_lower = bias_lower + al_pos * bounds.bias_lower + al_neg * bounds.bias_upper
-            bias_upper = bias_upper + au_pos * bounds.bias_upper + au_neg * bounds.bias_lower
-
-            # Linear contributions
-            for iid, region, wl, wu in zip(
-                bounds.input_ids, bounds.regions, bounds.linear_lowers, bounds.linear_uppers, strict=True
-            ):
-                contrib_lower = broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
-                contrib_upper = broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
-
-                if iid in merged_lower:
-                    merged_lower[iid] = (merged_lower[iid][0], merged_lower[iid][1] + contrib_lower)
-                    merged_upper[iid] = (merged_upper[iid][0], merged_upper[iid][1] + contrib_upper)
-                else:
-                    ordered_ids.append(iid)
-                    merged_lower[iid] = (region, contrib_lower)
-                    merged_upper[iid] = (region, contrib_upper)
-
-        regions = [merged_lower[iid][0] for iid in ordered_ids]
-        linear_lower = [merged_lower[iid][1] for iid in ordered_ids]
-        linear_upper = [merged_upper[iid][1] for iid in ordered_ids]
+        sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
+        bias_lower = A_l_pos * bc(self.lower) + A_l_neg * bc(self.upper)
+        bias_upper = A_u_pos * bc(self.upper) + A_u_neg * bc(self.lower)
+        if sum_dims:
+            bias_lower = bias_lower.sum(dim=sum_dims)
+            bias_upper = bias_upper.sum(dim=sum_dims)
 
         return LinearBounds(
-            regions=regions,
-            linear_lower=linear_lower or None,
+            regions=[],
+            linear_lower=[],
             bias_lower=bias_lower,
-            linear_upper=linear_upper or None,
+            linear_upper=[],
             bias_upper=bias_upper,
-            input_ids=ordered_ids or None,
+            validate=False,
         )

@@ -1,12 +1,8 @@
 """Tests for constant-over-bounds division linear relaxation."""
 
-import sys
-from pathlib import Path
-
 import torch
 
-sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
-from bound_propagation.propagation.linear_relaxations.constant_div import compute_constant_div_relaxation
+from bound_propagation.propagation.linear_relaxations.elementwise import compute_constant_div_relaxation
 
 
 def _eval_line(alpha: torch.Tensor, beta: torch.Tensor, x: torch.Tensor) -> torch.Tensor:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.mul import (
+from bound_propagation.propagation.forward_lbp.pairwise import (
     ForwardLBPMul,
 )
 from bound_propagation.regions import HyperRectangle
@@ -49,7 +49,7 @@ def test_mul_abstract_abstract_concretizes() -> None:
     strategy = ForwardLBPMul()
     result = propagate(strategy, bounds_a, bounds_b)
 
-    W_l = result.linear_lowers[0]   # shape (2, 2)
+    W_l = result.linear_lowers[0]  # shape (2, 2)
     b_l = result.bias_lower
     W_u = result.linear_uppers[0]
     b_u = result.bias_upper

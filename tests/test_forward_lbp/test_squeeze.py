@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.squeeze import ForwardLBPSqueeze
+from bound_propagation.propagation.forward_lbp.shape import ForwardLBPSqueeze
 from bound_propagation.regions import HyperRectangle
 from tests.helpers import propagate
 
@@ -63,3 +63,5 @@ def test_squeeze_middle_dim() -> None:
         linear_upper=torch.ones(2, 1, 3, 1),
         bias_upper=(torch.arange(6.0) + 1).view(2, 1, 3),
     )
+
+    # TODO: Add assertions

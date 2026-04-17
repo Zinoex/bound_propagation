@@ -3,9 +3,8 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.propagation.ibp.max import IBPMax
-from bound_propagation.propagation.ibp.min import IBPMin
-from bound_propagation.propagation.ibp.neg import IBPNeg
+from bound_propagation.propagation.ibp.linear import IBPNeg
+from bound_propagation.propagation.ibp.reduction import IBPMax, IBPMin
 from tests.helpers import propagate
 
 
@@ -14,8 +13,6 @@ def _propagate(lower: torch.Tensor, upper: torch.Tensor, dim: int | None = None)
     strategy = IBPMax()
     bounds = IntervalBounds(lower=lower, upper=upper)
     return propagate(strategy, bounds, dim=dim)
-    shape_list.pop(dim)
-    return tuple(shape_list) if shape_list else ()
 
 
 def test_max_positive_intervals() -> None:

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.maximum import (
+from bound_propagation.propagation.forward_lbp.pairwise import (
     ForwardLBPMaximum,
 )
 from bound_propagation.regions import HyperRectangle

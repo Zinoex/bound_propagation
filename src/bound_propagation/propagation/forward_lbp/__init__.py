@@ -5,42 +5,38 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..registry import TargetRegistry
-from .abs import ForwardLBPAbs
-from .add import ForwardLBPAdd
 from .base import ForwardLBPStrategy
-from .cat import ForwardLBPConcat
-from .clamp import ForwardLBPClamp
-from .cos import ForwardLBPCos
-from .div import ForwardLBPDiv
-from .exp import ForwardLBPExp
-from .flatten import ForwardLBPFlatten
-from .getitem import ForwardLBPGetItem
-from .linear import ForwardLBPLinear
-from .log import ForwardLBPLog
+from .elementwise import (
+    ForwardLBPAbs,
+    ForwardLBPClamp,
+    ForwardLBPCos,
+    ForwardLBPExp,
+    ForwardLBPLog,
+    ForwardLBPReciprocal,
+    ForwardLBPRelu,
+    ForwardLBPSigmoid,
+    ForwardLBPSin,
+    ForwardLBPSqrt,
+    ForwardLBPTan,
+    ForwardLBPTanh,
+)
+from .linear import ForwardLBPAdd, ForwardLBPLinear, ForwardLBPNeg, ForwardLBPSub
 from .matmul import ForwardLBPMatmul
-from .max import ForwardLBPMax
-from .maximum import ForwardLBPMaximum
-from .mean import ForwardLBPMean
-from .min import ForwardLBPMin
-from .minimum import ForwardLBPMinimum
-from .mul import ForwardLBPMul
-from .neg import ForwardLBPNeg
-from .reciprocal import ForwardLBPReciprocal
-from .relu import ForwardLBPRelu
-from .reshape import ForwardLBPReshape
-from .select import ForwardLBPSelect
-from .sigmoid import ForwardLBPSigmoid
-from .sin import ForwardLBPSin
-from .sqrt import ForwardLBPSqrt
-from .squeeze import ForwardLBPSqueeze
-from .stack import ForwardLBPStack
-from .sub import ForwardLBPSub
-from .sum import ForwardLBPSum
-from .tan import ForwardLBPTan
-from .tanh import ForwardLBPTanh
-from .transpose import ForwardLBPPermute, ForwardLBPTranspose
-from .unsqueeze import ForwardLBPUnsqueeze
-from .view import ForwardLBPView
+from .pairwise import ForwardLBPDiv, ForwardLBPMaximum, ForwardLBPMinimum, ForwardLBPMul
+from .reduction import ForwardLBPMax, ForwardLBPMean, ForwardLBPMin, ForwardLBPSum
+from .shape import (
+    ForwardLBPConcat,
+    ForwardLBPFlatten,
+    ForwardLBPGetItem,
+    ForwardLBPPermute,
+    ForwardLBPReshape,
+    ForwardLBPSelect,
+    ForwardLBPSqueeze,
+    ForwardLBPStack,
+    ForwardLBPTranspose,
+    ForwardLBPUnsqueeze,
+    ForwardLBPView,
+)
 
 __all__ = [
     "ForwardLBPStrategy",
@@ -53,59 +49,45 @@ def create_default_forward_lbp_registry() -> TargetRegistry:
     registry = TargetRegistry()
 
     # -- Arithmetic (binary, merged constant variants) ---------------------
-    add = ForwardLBPAdd()
-    registry.register_many([torch.add, operator.add], add)
-
-    sub = ForwardLBPSub()
-    registry.register_many([torch.sub, operator.sub], sub)
-
-    mul = ForwardLBPMul()
-    registry.register_many([torch.mul, operator.mul], mul)
-
-    div = ForwardLBPDiv()
-    registry.register_many([torch.div, operator.truediv], div)
+    registry.register_many([torch.add, operator.add], ForwardLBPAdd())
+    registry.register_many([torch.sub, operator.sub], ForwardLBPSub())
+    registry.register_many([torch.mul, operator.mul], ForwardLBPMul())
+    registry.register_many([torch.div, operator.truediv], ForwardLBPDiv())
 
     registry.register(torch.maximum, ForwardLBPMaximum())
     registry.register(torch.minimum, ForwardLBPMinimum())
 
-    neg = ForwardLBPNeg()
-    registry.register_many([torch.neg, operator.neg], neg)
+    registry.register_many([torch.neg, operator.neg], ForwardLBPNeg())
 
     registry.register_many([torch.matmul, operator.matmul], ForwardLBPMatmul())
 
     # -- Element-wise activations ------------------------------------------
-    relu = ForwardLBPRelu()
-    registry.register_many([torch.relu, F.relu, nn.ReLU], relu)
+    registry.register_many([torch.relu, F.relu, nn.ReLU], ForwardLBPRelu())
+    registry.register_many([torch.sigmoid, F.sigmoid, nn.Sigmoid], ForwardLBPSigmoid())
+    registry.register_many([torch.tanh, F.tanh, nn.Tanh], ForwardLBPTanh())
 
-    sigmoid = ForwardLBPSigmoid()
-    registry.register_many([torch.sigmoid, F.sigmoid, nn.Sigmoid], sigmoid)
-
-    tanh = ForwardLBPTanh()
-    registry.register_many([torch.tanh, F.tanh, nn.Tanh], tanh)
-
-    registry.register(torch.exp, ForwardLBPExp())
-    registry.register(torch.log, ForwardLBPLog())
-    registry.register(torch.sqrt, ForwardLBPSqrt())
-    registry.register(torch.reciprocal, ForwardLBPReciprocal())
-    registry.register(torch.abs, ForwardLBPAbs())
-    registry.register(torch.clamp, ForwardLBPClamp())
-    registry.register(torch.sin, ForwardLBPSin())
-    registry.register(torch.cos, ForwardLBPCos())
-    registry.register(torch.tan, ForwardLBPTan())
+    registry.register_many([torch.exp, torch.Tensor.exp], ForwardLBPExp())
+    registry.register_many([torch.log, torch.Tensor.log], ForwardLBPLog())
+    registry.register_many([torch.sqrt, torch.Tensor.sqrt], ForwardLBPSqrt())
+    registry.register_many([torch.reciprocal, torch.Tensor.reciprocal], ForwardLBPReciprocal())
+    registry.register_many([torch.abs, torch.Tensor.abs], ForwardLBPAbs())
+    registry.register_many([torch.clamp, torch.Tensor.clamp], ForwardLBPClamp())
+    registry.register_many([torch.sin, torch.Tensor.sin], ForwardLBPSin())
+    registry.register_many([torch.cos, torch.Tensor.cos], ForwardLBPCos())
+    registry.register_many([torch.tan, torch.Tensor.tan], ForwardLBPTan())
 
     # -- Linear / matmul ---------------------------------------------------
     linear = ForwardLBPLinear()
     registry.register_many([F.linear, nn.Linear], linear)
 
     # -- Reductions --------------------------------------------------------
-    registry.register(torch.sum, ForwardLBPSum())
-    registry.register(torch.mean, ForwardLBPMean())
-    registry.register(torch.amax, ForwardLBPMax())
-    registry.register(torch.amin, ForwardLBPMin())
+    registry.register_many([torch.sum, torch.Tensor.sum], ForwardLBPSum())
+    registry.register_many([torch.mean, torch.Tensor.mean], ForwardLBPMean())
+    registry.register_many([torch.amax, torch.Tensor.amax], ForwardLBPMax())
+    registry.register_many([torch.amin, torch.Tensor.amin], ForwardLBPMin())
 
     # -- Shape manipulation ------------------------------------------------
-    registry.register(torch.reshape, ForwardLBPReshape())
-    registry.register(torch.Tensor.reshape, ForwardLBPReshape())
+    registry.register_many([torch.reshape, torch.Tensor.reshape], ForwardLBPReshape())
 
     flatten = ForwardLBPFlatten()
     registry.register_many([torch.flatten, torch.Tensor.flatten, nn.Flatten], flatten)
@@ -115,12 +97,10 @@ def create_default_forward_lbp_registry() -> TargetRegistry:
     registry.register(operator.getitem, ForwardLBPGetItem())
 
     registry.register(torch.Tensor.select, ForwardLBPSelect())
-    registry.register(torch.unsqueeze, ForwardLBPUnsqueeze())
-    registry.register(torch.Tensor.unsqueeze, ForwardLBPUnsqueeze())
-    registry.register(torch.squeeze, ForwardLBPSqueeze())
-    registry.register(torch.Tensor.squeeze, ForwardLBPSqueeze())
-    registry.register(torch.Tensor.transpose, ForwardLBPTranspose())
-    registry.register(torch.Tensor.permute, ForwardLBPPermute())
+    registry.register_many([torch.unsqueeze, torch.Tensor.unsqueeze], ForwardLBPUnsqueeze())
+    registry.register_many([torch.squeeze, torch.Tensor.squeeze], ForwardLBPSqueeze())
+    registry.register_many([torch.Tensor.transpose, torch.transpose], ForwardLBPTranspose())
+    registry.register_many([torch.Tensor.permute, torch.permute], ForwardLBPPermute())
     registry.register(torch.Tensor.view, ForwardLBPView())
 
     return registry

@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import IntervalBounds
-from bound_propagation.propagation.ibp.sub import IBPSub
+from bound_propagation.propagation.ibp.linear import IBPSub
 from tests.helpers import propagate
 
 

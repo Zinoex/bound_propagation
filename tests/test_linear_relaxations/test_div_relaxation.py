@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from bound_propagation.propagation.linear_relaxations.div import compute_div_relaxation
+from bound_propagation.propagation.linear_relaxations.pairwise import compute_div_relaxation
 
 # ---------------------------------------------------------------------------
 # Soundness helper

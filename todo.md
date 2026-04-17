@@ -1,0 +1,2 @@
+- forward_lbp for matmul (with linear relaxation)
+- improved normalization of call_method (accounting for which object it is called on)

@@ -5,44 +5,39 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..registry import TargetRegistry
-from .abs import IBPAbs
-from .add import IBPAdd
 from .base import ForwardIBPStrategy
-from .cat import IBPCat
-from .clamp import IBPClamp
-from .cos import IBPCos
-from .div import IBPDiv
-from .exp import IBPExp
-from .flatten import IBPFlatten
-from .getitem import IBPGetItem
-from .linear import IBPLinear
-from .log import IBPLog
+from .elementwise import (
+    IBPAbs,
+    IBPClamp,
+    IBPCos,
+    IBPExp,
+    IBPLog,
+    IBPPow,
+    IBPReciprocal,
+    IBPRelu,
+    IBPSigmoid,
+    IBPSin,
+    IBPSqrt,
+    IBPTan,
+    IBPTanh,
+)
+from .linear import IBPAdd, IBPLinear, IBPNeg, IBPSub
 from .matmul import IBPMatmul
-from .max import IBPMax
-from .maximum import IBPMaximum
-from .mean import IBPMean
-from .min import IBPMin
-from .minimum import IBPMinimum
-from .mul import IBPMul
-from .neg import IBPNeg
-from .permute import IBPPermute
-from .pow import IBPPow
-from .reciprocal import IBPReciprocal
-from .relu import IBPRelu
-from .reshape import IBPReshape
-from .select import IBPSelect
-from .sigmoid import IBPSigmoid
-from .sin import IBPSin
-from .sqrt import IBPSqrt
-from .squeeze import IBPSqueeze
-from .stack import IBPStack
-from .sub import IBPSub
-from .sum import IBPSum
-from .tan import IBPTan
-from .tanh import IBPTanh
-from .transpose import IBPTranspose
-from .unsqueeze import IBPUnsqueeze
-from .view import IBPView
+from .pairwise import IBPDiv, IBPMaximum, IBPMinimum, IBPMul
+from .reduction import IBPMax, IBPMean, IBPMin, IBPSum
+from .shape import (
+    IBPCat,
+    IBPFlatten,
+    IBPGetItem,
+    IBPPermute,
+    IBPReshape,
+    IBPSelect,
+    IBPSqueeze,
+    IBPStack,
+    IBPTranspose,
+    IBPUnsqueeze,
+    IBPView,
+)
 
 __all__ = [
     "ForwardIBPStrategy",
@@ -72,50 +67,43 @@ def create_default_ibp_registry() -> TargetRegistry:
     registry.register_many([torch.sigmoid, F.sigmoid, nn.Sigmoid], IBPSigmoid())
     registry.register_many([torch.tanh, F.tanh, nn.Tanh], IBPTanh())
 
-    registry.register(torch.exp, IBPExp())
-    registry.register(torch.log, IBPLog())
-    registry.register(torch.sqrt, IBPSqrt())
-    registry.register(torch.reciprocal, IBPReciprocal())
-    registry.register(torch.abs, IBPAbs())
-    registry.register(torch.clamp, IBPClamp())
-    registry.register(torch.sin, IBPSin())
-    registry.register(torch.cos, IBPCos())
-    registry.register(torch.tan, IBPTan())
+    registry.register_many([torch.exp, torch.Tensor.exp], IBPExp())
+    registry.register_many([torch.log, torch.Tensor.log], IBPLog())
+    registry.register_many([torch.sqrt, torch.Tensor.sqrt], IBPSqrt())
+    registry.register_many([torch.reciprocal, torch.Tensor.reciprocal], IBPReciprocal())
+    registry.register_many([torch.abs, torch.Tensor.abs], IBPAbs())
+    registry.register_many([torch.clamp, torch.Tensor.clamp], IBPClamp())
+    registry.register_many([torch.sin, torch.Tensor.sin], IBPSin())
+    registry.register_many([torch.cos, torch.Tensor.cos], IBPCos())
+    registry.register_many([torch.tan, torch.Tensor.tan], IBPTan())
 
-    pow_ = IBPPow()
-    registry.register_many([torch.pow, operator.pow], pow_)
+    registry.register_many([torch.pow, operator.pow], IBPPow())
 
     # TODO: no native cbrt; need to add custom method to torch.fx and then register here
     # registry.register(torch.Tensor.cbrt, IBPCbrt())
 
     # -- Linear / matmul ---------------------------------------------------
-    linear = IBPLinear()
-    registry.register_many([F.linear, nn.Linear], linear)
+    registry.register_many([F.linear, nn.Linear], IBPLinear())
 
     # -- Reductions --------------------------------------------------------
-    registry.register(torch.sum, IBPSum())
-    registry.register(torch.mean, IBPMean())
-    registry.register(torch.amax, IBPMax())
-    registry.register(torch.amin, IBPMin())
+    registry.register_many([torch.sum, torch.Tensor.sum], IBPSum())
+    registry.register_many([torch.mean, torch.Tensor.mean], IBPMean())
+    registry.register_many([torch.amax, torch.Tensor.amax], IBPMax())
+    registry.register_many([torch.amin, torch.Tensor.amin], IBPMin())
 
     # -- Shape manipulation ------------------------------------------------
-    registry.register(torch.reshape, IBPReshape())
-    registry.register(torch.Tensor.reshape, IBPReshape())
-
-    flatten = IBPFlatten()
-    registry.register_many([torch.flatten, torch.Tensor.flatten, nn.Flatten], flatten)
+    registry.register_many([torch.reshape, torch.Tensor.reshape], IBPReshape())
+    registry.register_many([torch.flatten, torch.Tensor.flatten, nn.Flatten], IBPFlatten())
 
     registry.register(torch.cat, IBPCat())
     registry.register(torch.stack, IBPStack())
     registry.register(operator.getitem, IBPGetItem())
-
-    registry.register(torch.Tensor.select, IBPSelect())
-    registry.register(torch.unsqueeze, IBPUnsqueeze())
-    registry.register(torch.Tensor.unsqueeze, IBPUnsqueeze())
-    registry.register(torch.squeeze, IBPSqueeze())
-    registry.register(torch.Tensor.squeeze, IBPSqueeze())
-    registry.register(torch.Tensor.transpose, IBPTranspose())
-    registry.register(torch.Tensor.permute, IBPPermute())
     registry.register(torch.Tensor.view, IBPView())
+
+    registry.register_many([torch.Tensor.select, torch.select], IBPSelect())
+    registry.register_many([torch.unsqueeze, torch.Tensor.unsqueeze], IBPUnsqueeze())
+    registry.register_many([torch.squeeze, torch.Tensor.squeeze], IBPSqueeze())
+    registry.register_many([torch.transpose, torch.Tensor.transpose], IBPTranspose())
+    registry.register_many([torch.permute, torch.Tensor.permute], IBPPermute())
 
     return registry

@@ -15,7 +15,7 @@ import torch.fx as fx
 from bound_propagation.bounds import IntervalBounds
 from bound_propagation.passes import MetadataPass
 from bound_propagation.propagation import IBPPropagator, TargetRegistry
-from bound_propagation.propagation.ibp import IBPAdd, IBPMatmul, IBPMul, create_default_ibp_registry
+from bound_propagation.propagation.ibp import IBPAdd, IBPMul, create_default_ibp_registry
 from bound_propagation.propagation.registry import normalize_target
 from bound_propagation.regions import HyperRectangle
 from bound_propagation.tracer import BoundPropagationTracer

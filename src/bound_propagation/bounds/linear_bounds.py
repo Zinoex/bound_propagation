@@ -36,6 +36,7 @@ class LinearBounds(AbstractBounds):
         linear_upper: torch.Tensor | list[torch.Tensor] | None = None,
         bias_upper: torch.Tensor | None = None,
         input_ids: list[int] | None = None,
+        validate: bool = True,
     ) -> None:
         """
         Initialize linear bounds.
@@ -46,6 +47,10 @@ class LinearBounds(AbstractBounds):
             bias_lower: Bias for lower bound
             linear_upper: Linear coefficients for upper bound (can be empty for constant bounds)
             bias_upper: Bias for upper bound
+            input_ids: Optional list of input node IDs
+            validate: Whether to run the gap validity check.  Set to ``False``
+                for intermediate results in backward CROWN where bias
+                corrections have not yet been applied.
         """
         if bias_lower is None or bias_upper is None:
             raise ValueError("LinearBounds requires both bias_lower and bias_upper")
@@ -63,7 +68,10 @@ class LinearBounds(AbstractBounds):
             normalized_input_ids = []
 
         self._check_shapes(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
-        self._check_gap(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
+        if validate:
+            self._check_gap(
+                normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper
+            )
 
         self._regions = normalized_regions
         self._linear_lower = normalized_linear_lower

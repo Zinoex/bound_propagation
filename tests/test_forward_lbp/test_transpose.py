@@ -3,7 +3,7 @@ from __future__ import annotations
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.transpose import ForwardLBPTranspose
+from bound_propagation.propagation.forward_lbp.shape import ForwardLBPTranspose
 from bound_propagation.regions import HyperRectangle
 from tests.helpers import propagate
 
@@ -28,14 +28,6 @@ def test_transpose_2d() -> None:
     )
 
     strategy = ForwardLBPTranspose()
-
-    class MockNode:
-        def __init__(self):
-            # transpose(0, 1) for 2D
-            self.attributes = {"dim0": 0, "dim1": 1}
-
-    node = MockNode()
-
     result = propagate(strategy, bounds)
 
     # Linear structure should be preserved (just permuted)
@@ -71,14 +63,6 @@ def test_transpose_3d() -> None:
     )
 
     strategy = ForwardLBPTranspose()
-
-    class MockNode:
-        def __init__(self):
-            # transpose(0, 2)
-            self.attributes = {"dim0": 0, "dim1": 2}
-
-    node = MockNode()
-
     result = propagate(strategy, bounds)
 
     # Linear structure preserved
@@ -108,14 +92,6 @@ def test_transpose_identity() -> None:
     )
 
     strategy = ForwardLBPTranspose()
-
-    class MockNode:
-        def __init__(self):
-            # transpose(1, 1) - same dimension
-            self.attributes = {"dim0": 1, "dim1": 1}
-
-    node = MockNode()
-
     result = propagate(strategy, bounds)
 
     lower, upper = result.concretize()
