@@ -16,6 +16,7 @@ def test_unsqueeze_dim0() -> None:
     # Shape: (12,) flattened from conceptual (3, 4)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(12, 1),
         bias_lower=torch.arange(12.0),
         linear_upper=torch.ones(12, 1),
@@ -37,6 +38,7 @@ def test_unsqueeze_middle_dim() -> None:
     # Shape: (6,) flattened from conceptual (2, 3)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(6, 1),
         bias_lower=torch.arange(6.0),
         linear_upper=torch.ones(6, 1),
@@ -58,6 +60,7 @@ def test_unsqueeze_last_dim() -> None:
     # Shape: (3,)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(3, 1),
         bias_lower=torch.arange(3.0),
         linear_upper=torch.ones(3, 1),
@@ -79,6 +82,7 @@ def test_unsqueeze_1d_to_2d() -> None:
     # Shape: (5,)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(5, 1),
         bias_lower=torch.arange(5.0),
         linear_upper=torch.ones(5, 1),

@@ -14,6 +14,7 @@ def test_getitem_single_index() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(5, 1),
         bias_lower=torch.arange(5.0),
         linear_upper=torch.ones(5, 1),
@@ -36,6 +37,7 @@ def test_getitem_slice() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(5, 1),
         bias_lower=torch.arange(5.0),
         linear_upper=torch.ones(5, 1),
@@ -56,6 +58,7 @@ def test_getitem_2d_single_index() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(3, 4, 1),
         bias_lower=torch.arange(12.0).view(3, 4),
         linear_upper=torch.ones(3, 4, 1),
@@ -76,6 +79,7 @@ def test_getitem_with_trailing_ellipsis() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 3, 4, 1),
         bias_lower=torch.arange(24.0).view(2, 3, 4),
         linear_upper=torch.ones(2, 3, 4, 1),
@@ -96,6 +100,7 @@ def test_getitem_with_middle_ellipsis() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 3, 4, 1),
         bias_lower=torch.arange(24.0).view(2, 3, 4),
         linear_upper=torch.ones(2, 3, 4, 1),

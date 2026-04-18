@@ -24,6 +24,7 @@ def _make_linear_bounds(region: HyperRectangle, shape: tuple[int, ...]) -> Linea
 
     return LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=linear_reshaped,
         bias_lower=torch.zeros(shape),
         linear_upper=linear_reshaped,
@@ -46,6 +47,7 @@ def test_mean_along_last_dim() -> None:
     # Create linear bounds for shape (2, 3)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.eye(6).view(2, 3, 6),
         bias_lower=torch.zeros(2, 3),
         linear_upper=torch.eye(6).view(2, 3, 6),
@@ -60,9 +62,14 @@ def test_mean_along_last_dim() -> None:
     result = propagate(strategy, bounds, dim=-1, keepdim=False)
 
     # After mean along dim=-1, shape should be (2,)
-    # Result concretizes
-    assert result.linear_lower is None
-    assert result.linear_upper is None
+    # Mean preserves linear terms: each row of 3 identity columns is averaged
+    assert result.linear_lower is not None
+    expected_linear = torch.tensor([
+        [1 / 3, 1 / 3, 1 / 3, 0.0, 0.0, 0.0],
+        [0.0, 0.0, 0.0, 1 / 3, 1 / 3, 1 / 3],
+    ])
+    assert torch.allclose(result.linear_lower, expected_linear)
+    assert torch.allclose(result.linear_upper, expected_linear)
 
     lower, upper = result.concretize()
     # Each row averages to the same interval [0, 2]
@@ -84,6 +91,7 @@ def test_mean_all_elements() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.eye(4),
         bias_lower=torch.zeros(4),
         linear_upper=torch.eye(4),
@@ -116,6 +124,7 @@ def test_mean_with_keepdim() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.eye(6).view(2, 3, 6),
         bias_lower=torch.zeros(2, 3),
         linear_upper=torch.eye(6).view(2, 3, 6),

@@ -88,6 +88,8 @@ class ForwardLBPMatmul(ForwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
+            # TODO: Implement this case. It requires handling the interaction of two sets of linear bounds,
+            # which is more complex than the constant cases.
             raise NotImplementedError(
                 "LBP matmul with two varying operands not yet supported. Use constant weights or switch to IBP method."
             )

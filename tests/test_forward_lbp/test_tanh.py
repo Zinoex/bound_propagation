@@ -13,6 +13,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     dim = region.lower.numel()
     return LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.eye(dim),
         bias_lower=torch.zeros(dim),
         linear_upper=torch.eye(dim),

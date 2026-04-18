@@ -15,6 +15,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     dim = region.lower.numel()
     return LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.eye(dim),
         bias_lower=torch.zeros(dim),
         linear_upper=torch.eye(dim),
@@ -33,6 +34,7 @@ def test_sub_abstract_abstract() -> None:
 
     bounds_a = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[2.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[2.0, 0.0]]),
@@ -40,6 +42,7 @@ def test_sub_abstract_abstract() -> None:
     )
     bounds_b = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -76,6 +79,7 @@ def test_sub_abstract_constant_scalar() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -186,6 +190,7 @@ def test_sub_with_bias() -> None:
 
     bounds_a = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[3.0]]),
         bias_lower=torch.tensor([2.0]),
         linear_upper=torch.tensor([[3.0]]),
@@ -193,6 +198,7 @@ def test_sub_with_bias() -> None:
     )
     bounds_b = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[1.0]]),

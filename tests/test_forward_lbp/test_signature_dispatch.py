@@ -32,6 +32,7 @@ class TestForwardLBPConstantHandling:
         )
         bounds = LinearBounds(
             regions=[region],
+            input_ids=[0],
             linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
             linear_upper=torch.eye(2),
@@ -53,6 +54,7 @@ class TestForwardLBPConstantHandling:
         )
         bounds = LinearBounds(
             regions=[region],
+            input_ids=[0],
             linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
             linear_upper=torch.eye(2),
@@ -75,6 +77,7 @@ class TestForwardLBPConstantHandling:
         )
         bounds = LinearBounds(
             regions=[region],
+            input_ids=[0],
             linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
             linear_upper=torch.eye(2),
@@ -98,6 +101,7 @@ class TestForwardLBPConstantHandling:
         )
         bounds = LinearBounds(
             regions=[region],
+            input_ids=[0],
             linear_lower=torch.eye(2),
             bias_lower=torch.zeros(2),
             linear_upper=torch.eye(2),

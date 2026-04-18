@@ -36,8 +36,8 @@ def _check_soundness(
       ``z = a/b`` is enclosed by the linear relaxation.
     """
     relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
-    coeff_a_lower, coeff_b_lower = relaxation.coeffs_lower
-    coeff_a_upper, coeff_b_upper = relaxation.coeffs_upper
+    coeff_a_lower, coeff_b_lower = (relaxation.alpha_lower_a, relaxation.alpha_lower_b)
+    coeff_a_upper, coeff_b_upper = (relaxation.alpha_upper_a, relaxation.alpha_upper_b)
     bias_lower = relaxation.bias_lower
     bias_upper = relaxation.bias_upper
 
@@ -148,8 +148,8 @@ class TestDivRelaxationRegimes:
         lower_b = torch.tensor([lb])
         upper_b = torch.tensor([ub])
         relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
-        ca_l, cb_l = relaxation.coeffs_lower
-        ca_u, cb_u = relaxation.coeffs_upper
+        ca_l, cb_l = (relaxation.alpha_lower_a, relaxation.alpha_lower_b)
+        ca_u, cb_u = (relaxation.alpha_upper_a, relaxation.alpha_upper_b)
         for tensor in [ca_l, cb_l, ca_u, cb_u, relaxation.bias_lower, relaxation.bias_upper]:
             assert tensor.shape == lower_a.shape
 
@@ -208,8 +208,8 @@ class TestDivRelaxationZeroWidth:
         lower_a = upper_a = torch.tensor([a0])
         lower_b = upper_b = torch.tensor([b0])
         relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
-        ca_l, cb_l = relaxation.coeffs_lower
-        ca_u, cb_u = relaxation.coeffs_upper
+        ca_l, cb_l = (relaxation.alpha_lower_a, relaxation.alpha_lower_b)
+        ca_u, cb_u = (relaxation.alpha_upper_a, relaxation.alpha_upper_b)
 
         a = torch.tensor([a0])
         b = torch.tensor([b0])

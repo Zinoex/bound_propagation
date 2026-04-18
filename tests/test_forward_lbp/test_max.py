@@ -15,6 +15,7 @@ def test_max_1d_tensor() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(5, 1),
         bias_lower=torch.tensor([1.0, 2.0, 3.0, 4.0, 5.0]),
         linear_upper=torch.ones(5, 1),
@@ -39,6 +40,7 @@ def test_max_along_dim() -> None:
     # Shape: (2, 3)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 3, 1),
         bias_lower=torch.tensor([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
         linear_upper=torch.ones(2, 3, 1),
@@ -60,6 +62,7 @@ def test_max_keepdim() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(3, 1),
         bias_lower=torch.tensor([1.0, 2.0, 3.0]),
         linear_upper=torch.ones(3, 1),

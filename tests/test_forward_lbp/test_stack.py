@@ -16,6 +16,7 @@ def test_stack_two_tensors() -> None:
     # First tensor: x0
     bounds1 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0, 0.0]]),
@@ -25,6 +26,7 @@ def test_stack_two_tensors() -> None:
     # Second tensor: x1
     bounds2 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -50,6 +52,7 @@ def test_stack_three_tensors() -> None:
 
     bounds1 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -58,6 +61,7 @@ def test_stack_three_tensors() -> None:
 
     bounds2 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -66,6 +70,7 @@ def test_stack_three_tensors() -> None:
 
     bounds3 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([2.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -90,6 +95,7 @@ def test_stack_dim1() -> None:
     # Both tensors have shape (2,)
     bounds1 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 1),
         bias_lower=torch.tensor([1.0, 2.0]),
         linear_upper=torch.ones(2, 1),
@@ -98,6 +104,7 @@ def test_stack_dim1() -> None:
 
     bounds2 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 1),
         bias_lower=torch.tensor([3.0, 4.0]),
         linear_upper=torch.ones(2, 1),
@@ -124,6 +131,7 @@ def test_stack_preserves_linear_coefficients() -> None:
     # bounds1: 2*x0 + 1
     bounds1 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[2.0, 0.0]]),
         bias_lower=torch.tensor([1.0]),
         linear_upper=torch.tensor([[2.0, 0.0]]),
@@ -133,6 +141,7 @@ def test_stack_preserves_linear_coefficients() -> None:
     # bounds2: 3*x1 + 2
     bounds2 = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[0.0, 3.0]]),
         bias_lower=torch.tensor([2.0]),
         linear_upper=torch.tensor([[0.0, 3.0]]),
@@ -159,6 +168,7 @@ def test_stack_different_regions() -> None:
 
     bounds1 = LinearBounds(
         regions=[region1],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0]]),
@@ -167,6 +177,7 @@ def test_stack_different_regions() -> None:
 
     bounds2 = LinearBounds(
         regions=[region2],
+        input_ids=[1],
         linear_lower=torch.tensor([[1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0]]),

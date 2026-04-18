@@ -17,7 +17,14 @@ class TestLinearBounds:
         linear_upper = torch.tensor([[2.0, 3.0]])
         bias_upper = torch.tensor([1.5])
 
-        bounds = LinearBounds(region, linear_lower, bias_lower, linear_upper, bias_upper)
+        bounds = LinearBounds(
+            regions=[region],
+            input_ids=[0],
+            linear_lower=linear_lower,
+            bias_lower=bias_lower,
+            linear_upper=linear_upper,
+            bias_upper=bias_upper,
+        )
 
         assert torch.allclose(bounds.bias_lower, bias_lower)
         assert torch.allclose(bounds.bias_upper, bias_upper)
@@ -34,7 +41,14 @@ class TestLinearBounds:
         linear_upper = torch.tensor([[2.0, 3.0]])
         bias_upper = torch.tensor([1.5])
 
-        bounds = LinearBounds(region, linear_lower, bias_lower, linear_upper, bias_upper)
+        bounds = LinearBounds(
+            regions=[region],
+            input_ids=[0],
+            linear_lower=linear_lower,
+            bias_lower=bias_lower,
+            linear_upper=linear_upper,
+            bias_upper=bias_upper,
+        )
 
         lower, upper = bounds.concretize()
 
@@ -74,6 +88,7 @@ class TestLinearBounds:
 
         bounds = LinearBounds(
             regions=[region],
+            input_ids=[0],
             linear_lower=[torch.tensor([2.0])],
             bias_lower=torch.tensor([0.5]),
             linear_upper=[torch.tensor([4.0])],
@@ -94,6 +109,7 @@ class TestLinearBounds:
 
         bounds = LinearBounds(
             regions=[region],
+            input_ids=[0],
             linear_lower=[torch.ones(1, 2, 2)],
             bias_lower=torch.tensor([0.0]),
             linear_upper=[2 * torch.ones(1, 2, 2)],
@@ -117,6 +133,7 @@ class TestLinearBounds:
         # linear shape: (batch=2, output=1, input=2)
         bounds = LinearBounds(
             regions=[region],
+            input_ids=[0],
             linear_lower=[torch.tensor([[[1.0, -2.0]], [[3.0, 4.0]]])],
             bias_lower=torch.tensor([[0.5], [1.0]]),
             linear_upper=[torch.tensor([[[2.0, 1.0]], [[4.0, 5.0]]])],
@@ -138,6 +155,7 @@ class TestLinearBounds:
         with pytest.raises(ValueError, match="input axes must match input shape"):
             LinearBounds(
                 regions=[region],
+                input_ids=[0],
                 linear_lower=[torch.tensor([[[1.0, -1.0, 2.0, -2.0]], [[2.0, 0.0, -1.0, 3.0]]])],
                 bias_lower=torch.tensor([[0.0], [1.0]]),
                 linear_upper=[torch.tensor([[[2.0, 1.0, 3.0, 1.0]], [[3.0, 1.0, 0.0, 4.0]]])],

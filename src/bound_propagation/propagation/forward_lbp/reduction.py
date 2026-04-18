@@ -31,8 +31,12 @@ class ForwardLBPSum(ForwardLBPStrategy):
         lower_bias = bounds.bias_lower.sum(dim, keepdim=keepdim)
         upper_bias = bounds.bias_upper.sum(dim, keepdim=keepdim)
 
+        # Normalize negative dim to be relative to output shape, not linear tensor shape
+        if dim is not None and isinstance(dim, int) and dim < 0:
+            dim = dim + len(bounds.shape)
+
         # Linear terms are only reduced on non-input dimensions (*batch_dims, *output_dims)
-        linear_dim = tuple(range(bounds.shape)) if dim is None else dim
+        linear_dim = tuple(range(len(bounds.shape))) if dim is None else dim
 
         linear_lowers = [linear.sum(linear_dim, keepdim=keepdim) for linear in bounds.linear_lowers]
         linear_uppers = [linear.sum(linear_dim, keepdim=keepdim) for linear in bounds.linear_uppers]
@@ -67,8 +71,12 @@ class ForwardLBPMean(ForwardLBPStrategy):
         lower_bias = bounds.bias_lower.mean(dim, keepdim=keepdim)
         upper_bias = bounds.bias_upper.mean(dim, keepdim=keepdim)
 
+        # Normalize negative dim to be relative to output shape, not linear tensor shape
+        if dim is not None and isinstance(dim, int) and dim < 0:
+            dim = dim + len(bounds.shape)
+
         # Linear terms are only reduced on non-input dimensions (*batch_dims, *output_dims)
-        linear_dim = tuple(range(bounds.shape)) if dim is None else dim
+        linear_dim = tuple(range(len(bounds.shape))) if dim is None else dim
 
         linear_lowers = [linear.mean(linear_dim, keepdim=keepdim) for linear in bounds.linear_lowers]
         linear_uppers = [linear.mean(linear_dim, keepdim=keepdim) for linear in bounds.linear_uppers]

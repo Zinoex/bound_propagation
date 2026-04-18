@@ -16,6 +16,7 @@ def test_squeeze_single_dim() -> None:
     # Shape: (1, 3, 1, 4)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(1, 3, 1, 4, 1),
         bias_lower=torch.arange(12.0).view(1, 3, 1, 4),
         linear_upper=torch.ones(1, 3, 1, 4, 1),
@@ -37,6 +38,7 @@ def test_squeeze_all_dims() -> None:
     # Shape: (1, 3, 1, 4)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(1, 3, 1, 4, 1),
         bias_lower=torch.arange(12.0).view(1, 3, 1, 4),
         linear_upper=torch.ones(1, 3, 1, 4, 1),
@@ -58,6 +60,7 @@ def test_squeeze_middle_dim() -> None:
     # Shape: (2, 1, 3)
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 1, 3, 1),
         bias_lower=torch.arange(6.0).view(2, 1, 3),
         linear_upper=torch.ones(2, 1, 3, 1),

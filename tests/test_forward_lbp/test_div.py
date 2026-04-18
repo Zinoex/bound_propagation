@@ -13,6 +13,7 @@ def _make_linear_bounds(region: HyperRectangle) -> LinearBounds:
     dim = region.lower.numel()
     return LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.eye(dim),
         bias_lower=torch.zeros(dim),
         linear_upper=torch.eye(dim),
@@ -28,6 +29,7 @@ def _make_identity_bounds_preserve_shape(region: HyperRectangle) -> LinearBounds
     zero_bias = torch.zeros_like(region.lower)
     return LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=[identity],
         bias_lower=zero_bias,
         linear_upper=[identity],
@@ -44,6 +46,7 @@ def test_div_abstract_abstract_positive() -> None:
 
     bounds_a = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0, 0.0]]),
@@ -51,6 +54,7 @@ def test_div_abstract_abstract_positive() -> None:
     )
     bounds_b = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -137,6 +141,7 @@ def test_div_crossing_zero_divisor() -> None:
 
     bounds_a = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0, 0.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[1.0, 0.0]]),
@@ -144,6 +149,7 @@ def test_div_crossing_zero_divisor() -> None:
     )
     bounds_b = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[0.0, 1.0]]),
         bias_lower=torch.tensor([0.0]),
         linear_upper=torch.tensor([[0.0, 1.0]]),
@@ -174,6 +180,7 @@ def test_div_crossing_zero_divisor_is_elementwise() -> None:
 
     bounds_a = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
         bias_lower=torch.tensor([0.0, 0.0]),
         linear_upper=torch.tensor([[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]),
@@ -181,6 +188,7 @@ def test_div_crossing_zero_divisor_is_elementwise() -> None:
     )
     bounds_b = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.tensor([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),
         bias_lower=torch.tensor([0.0, 0.0]),
         linear_upper=torch.tensor([[0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]),

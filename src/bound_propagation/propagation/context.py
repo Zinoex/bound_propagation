@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
+import torch.fx as fx
+
 if TYPE_CHECKING:
     import torch
-    import torch.fx as fx
 
 
 T = TypeVar("T")

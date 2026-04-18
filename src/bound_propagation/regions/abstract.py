@@ -49,6 +49,17 @@ class AbstractRegion(ABC):
         """
         pass
 
+    @property
+    @abstractmethod
+    def dtype(self) -> torch.dtype:
+        """
+        Get dtype of the region.
+
+        Returns:
+            Dtype of region tensors
+        """
+        pass
+
     @abstractmethod
     def to(self, device: str | torch.device) -> AbstractRegion:
         """

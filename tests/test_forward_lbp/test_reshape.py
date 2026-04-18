@@ -14,6 +14,7 @@ def test_reshape_1d_to_2d() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(6, 1),
         bias_lower=torch.arange(6.0),
         linear_upper=torch.ones(6, 1),
@@ -35,6 +36,7 @@ def test_reshape_2d_to_1d() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 3, 1),
         bias_lower=torch.arange(6.0).view(2, 3),
         linear_upper=torch.ones(2, 3, 1),
@@ -56,6 +58,7 @@ def test_reshape_3d() -> None:
 
     bounds = LinearBounds(
         regions=[region],
+        input_ids=[0],
         linear_lower=torch.ones(2, 2, 3, 1),
         bias_lower=torch.arange(12.0).view(2, 2, 3),
         linear_upper=torch.ones(2, 2, 3, 1),

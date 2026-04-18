@@ -383,7 +383,7 @@ class LinearBounds(AbstractBounds):
         for linear_lower in self._linear_lower:
             term_shape: torch.Size = linear_lower.shape
             input_shape: torch.Size = term_shape[batch_output_ndim:]
-            input_shapes.append(tuple(*input_shape))
+            input_shapes.append(tuple(input_shape))
 
         return input_shapes
 
