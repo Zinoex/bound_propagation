@@ -32,14 +32,76 @@ def _trace_and_annotate(fn_or_module, example_inputs, registry=None):
     return gm
 
 
-def _check_soundness(fn, input_region, lower, upper, num_samples=1000):
-    """Verify bounds are sound by sampling."""
+def _evaluate_linear_bounds_at(linear_bounds, x):
+    """Evaluate linear bounds at a specific point *x*.
+
+    Returns per-point (lower, upper) that are at least as tight as
+    the concretized interval bounds.
+
+    Parameters
+    ----------
+    linear_bounds : LinearBounds
+        Affine bounds ``W_l @ x + b_l <= y <= W_u @ x + b_u``.
+    x : torch.Tensor
+        A concrete input point.
+
+    Returns
+    -------
+    tuple[torch.Tensor, torch.Tensor]
+        ``(lower_at_x, upper_at_x)``
+    """
+    output_shape = linear_bounds.bias_lower.shape
+    output_ndim = len(output_shape)
+
+    lower = linear_bounds.bias_lower.clone()
+    upper = linear_bounds.bias_upper.clone()
+
+    for ll, lu in zip(linear_bounds.linear_lowers, linear_bounds.linear_uppers, strict=True):
+        input_ndim = x.ndim
+        expanded = x.reshape(*([1] * output_ndim), *x.shape)
+        sum_dims = tuple(range(-input_ndim, 0))
+        if sum_dims:
+            lower = lower + (ll * expanded).sum(dim=sum_dims)
+            upper = upper + (lu * expanded).sum(dim=sum_dims)
+        else:
+            lower = lower + ll * expanded
+            upper = upper + lu * expanded
+
+    return lower, upper
+
+
+def _check_soundness(fn, input_region, linear_bounds, num_samples=1000, atol=1e-4):
+    """Verify linear bounds are sound by evaluating them at sampled points.
+
+    For each sample *x*, evaluates the affine lower/upper bounds at *x*
+    (tighter than the concretized interval bounds) and checks that the
+    true output lies within them.
+
+    Parameters
+    ----------
+    fn : callable
+        The true function.
+    input_region : HyperRectangle
+        Input region to sample from.
+    linear_bounds : LinearBounds
+        Affine bounds to verify.
+    num_samples : int
+        Number of random samples.
+    atol : float
+        Absolute tolerance for floating-point imprecision accumulated
+        through chained matrix operations.
+    """
     rand = torch.rand(num_samples, *input_region.lower.shape)
     samples = input_region.lower + rand * (input_region.upper - input_region.lower)
     for sample in samples:
         output = fn(sample)
-        assert torch.all(lower <= output + 1e-6), f"Lower bound violation: {lower} > {output}"
-        assert torch.all(output <= upper + 1e-6), f"Upper bound violation: {output} > {upper}"
+        lower, upper = _evaluate_linear_bounds_at(linear_bounds, sample)
+        assert torch.all(lower <= output + atol), (
+            f"Lower bound violation at x={sample}: lower={lower}, output={output}"
+        )
+        assert torch.all(output <= upper + atol), (
+            f"Upper bound violation at x={sample}: upper={upper}, output={output}"
+        )
 
 
 class TestBackwardLBPIdentity:
@@ -175,12 +237,13 @@ class TestBackwardLBPRelu:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        linear_bounds = outputs[0]
+        lower, upper = linear_bounds.concretize()
         # Sound: lower should be <= 0 (min of relu on [-2,3]) = 0
         # Upper should be >= 3 (max of relu on [-2,3]) = 3
         assert torch.all(lower <= 0.0 + 1e-6)
         assert torch.all(upper >= 3.0 - 1e-6)
-        _check_soundness(relu_fn, input_region, lower, upper)
+        _check_soundness(relu_fn, input_region, linear_bounds)
 
     def test_relu_positive_only(self) -> None:
         def relu_fn(x):
@@ -240,13 +303,14 @@ class TestBackwardLBPTwoLayer:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        linear_bounds = outputs[0]
+        lower, upper = linear_bounds.concretize()
         # Sound: all inputs >= 0, all weights >= 0, so:
         # min at (0,0): h = [0,0,0], output = 0
         # max at (1,1): h = relu([5,7,9]) = [5,7,9], output = 21
         assert torch.all(lower <= 0.0 + 1e-5)
         assert torch.all(upper >= 21.0 - 1e-5)
-        _check_soundness(two_layer_fn, input_region, lower, upper)
+        _check_soundness(two_layer_fn, input_region, linear_bounds)
 
     def test_backward_at_least_as_tight_as_forward(self) -> None:
         """CROWN should give bounds at least as tight as forward LBP for single-input networks."""
@@ -267,17 +331,19 @@ class TestBackwardLBPTwoLayer:
         fwd_gm = _trace_and_annotate(network, (torch.randn(3),), registry=fwd_registry)
         fwd_propagator = ForwardLBPPropagator(fwd_gm)
         fwd_outputs = fwd_propagator.propagate([input_region])
-        fwd_lower, fwd_upper = fwd_outputs[0].concretize()
+        fwd_bounds = fwd_outputs[0]
+        fwd_lower, fwd_upper = fwd_bounds.concretize()
 
         # Backward LBP
         bwd_gm = _trace_and_annotate(network, (torch.randn(3),))
         bwd_propagator = BackwardLBPPropagator(bwd_gm)
         bwd_outputs = bwd_propagator.propagate([input_region])
-        bwd_lower, bwd_upper = bwd_outputs[0].concretize()
+        bwd_bounds = bwd_outputs[0]
+        bwd_lower, bwd_upper = bwd_bounds.concretize()
 
-        # Both should be sound
-        _check_soundness(network, input_region, fwd_lower, fwd_upper)
-        _check_soundness(network, input_region, bwd_lower, bwd_upper)
+        # Both should be sound (checked via per-point linear bound evaluation)
+        _check_soundness(network, input_region, fwd_bounds)
+        _check_soundness(network, input_region, bwd_bounds)
 
         # CROWN should be at least as tight (higher lower, lower upper)
         assert torch.all(bwd_lower >= fwd_lower - 1e-5), (
@@ -304,8 +370,9 @@ class TestBackwardLBPSigmoid:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
-        _check_soundness(sigmoid_fn, input_region, lower, upper)
+        linear_bounds = outputs[0]
+        lower, upper = linear_bounds.concretize()
+        _check_soundness(sigmoid_fn, input_region, linear_bounds)
         # Linear relaxation bounds may exceed sigmoid's [0,1] range
         # (tangent lines extend beyond the function), but must still be sound.
         assert torch.all(lower >= -0.5), f"Lower bound unreasonably low: {lower}"
