@@ -108,18 +108,18 @@ class ForwardLBPMin(ForwardLBPStrategy):
         dim = args[1] if len(args) > 1 else kwargs.get("dim")
         keepdim = kwargs.get("keepdim", False)
 
-        lower, upper = bounds.concretize()
+        concrete = bounds.concretize()
 
         # TODO: For min and max reductions, we need to compute a proper
         # linear relaxation unlike sum where the linear terms are just summed.
         # For now we just concretize the bounds and compute the min/max.
 
         if dim is not None:
-            lower = lower.min(dim=dim, keepdim=keepdim).values
-            upper = upper.min(dim=dim, keepdim=keepdim).values
+            lower = concrete.lower.min(dim=dim, keepdim=keepdim).values
+            upper = concrete.upper.min(dim=dim, keepdim=keepdim).values
         else:
-            lower = lower.min()
-            upper = upper.min()
+            lower = concrete.lower.min()
+            upper = concrete.upper.min()
 
         return LinearBounds(
             regions=[],
@@ -147,14 +147,14 @@ class ForwardLBPMax(ForwardLBPStrategy):
         dim = args[1] if len(args) > 1 else kwargs.get("dim")
         keepdim = kwargs.get("keepdim", False)
 
-        lower, upper = bounds.concretize()
+        concrete = bounds.concretize()
 
         if dim is not None:
-            lower = lower.amax(dim=dim, keepdim=keepdim)
-            upper = upper.amax(dim=dim, keepdim=keepdim)
+            lower = concrete.lower.amax(dim=dim, keepdim=keepdim)
+            upper = concrete.upper.amax(dim=dim, keepdim=keepdim)
         else:
-            lower = lower.amax()
-            upper = upper.amax()
+            lower = concrete.lower.amax()
+            upper = concrete.upper.amax()
 
         return LinearBounds(
             regions=[],

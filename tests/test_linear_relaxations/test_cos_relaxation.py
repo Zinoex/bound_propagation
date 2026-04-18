@@ -11,6 +11,7 @@ import math
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_cos_relaxation
 
 
@@ -59,7 +60,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([0.5])
         upper = torch.tensor([2.5])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -73,7 +74,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([3.5])
         upper = torch.tensor([5.5])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -87,7 +88,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -101,7 +102,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([-0.5])
         upper = torch.tensor([0.5])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -115,7 +116,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([2.5])
         upper = torch.tensor([3.7])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -129,7 +130,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([0.0])
         upper = torch.tensor([2 * math.pi])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -146,7 +147,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([-2 * math.pi])
         upper = torch.tensor([2 * math.pi])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -163,7 +164,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([2 * math.pi + 0.5])
         upper = torch.tensor([2 * math.pi + 2.5])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -177,7 +178,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([-5.0])
         upper = torch.tensor([-4.0])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -191,7 +192,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([1.5])
         upper = torch.tensor([1.5])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -207,7 +208,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([[0.5, 3.5, -1.0], [2.5, -5.0, 0.0]])
         upper = torch.tensor([[2.5, 5.5, 1.0], [3.7, -4.0, 2 * math.pi]])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -231,7 +232,7 @@ class TestCosRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_cos_relaxation(lower, upper)
+        relaxation = compute_cos_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -253,12 +254,12 @@ class TestCosRelaxationPeriodicity:
         lower2 = lower1 + 2 * math.pi
         upper2 = upper1 + 2 * math.pi
 
-        r = compute_cos_relaxation(lower1, upper1)
+        r = compute_cos_relaxation(IntervalBounds(lower1, upper1))
         alpha_lower1 = r.alpha_lower
         beta_lower1 = r.beta_lower
         alpha_upper1 = r.alpha_upper
         beta_upper1 = r.beta_upper
-        r = compute_cos_relaxation(lower2, upper2)
+        r = compute_cos_relaxation(IntervalBounds(lower2, upper2))
         alpha_lower2 = r.alpha_lower
         beta_lower2 = r.beta_lower
         alpha_upper2 = r.alpha_upper

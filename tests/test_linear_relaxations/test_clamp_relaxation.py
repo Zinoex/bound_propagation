@@ -9,6 +9,7 @@ Clamp is piecewise linear: clamp(x, min, max) = min(max(x, min), max).
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_clamp_relaxation
 
 
@@ -59,7 +60,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([3.0])
         min_val, max_val = -5.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -80,7 +81,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([-6.0])
         min_val, max_val = -5.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -101,7 +102,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([10.0])
         min_val, max_val = -5.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -122,7 +123,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([2.0])
         min_val, max_val = 0.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -139,7 +140,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([7.0])
         min_val, max_val = -5.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -156,7 +157,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([10.0])
         min_val, max_val = -2.0, 2.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -173,7 +174,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([5.0])
         min_val = 0.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val=min_val, max_val=None)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val=min_val, max_val=None)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -190,7 +191,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([5.0])
         max_val = 2.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val=None, max_val=max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val=None, max_val=max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -207,7 +208,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([2.0])
         min_val, max_val = 0.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -224,7 +225,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([-5.0])
         min_val, max_val = 0.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -241,7 +242,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([10.0])
         min_val, max_val = 0.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -258,7 +259,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([[3.0, -6.0, 10.0], [2.0, 7.0, 10.0]])
         min_val, max_val = -5.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -283,7 +284,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([0.5])
         min_val, max_val = 0.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -300,7 +301,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([5.5])
         min_val, max_val = -5.0, 5.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -317,7 +318,7 @@ class TestClampRelaxationSoundness:
         upper = torch.tensor([3.0])
         min_val, max_val = -1.0, 1.0
 
-        relaxation = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        relaxation = compute_clamp_relaxation(IntervalBounds(lower, upper), min_val, max_val)
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper

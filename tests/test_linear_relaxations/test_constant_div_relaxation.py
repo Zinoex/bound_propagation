@@ -2,6 +2,7 @@
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_constant_div_relaxation
 
 
@@ -13,7 +14,7 @@ def test_constant_div_positive_nominal_sound() -> None:
     lower = torch.tensor([2.0])
     upper = torch.tensor([4.0])
 
-    relaxation = compute_constant_div_relaxation(lower, upper, constant=6.0)
+    relaxation = compute_constant_div_relaxation(IntervalBounds(lower, upper), constant=6.0)
     alpha_lower = relaxation.alpha_lower
     beta_lower = relaxation.beta_lower
     alpha_upper = relaxation.alpha_upper
@@ -32,7 +33,7 @@ def test_constant_div_negative_nominal_sound() -> None:
     lower = torch.tensor([2.0])
     upper = torch.tensor([4.0])
 
-    relaxation = compute_constant_div_relaxation(lower, upper, constant=-6.0)
+    relaxation = compute_constant_div_relaxation(IntervalBounds(lower, upper), constant=-6.0)
     alpha_lower = relaxation.alpha_lower
     beta_lower = relaxation.beta_lower
     alpha_upper = relaxation.alpha_upper
@@ -51,7 +52,7 @@ def test_constant_div_crossing_zero_returns_infinite_bounds() -> None:
     lower = torch.tensor([-1.0, 2.0])
     upper = torch.tensor([1.0, 3.0])
 
-    relaxation = compute_constant_div_relaxation(lower, upper, constant=6.0)
+    relaxation = compute_constant_div_relaxation(IntervalBounds(lower, upper), constant=6.0)
     alpha_lower = relaxation.alpha_lower
     beta_lower = relaxation.beta_lower
     alpha_upper = relaxation.alpha_upper
@@ -69,7 +70,7 @@ def test_constant_div_zero_constant_is_exact_zero() -> None:
     lower = torch.tensor([-1.0, 2.0])
     upper = torch.tensor([1.0, 3.0])
 
-    relaxation = compute_constant_div_relaxation(lower, upper, constant=0.0)
+    relaxation = compute_constant_div_relaxation(IntervalBounds(lower, upper), constant=0.0)
     alpha_lower = relaxation.alpha_lower
     beta_lower = relaxation.beta_lower
     alpha_upper = relaxation.alpha_upper
@@ -86,7 +87,7 @@ def test_constant_div_broadcast_constant_tensor() -> None:
     upper = torch.tensor([4.0, 4.0])
     constant = torch.tensor([6.0, -6.0])
 
-    relaxation = compute_constant_div_relaxation(lower, upper, constant=constant)
+    relaxation = compute_constant_div_relaxation(IntervalBounds(lower, upper), constant=constant)
     alpha_lower = relaxation.alpha_lower
     beta_lower = relaxation.beta_lower
     alpha_upper = relaxation.alpha_upper

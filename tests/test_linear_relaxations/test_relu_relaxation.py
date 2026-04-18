@@ -9,6 +9,7 @@ ReLU is piecewise linear: ReLU(x) = max(0, x).
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_relu_relaxation
 
 
@@ -56,7 +57,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([3.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -74,7 +75,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([-1.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -94,7 +95,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -108,7 +109,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([-5.0])
         upper = torch.tensor([5.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -122,7 +123,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([5.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -136,7 +137,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([-5.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -150,7 +151,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([2.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -166,7 +167,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([-2.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -182,7 +183,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([0.0])
         upper = torch.tensor([0.0])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -198,7 +199,7 @@ class TestReLURelaxationSoundness:
         lower = torch.tensor([[1.0, -3.0, -1.0], [-5.0, 0.0, 2.0]])
         upper = torch.tensor([[3.0, -1.0, 1.0], [1.0, 2.0, 2.0]])
 
-        relaxation = compute_relu_relaxation(lower, upper)
+        relaxation = compute_relu_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -226,12 +227,12 @@ class TestReLURelaxationAdaptive:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([3.0])
 
-        r = compute_relu_relaxation(lower, upper, adaptive=False)
+        r = compute_relu_relaxation(IntervalBounds(lower, upper), adaptive=False)
         alpha_l_std = r.alpha_lower
         beta_l_std = r.beta_lower
         alpha_u_std = r.alpha_upper
         beta_u_std = r.beta_upper
-        r = compute_relu_relaxation(lower, upper, adaptive=True)
+        r = compute_relu_relaxation(IntervalBounds(lower, upper), adaptive=True)
         alpha_l_adp = r.alpha_lower
         beta_l_adp = r.beta_lower
         alpha_u_adp = r.alpha_upper
@@ -256,12 +257,12 @@ class TestReLURelaxationAdaptive:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([1.0])
 
-        r = compute_relu_relaxation(lower, upper, adaptive=False)
+        r = compute_relu_relaxation(IntervalBounds(lower, upper), adaptive=False)
         alpha_l_std = r.alpha_lower
         beta_l_std = r.beta_lower
         alpha_u_std = r.alpha_upper
         beta_u_std = r.beta_upper
-        r = compute_relu_relaxation(lower, upper, adaptive=True)
+        r = compute_relu_relaxation(IntervalBounds(lower, upper), adaptive=True)
         alpha_l_adp = r.alpha_lower
         beta_l_adp = r.beta_lower
         alpha_u_adp = r.alpha_upper

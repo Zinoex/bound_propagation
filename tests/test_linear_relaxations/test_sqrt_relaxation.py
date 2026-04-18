@@ -7,6 +7,7 @@ linear relaxations produce valid upper and lower bounds.
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_sqrt_relaxation
 
 
@@ -63,7 +64,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.01])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -77,7 +78,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.1])
         upper = torch.tensor([4.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -91,7 +92,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([9.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -105,7 +106,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -119,7 +120,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([4.0])
         upper = torch.tensor([4.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -135,7 +136,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.25])
         upper = torch.tensor([16.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -149,7 +150,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([[0.01, 0.1, 1.0], [0.0, 4.0, 0.25]])
         upper = torch.tensor([[1.0, 4.0, 9.0], [1.0, 4.0, 16.0]])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -163,7 +164,7 @@ class TestSqrtRelaxationSoundness:
         lower = torch.tensor([0.0001, 1.0, 100.0])
         upper = torch.tensor([0.01, 100.0, 10000.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -181,7 +182,7 @@ class TestSqrtRelaxationInvalidInputs:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -198,7 +199,7 @@ class TestSqrtRelaxationInvalidInputs:
         lower = torch.tensor([-5.0])
         upper = torch.tensor([-1.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -215,7 +216,7 @@ class TestSqrtRelaxationInvalidInputs:
         lower = torch.tensor([0.1, -1.0, 1.0])
         upper = torch.tensor([1.0, 1.0, 4.0])
 
-        relaxation = compute_sqrt_relaxation(lower, upper)
+        relaxation = compute_sqrt_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper

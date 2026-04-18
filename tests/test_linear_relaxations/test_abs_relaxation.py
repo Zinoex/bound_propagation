@@ -9,6 +9,7 @@ Abs is piecewise linear: abs(x) = x for x >= 0, abs(x) = -x for x < 0.
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_abs_relaxation
 
 
@@ -56,7 +57,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([3.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -74,7 +75,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([-1.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -92,7 +93,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -106,7 +107,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([3.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -120,7 +121,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -134,7 +135,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([2.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -150,7 +151,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([-2.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -166,7 +167,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([0.0])
         upper = torch.tensor([0.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -182,7 +183,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([[1.0, -3.0, -2.0], [-1.0, -3.0, 0.0]])
         upper = torch.tensor([[3.0, -1.0, 2.0], [3.0, 1.0, 2.0]])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -206,7 +207,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([0.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -220,7 +221,7 @@ class TestAbsRelaxationSoundness:
         lower = torch.tensor([0.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_abs_relaxation(lower, upper)
+        relaxation = compute_abs_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper

@@ -9,6 +9,7 @@ Log is a concave function for x > 0.
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_log_relaxation
 
 
@@ -56,7 +57,7 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([0.1])
         upper = torch.tensor([0.5])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -70,7 +71,7 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([3.0])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -84,7 +85,7 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([0.5])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -98,7 +99,7 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([5.0])
         upper = torch.tensor([10.0])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -112,7 +113,7 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([2.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -128,7 +129,7 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([0.01])
         upper = torch.tensor([0.1])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -142,7 +143,7 @@ class TestLogRelaxationSoundness:
         lower = torch.tensor([[0.1, 1.0, 0.5], [5.0, 0.01, 2.0]])
         upper = torch.tensor([[0.5, 3.0, 2.0], [10.0, 0.1, 2.0]])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -170,7 +171,7 @@ class TestLogRelaxationInvalidInputs:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([0.5])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -187,7 +188,7 @@ class TestLogRelaxationInvalidInputs:
         lower = torch.tensor([0.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -204,7 +205,7 @@ class TestLogRelaxationInvalidInputs:
         lower = torch.tensor([[0.1, -1.0, 1.0], [0.0, 2.0, 0.5]])
         upper = torch.tensor([[0.5, 0.5, 3.0], [1.0, 5.0, 2.0]])
 
-        relaxation = compute_log_relaxation(lower, upper)
+        relaxation = compute_log_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper

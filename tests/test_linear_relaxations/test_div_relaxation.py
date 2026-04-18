@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.pairwise import compute_div_relaxation
 
 # ---------------------------------------------------------------------------
@@ -35,7 +36,7 @@ def _check_soundness(
       ``[lower_a, upper_a] × [lower_b, upper_b]`` and assert that
       ``z = a/b`` is enclosed by the linear relaxation.
     """
-    relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+    relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
     coeff_a_lower, coeff_b_lower = (relaxation.alpha_lower_a, relaxation.alpha_lower_b)
     coeff_a_upper, coeff_b_upper = (relaxation.alpha_upper_a, relaxation.alpha_upper_b)
     bias_lower = relaxation.bias_lower
@@ -147,7 +148,7 @@ class TestDivRelaxationRegimes:
         upper_a = torch.tensor([ua])
         lower_b = torch.tensor([lb])
         upper_b = torch.tensor([ub])
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         ca_l, cb_l = (relaxation.alpha_lower_a, relaxation.alpha_lower_b)
         ca_u, cb_u = (relaxation.alpha_upper_a, relaxation.alpha_upper_b)
         for tensor in [ca_l, cb_l, ca_u, cb_u, relaxation.bias_lower, relaxation.bias_upper]:
@@ -207,7 +208,7 @@ class TestDivRelaxationZeroWidth:
     def test_exact_point(self, a0: float, b0: float) -> None:
         lower_a = upper_a = torch.tensor([a0])
         lower_b = upper_b = torch.tensor([b0])
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         ca_l, cb_l = (relaxation.alpha_lower_a, relaxation.alpha_lower_b)
         ca_u, cb_u = (relaxation.alpha_upper_a, relaxation.alpha_upper_b)
 
@@ -237,7 +238,7 @@ class TestDivRelaxationDimensions:
         lower_b = torch.tensor([1.0, -4.0, 1.0, -4.0])
         upper_b = torch.tensor([4.0, -1.0, 4.0, -1.0])
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         assert relaxation.bias_lower.shape == (4,)
         _check_soundness(lower_a, upper_a, lower_b, upper_b)
 
@@ -248,7 +249,7 @@ class TestDivRelaxationDimensions:
         lower_b = torch.tensor([1.0, -1.0, -3.0])
         upper_b = torch.tensor([4.0, 2.0, -1.0])
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         assert relaxation.bias_lower.shape == (3,)
         assert torch.isneginf(relaxation.bias_lower[1])
         assert torch.isposinf(relaxation.bias_upper[1])
@@ -261,7 +262,7 @@ class TestDivRelaxationDimensions:
         lower_b = torch.tensor([[1.0, -4.0, 1.0], [1.0, -1.0, -4.0]])
         upper_b = torch.tensor([[4.0, -1.0, 4.0], [4.0, 2.0, -1.0]])
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         assert relaxation.bias_lower.shape == (2, 3)
         assert relaxation.bias_upper.shape == (2, 3)
         # Element [1, 1] has b crossing zero.
@@ -276,7 +277,7 @@ class TestDivRelaxationDimensions:
         lower_b = torch.tensor([[1.0, 1.0, 1.0], [-4.0, -4.0, -4.0]])
         upper_b = torch.tensor([[4.0, 4.0, 4.0], [-1.0, -1.0, -1.0]])
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         assert relaxation.bias_lower.shape == (2, 3)
         _check_soundness(lower_a, upper_a, lower_b, upper_b)
 
@@ -287,7 +288,7 @@ class TestDivRelaxationDimensions:
         lower_b = torch.ones(2, 2, 2)
         upper_b = 4.0 * torch.ones(2, 2, 2)
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         assert relaxation.bias_lower.shape == (2, 2, 2)
         _check_soundness(lower_a, upper_a, lower_b, upper_b)
 
@@ -298,7 +299,7 @@ class TestDivRelaxationDimensions:
         lower_b = torch.tensor([[[1.0, 1.0], [1.0, -4.0]], [[-4.0, -4.0], [1.0, 1.0]]])
         upper_b = torch.tensor([[[4.0, 4.0], [4.0, -1.0]], [[-1.0, -1.0], [4.0, 4.0]]])
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         assert relaxation.bias_lower.shape == (2, 2, 2)
         _check_soundness(lower_a, upper_a, lower_b, upper_b)
 
@@ -309,7 +310,7 @@ class TestDivRelaxationDimensions:
         lower_b = -4.0 * torch.ones(2, 2, 2, 2)
         upper_b = -1.0 * torch.ones(2, 2, 2, 2)
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
         assert relaxation.bias_lower.shape == (2, 2, 2, 2)
         _check_soundness(lower_a, upper_a, lower_b, upper_b)
 
@@ -320,7 +321,7 @@ class TestDivRelaxationDimensions:
         lower_b = torch.tensor([[1.0, 1.0], [-1.0, -2.0]])
         upper_b = torch.tensor([[4.0, 4.0], [2.0, -1.0]])
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = compute_div_relaxation(IntervalBounds(lower_a, upper_a), IntervalBounds(lower_b, upper_b))
 
         # Element [1, 0]: b crosses zero → ±inf
         assert torch.isneginf(relaxation.bias_lower[1, 0])

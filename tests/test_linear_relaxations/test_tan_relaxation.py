@@ -11,6 +11,7 @@ Tan has asymptotes at x = π/2 + nπ and alternates between convex and concave r
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_tan_relaxation
 
 
@@ -80,7 +81,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([-1.4])
         upper = torch.tensor([-0.5])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -94,7 +95,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([-0.1])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -108,7 +109,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([0.1])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -122,7 +123,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([0.5])
         upper = torch.tensor([1.4])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -136,7 +137,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([-0.5])
         upper = torch.tensor([0.5])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -150,7 +151,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -164,7 +165,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -184,7 +185,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([1.4])
         upper = torch.tensor([1.7])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -201,7 +202,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([-1.0])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -218,7 +219,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -235,7 +236,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([3.5])
         upper = torch.tensor([4.0])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -249,7 +250,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([0.5])
         upper = torch.tensor([0.5])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -265,7 +266,7 @@ class TestTanRelaxationSoundness:
         lower = torch.tensor([[-1.0, 0.1, -0.5], [0.5, 1.4, 3.5]])
         upper = torch.tensor([[-0.1, 1.0, 0.5], [1.4, 1.7, 4.0]])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -296,7 +297,7 @@ class TestTanRelaxationAsymptotes:
         lower = torch.tensor([1.5])
         upper = torch.tensor([1.65])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         beta_lower = relaxation.beta_lower
         beta_upper = relaxation.beta_upper
 
@@ -310,7 +311,7 @@ class TestTanRelaxationAsymptotes:
         lower = torch.tensor([1.0])
         upper = torch.tensor([1.5])
 
-        relaxation = compute_tan_relaxation(lower, upper)
+        relaxation = compute_tan_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper

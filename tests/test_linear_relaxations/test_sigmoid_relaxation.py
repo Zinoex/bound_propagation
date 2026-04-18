@@ -7,6 +7,7 @@ linear relaxations produce valid upper and lower bounds.
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_sigmoid_relaxation
 
 
@@ -63,7 +64,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-0.1])
         upper = torch.tensor([0.1])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -77,7 +78,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([0.01])
         upper = torch.tensor([5.0])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -91,7 +92,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-5.0])
         upper = torch.tensor([-0.01])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -105,7 +106,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -119,7 +120,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-0.5])
         upper = torch.tensor([3.0])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -133,7 +134,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([0.5])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -147,7 +148,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([3.0])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -161,7 +162,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-3.0])
         upper = torch.tensor([-1.0])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -175,7 +176,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -191,7 +192,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([[-3.0, -0.1, 1.0], [-5.0, 0.01, -3.0]])
         upper = torch.tensor([[-1.0, 0.1, 3.0], [-0.01, 5.0, -1.0]])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -205,7 +206,7 @@ class TestSigmoidRelaxationSoundness:
         lower = torch.tensor([-10.0, -1.0, 1.0])
         upper = torch.tensor([-5.0, 10.0, 10.0])
 
-        relaxation = compute_sigmoid_relaxation(lower, upper)
+        relaxation = compute_sigmoid_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -230,13 +231,13 @@ class TestSigmoidRelaxationSymmetry:
         lower_neg = torch.tensor([-x])
         upper_neg = torch.tensor([-0.1])
 
-        r = compute_sigmoid_relaxation(lower_pos, upper_pos)
+        r = compute_sigmoid_relaxation(IntervalBounds(lower_pos, upper_pos))
         alpha_lower_pos = r.alpha_lower
         beta_lower_pos = r.beta_lower
         alpha_upper_pos = r.alpha_upper
         beta_upper_pos = r.beta_upper
 
-        r = compute_sigmoid_relaxation(lower_neg, upper_neg)
+        r = compute_sigmoid_relaxation(IntervalBounds(lower_neg, upper_neg))
         alpha_lower_neg = r.alpha_lower
         beta_lower_neg = r.beta_lower
         alpha_upper_neg = r.alpha_upper

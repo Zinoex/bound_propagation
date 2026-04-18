@@ -9,6 +9,7 @@ Reciprocal is convex on (0, ∞) and convex on (-∞, 0), with a discontinuity a
 
 import torch
 
+from bound_propagation.bounds import IntervalBounds
 from bound_propagation.propagation.linear_relaxations.elementwise import compute_reciprocal_relaxation
 
 
@@ -71,7 +72,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([1.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -85,7 +86,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([5.0])
         upper = torch.tensor([10.0])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -99,7 +100,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([-1.0])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -113,7 +114,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([-10.0])
         upper = torch.tensor([-5.0])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -127,7 +128,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([-1.0])
         upper = torch.tensor([1.0])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -145,7 +146,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([2.0])
         upper = torch.tensor([2.0])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -161,7 +162,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([-2.0])
         upper = torch.tensor([-2.0])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -177,7 +178,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([[1.0, -2.0, 5.0], [-1.0, -10.0, 1.0]])
         upper = torch.tensor([[2.0, -1.0, 10.0], [1.0, -5.0, 2.0]])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -201,7 +202,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([0.01])
         upper = torch.tensor([0.1])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper
@@ -215,7 +216,7 @@ class TestReciprocalRelaxationSoundness:
         lower = torch.tensor([-0.1])
         upper = torch.tensor([-0.01])
 
-        relaxation = compute_reciprocal_relaxation(lower, upper)
+        relaxation = compute_reciprocal_relaxation(IntervalBounds(lower, upper))
         alpha_lower = relaxation.alpha_lower
         beta_lower = relaxation.beta_lower
         alpha_upper = relaxation.alpha_upper

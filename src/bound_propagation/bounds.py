@@ -13,7 +13,7 @@ from typing import Literal
 import torch
 from plum import dispatch
 
-from ..regions import AbstractRegion, HyperRectangle, SimpleRegion
+from .regions import AbstractRegion, HyperRectangle, SimpleRegion
 
 
 class AbstractBounds(ABC):
@@ -188,6 +188,11 @@ class IntervalBounds(AbstractBounds):
             lower=self._lower.to(device),
             upper=self._upper.to(device),
         )
+
+    def __iter__(self):
+        """Iterate over (lower, upper) to support tuple unpacking."""
+        yield self._lower
+        yield self._upper
 
     def __getitem__(self, item) -> IntervalBounds:
         """
