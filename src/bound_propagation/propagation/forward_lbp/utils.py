@@ -48,12 +48,14 @@ def create_identity_bounds(id: int, region: SimpleRegion, shape: tuple[int, ...]
     # Identity for (*batch_dims, *output_dims, *input_dims) where output_dims = input_dims = shape.
     # Region has shape (*batch_dims, *shape), so batch_ndim = len(region.shape) - len(shape).
     # identity[:, I, I] = 1 for any multi-dimensional index I, rest is zero.
+    # Rely on broadcasting to handle batch dimensions correctly.
+
     numel = math.prod(shape)
     n_batch = len(region.shape) - len(shape)
-    eye = torch.eye(numel, dtype=region.dtype, device=region.device)
-    identity = eye.reshape((1,) * n_batch + tuple(shape) + tuple(shape)).expand(*region.shape, *shape)
-
-    bias = torch.zeros(region.shape, dtype=region.dtype, device=region.device)
+    batch_ones = (1,) * n_batch
+    elem_shape = tuple(shape)
+    identity = torch.eye(numel, dtype=region.dtype, device=region.device).reshape(batch_ones + elem_shape + elem_shape)
+    bias = torch.zeros(batch_ones + tuple(shape), dtype=region.dtype, device=region.device)
 
     return LinearBounds(
         regions=[region],
