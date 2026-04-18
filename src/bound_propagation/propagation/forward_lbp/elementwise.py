@@ -121,8 +121,8 @@ class ForwardLBPAbs(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPAbs requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_abs_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_abs_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -144,8 +144,8 @@ class ForwardLBPClamp(ForwardLBPStrategy):
         min_val = args[1] if len(args) > 1 else kwargs.get("min")
         max_val = args[2] if len(args) > 2 else kwargs.get("max")
 
-        lower, upper = bounds.concretize()
-        params = compute_clamp_relaxation(lower, upper, min_val, max_val)
+        concrete_bounds = bounds.concretize()
+        params = compute_clamp_relaxation(concrete_bounds, min_val, max_val)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -164,8 +164,8 @@ class ForwardLBPCos(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPCos requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_cos_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_cos_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -184,8 +184,8 @@ class ForwardLBPExp(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPExp requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_exp_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_exp_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -204,8 +204,8 @@ class ForwardLBPLog(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPLog requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_log_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_log_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -224,8 +224,8 @@ class ForwardLBPReciprocal(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPReciprocal requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_reciprocal_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_reciprocal_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -244,8 +244,8 @@ class ForwardLBPRelu(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPRelu requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_relu_relaxation(lower, upper, adaptive=False)
+        concrete_bounds = bounds.concretize()
+        params = compute_relu_relaxation(concrete_bounds, adaptive=False)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -264,8 +264,8 @@ class ForwardLBPSigmoid(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPSigmoid requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_sigmoid_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_sigmoid_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -284,8 +284,8 @@ class ForwardLBPSin(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPSin requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_sin_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_sin_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -304,8 +304,8 @@ class ForwardLBPSqrt(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPSqrt requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_sqrt_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_sqrt_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -324,8 +324,8 @@ class ForwardLBPTan(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPTan requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_tan_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_tan_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -344,7 +344,7 @@ class ForwardLBPTanh(ForwardLBPStrategy):
         if not isinstance(bounds, LinearBounds):
             raise TypeError("ForwardLBPTanh requires input to be LinearBounds")
 
-        lower, upper = bounds.concretize()
-        params = compute_tanh_relaxation(lower, upper)
+        concrete_bounds = bounds.concretize()
+        params = compute_tanh_relaxation(concrete_bounds)
         relaxation = ElementwiseForwardLinearRelaxation(params=params)
         return relaxation.forward(bounds)

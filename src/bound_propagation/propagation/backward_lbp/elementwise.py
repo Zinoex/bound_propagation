@@ -7,12 +7,14 @@ a symbolic node via ``symbolic_forward``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch.fx as fx
+from beartype.typing import final
 
-from ..linear_relaxations.base import SymbolicLinearRelaxation
 from ..linear_relaxations.elementwise import (
+    ElementwiseParams,
     compute_abs_relaxation,
     compute_clamp_relaxation,
     compute_cos_relaxation,
@@ -26,7 +28,7 @@ from ..linear_relaxations.elementwise import (
     compute_tan_relaxation,
     compute_tanh_relaxation,
 )
-from .base import BackwardLBPStrategy, concretize_symbolic
+from .base import BackwardLBPStrategy, BackwardLinearRelaxation, concretize_symbolic
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -34,10 +36,10 @@ if TYPE_CHECKING:
 
 @final
 @dataclass
-class SymbolicElementwiseLinearRelaxation(SymbolicLinearRelaxation):
-    concrete_relaxation: ElementwiseLinearRelaxation
+class ElementwiseBackwardLinearRelaxation(BackwardLinearRelaxation):
+    params: ElementwiseParams
 
-    input: SymbolicLinearRelaxation
+    input: BackwardLinearRelaxation
 
     def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
         r = self.concrete_relaxation

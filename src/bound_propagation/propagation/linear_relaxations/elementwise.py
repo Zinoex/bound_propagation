@@ -6,6 +6,8 @@ from typing import final, overload
 
 import torch
 
+from ...bounds import IntervalBounds
+
 
 @final
 @dataclass
@@ -35,8 +37,7 @@ class ElementwiseParams:
 
 
 def compute_abs_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -47,27 +48,26 @@ def compute_abs_relaxation(
     - For x < 0: abs(x) = -x
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
-    all_positive = (lower >= 0) & ~zero_width
-    all_negative = (upper <= 0) & ~zero_width
-    crosses_zero = (lower < 0) & (upper > 0) & ~zero_width
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
+    all_positive = (bounds.lower >= 0) & ~zero_width
+    all_negative = (bounds.upper <= 0) & ~zero_width
+    crosses_zero = (bounds.lower < 0) & (bounds.upper > 0) & ~zero_width
 
     # Zero-width case: use the value itself
-    lower_act = torch.abs(lower[zero_width])
-    upper_act = torch.abs(upper[zero_width])
+    lower_act = torch.abs(bounds.lower[zero_width])
+    upper_act = torch.abs(bounds.upper[zero_width])
     beta_lower[zero_width] = torch.min(lower_act, upper_act)
     beta_upper[zero_width] = torch.max(lower_act, upper_act)
 
@@ -81,7 +81,7 @@ def compute_abs_relaxation(
 
     # Crosses zero
     # Upper bound: line connecting (lower, abs(lower)) and (upper, abs(upper))
-    lower, upper = lower[crosses_zero], upper[crosses_zero]
+    lower, upper = bounds.lower[crosses_zero], bounds.upper[crosses_zero]
 
     lower_act = torch.abs(lower)
     upper_act = torch.abs(upper)
@@ -104,8 +104,7 @@ def compute_abs_relaxation(
 
 @overload
 def compute_clamp_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     min_val: float | None,
     max_val: float | None,
     zero_threshold: float = 1e-8,
@@ -114,8 +113,7 @@ def compute_clamp_relaxation(
 
 @overload
 def compute_clamp_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     min_val: torch.Tensor | None,
     max_val: torch.Tensor | None,
     zero_threshold: float = 1e-8,
@@ -123,8 +121,7 @@ def compute_clamp_relaxation(
 
 
 def compute_clamp_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     min_val: float | torch.Tensor | None = None,
     max_val: float | torch.Tensor | None = None,
     zero_threshold: float = 1e-8,
@@ -135,8 +132,7 @@ def compute_clamp_relaxation(
     clamp(x, min, max) = min(max(x, min), max)
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds
         min_val: Minimum clamp value (default: -inf)
         max_val: Maximum clamp value (default: +inf)
         zero_threshold: Threshold to treat bounds as zero-width
@@ -148,37 +144,37 @@ def compute_clamp_relaxation(
     # TODO: assert the overload inputs
 
     if max_val is None:
-        lower_clamped = torch.clamp(lower, min=min_val)
-        upper_clamped = torch.clamp(upper, min=min_val)
+        lower_clamped = torch.clamp(bounds.lower, min=min_val)
+        upper_clamped = torch.clamp(bounds.upper, min=min_val)
         max_val = float("inf")
     elif min_val is None:
-        lower_clamped = torch.clamp(lower, max=max_val)
-        upper_clamped = torch.clamp(upper, max=max_val)
+        lower_clamped = torch.clamp(bounds.lower, max=max_val)
+        upper_clamped = torch.clamp(bounds.upper, max=max_val)
         min_val = float("-inf")
     elif isinstance(min_val, torch.Tensor) and not isinstance(max_val, torch.Tensor):
         raise ValueError("If min_val is a tensor, max_val must be None or a tensor")
     elif isinstance(max_val, torch.Tensor) and not isinstance(min_val, torch.Tensor):
         raise ValueError("If max_val is a tensor, min_val must be None or a tensor")
     else:
-        lower_clamped = torch.clamp(lower, min=min_val, max=max_val)  # ty:ignore[no-matching-overload]
-        upper_clamped = torch.clamp(upper, min=min_val, max=max_val)  # ty:ignore[no-matching-overload]
+        lower_clamped = torch.clamp(bounds.lower, min=min_val, max=max_val)  # ty:ignore[no-matching-overload]
+        upper_clamped = torch.clamp(bounds.upper, min=min_val, max=max_val)  # ty:ignore[no-matching-overload]
 
     assert min_val is not None and max_val is not None
 
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
     not_zero_width = ~zero_width
-    below_min = (upper <= min_val) & not_zero_width
-    above_max = (lower >= max_val) & not_zero_width
-    in_range = (lower >= min_val) & (upper <= max_val) & not_zero_width
-    crosses_min = (lower < min_val) & (upper > min_val) & (upper <= max_val) & not_zero_width
-    crosses_max = (lower >= min_val) & (lower < max_val) & (upper > max_val) & not_zero_width
-    crosses_both = (lower < min_val) & (upper > max_val) & not_zero_width
+    below_min = (bounds.upper <= min_val) & not_zero_width
+    above_max = (bounds.lower >= max_val) & not_zero_width
+    in_range = (bounds.lower >= min_val) & (bounds.upper <= max_val) & not_zero_width
+    crosses_min = (bounds.lower < min_val) & (bounds.upper > min_val) & (bounds.upper <= max_val) & not_zero_width
+    crosses_max = (bounds.lower >= min_val) & (bounds.lower < max_val) & (bounds.upper > max_val) & not_zero_width
+    crosses_both = (bounds.lower < min_val) & (bounds.upper > max_val) & not_zero_width
 
     # Zero-width case: use beta_lower = clamp(lower) and beta_upper = clamp(upper)
     beta_lower[zero_width] = lower_clamped[zero_width]
@@ -236,8 +232,7 @@ def compute_clamp_relaxation(
 
 
 def compute_cos_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -252,39 +247,31 @@ def compute_cos_relaxation(
     For concave regions: secant is lower bound, tangent is upper bound
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds
         zero_threshold: Threshold for considering an interval as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Handle zero-width case
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
 
-    lower_act, upper_act = torch.cos(lower[zero_width]), torch.cos(upper[zero_width])
+    lower_act, upper_act = torch.cos(bounds.lower[zero_width]), torch.cos(bounds.upper[zero_width])
     alpha_lower[zero_width] = 0
     beta_lower[zero_width] = torch.min(lower_act, upper_act)
     alpha_upper[zero_width] = 0
     beta_upper[zero_width] = torch.max(lower_act, upper_act)
 
     non_zero = ~zero_width
-    if not torch.any(non_zero):
-        return ElementwiseParams(
-            alpha_lower=alpha_lower,
-            beta_lower=beta_lower,
-            alpha_upper=alpha_upper,
-            beta_upper=beta_upper,
-        )
 
     # Work with non-zero width intervals
-    lower_nz = lower[non_zero]
-    upper_nz = upper[non_zero]
+    lower_nz = bounds.lower[non_zero]
+    upper_nz = bounds.upper[non_zero]
 
     # Compute cos values and derivatives at endpoints
     cos_lower = torch.cos(lower_nz)
@@ -420,7 +407,7 @@ def compute_cos_relaxation(
     alpha_nz_lower = torch.where(max_not_captured, 0, alpha_nz_lower)
     beta_nz_lower = torch.where(max_not_captured, torch.minimum(cos_lower, cos_upper), beta_nz_lower)
     alpha_nz_upper = torch.where(max_not_captured, 0, alpha_nz_upper)
-    beta_nz_upper = torch.where(max_not_captured, torch.ones_like(beta_nz_upper), beta_nz_upper)
+    beta_nz_upper = torch.where(max_not_captured, 1, beta_nz_upper)
 
     # When has minimum (and not maximum), lower bound should be <= -1
     # For intervals with minimum, tangent lines often extend below -1, so use constant bounds
@@ -429,7 +416,7 @@ def compute_cos_relaxation(
     # For simplicity and correctness, use constant bounds when crossing minimum
     # A more sophisticated approach could use piecewise linear approximation
     alpha_nz_lower = torch.where(only_min, 0, alpha_nz_lower)
-    beta_nz_lower = torch.where(only_min, torch.full_like(beta_nz_lower, -1.0), beta_nz_lower)
+    beta_nz_lower = torch.where(only_min, -1, beta_nz_lower)
     alpha_nz_upper = torch.where(only_min, 0, alpha_nz_upper)
     beta_nz_upper = torch.where(only_min, torch.maximum(cos_lower, cos_upper), beta_nz_upper)
 
@@ -462,7 +449,7 @@ def compute_cos_relaxation(
     )
 
 
-def compute_exp_relaxation(lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8) -> ElementwiseParams:
+def compute_exp_relaxation(bounds: IntervalBounds, zero_threshold: float = 1e-8) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for exp linear relaxation.
 
@@ -470,27 +457,26 @@ def compute_exp_relaxation(lower: torch.Tensor, upper: torch.Tensor, zero_thresh
     and the secant line between (lower, exp(lower)) and (upper, exp(upper)) for the upper bound relaxation.
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
-    midpoint = (lower + upper) / 2
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
+    midpoint = (bounds.lower + bounds.upper) / 2
 
-    exp_lower = torch.exp(lower)
-    exp_upper = torch.exp(upper)
+    exp_lower = torch.exp(bounds.lower)
+    exp_upper = torch.exp(bounds.upper)
     exp_mid = torch.exp(midpoint)
 
     alpha_lower = torch.where(zero_width, 0, exp_mid)
     beta_lower = torch.where(zero_width, exp_lower, exp_mid - alpha_lower * midpoint)
 
-    slope = (exp_upper - exp_lower) / (upper - lower)
+    slope = (exp_upper - exp_lower) / (bounds.upper - bounds.lower)
 
     alpha_upper = torch.where(zero_width, 0, slope)
-    beta_upper = torch.where(zero_width, exp_upper, exp_lower - slope * lower)
+    beta_upper = torch.where(zero_width, exp_upper, exp_lower - slope * bounds.lower)
 
     return ElementwiseParams(
         alpha_lower=alpha_lower,
@@ -501,8 +487,7 @@ def compute_exp_relaxation(lower: torch.Tensor, upper: torch.Tensor, zero_thresh
 
 
 def compute_log_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -512,29 +497,28 @@ def compute_log_relaxation(
     and the lower bound is the secant line connecting (lower, log(lower)) and (upper, log(upper)).
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation (should be > 0 for log to be defined)
+        bounds: IntervalBounds object containing lower and upper bounds
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    log_lower = torch.log(lower)
-    log_upper = torch.log(upper)
+    log_lower = torch.log(bounds.lower)
+    log_upper = torch.log(bounds.upper)
 
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
-    slope = (log_upper - log_lower) / (upper - lower)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
+    slope = (log_upper - log_lower) / (bounds.upper - bounds.lower)
 
     alpha_lower = torch.where(zero_width, 0, slope)
-    beta_lower = torch.where(zero_width, log_lower, log_lower - slope * lower)
+    beta_lower = torch.where(zero_width, log_lower, log_lower - slope * bounds.lower)
 
-    midpoint = (lower + upper) / 2
+    midpoint = (bounds.lower + bounds.upper) / 2
 
     alpha_upper = torch.where(zero_width, 0, 1 / midpoint)
     beta_upper = torch.where(zero_width, log_upper, torch.log(midpoint) - alpha_upper * midpoint)
 
     # Invalid regime: log is undefined for non-positive inputs, so we can set those bounds to nan
-    invalid = lower <= 0
+    invalid = bounds.lower <= 0
     alpha_lower[invalid] = float("nan")
     beta_lower[invalid] = float("nan")
     alpha_upper[invalid] = float("nan")
@@ -548,9 +532,7 @@ def compute_log_relaxation(
     )
 
 
-def compute_reciprocal_relaxation(
-    lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8
-) -> ElementwiseParams:
+def compute_reciprocal_relaxation(bounds: IntervalBounds, zero_threshold: float = 1e-8) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for reciprocal (1/x) linear relaxation.
 
@@ -559,28 +541,27 @@ def compute_reciprocal_relaxation(
     - When interval crosses zero: handle specially (may need to use safe bounds)
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
-    crosses_zero = (lower < 0) & (upper > 0)
-    all_positive = lower > 0
-    all_negative = upper < 0
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
+    crosses_zero = (bounds.lower < 0) & (bounds.upper > 0)
+    all_positive = bounds.lower > 0
+    all_negative = bounds.upper < 0
 
     # Compute reciprocal values (avoid division by zero)
     eps = 1e-8
-    lower_safe = torch.where(torch.abs(lower) < eps, eps * torch.sign(lower + eps), lower)
-    upper_safe = torch.where(torch.abs(upper) < eps, eps * torch.sign(upper + eps), upper)
+    lower_safe = torch.where(torch.abs(bounds.lower) < eps, eps * torch.sign(bounds.lower + eps), bounds.lower)
+    upper_safe = torch.where(torch.abs(bounds.upper) < eps, eps * torch.sign(bounds.upper + eps), bounds.upper)
 
     lower_act = 1.0 / lower_safe
     upper_act = 1.0 / upper_safe
@@ -594,14 +575,16 @@ def compute_reciprocal_relaxation(
     reciprocal_derivative(upper_safe)
 
     # Midpoint for tangent line
-    d = (lower + upper) * 0.5
+    d = (bounds.lower + bounds.upper) * 0.5
     d_safe = torch.where(torch.abs(d) < eps, eps * torch.sign(d + eps), d)
     d_act = 1.0 / d_safe
     d_prime = reciprocal_derivative(d_safe)
 
     # Slope of secant line
     slope = torch.where(
-        zero_width, torch.zeros_like(lower), (upper_act - lower_act) / torch.clamp(upper - lower, min=eps)
+        zero_width,
+        torch.zeros_like(bounds.lower),
+        (upper_act - lower_act) / torch.clamp(bounds.upper - bounds.lower, min=eps),
     )
 
     # Case 1: Zero-width intervals
@@ -643,9 +626,8 @@ def compute_reciprocal_relaxation(
 
 
 def compute_constant_div_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
-    constant: object,
+    bounds: IntervalBounds,
+    constant: torch.Tensor | torch.types.Number,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """Compute linear-relaxation parameters for constant-over-bounds division ``constant / x``.
@@ -657,38 +639,31 @@ def compute_constant_div_relaxation(
     - For intervals crossing zero, returns ``(-inf, inf)`` bounds element-wise.
 
     Args:
-        lower: Lower bounds of denominator ``x``.
-        upper: Upper bounds of denominator ``x``.
+        bounds: IntervalBounds object containing lower and upper bounds of the denominator.
         constant: Numerator constant (scalar or tensor broadcastable to ``lower``).
         zero_threshold: Threshold used by reciprocal relaxation for zero-width handling.
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters.
     """
-    if not isinstance(lower, torch.Tensor):
-        raise TypeError(f"lower must be a torch.Tensor, got {type(lower)!r}")
-    if not isinstance(upper, torch.Tensor):
-        raise TypeError(f"upper must be a torch.Tensor, got {type(upper)!r}")
-    if lower.shape != upper.shape:
-        raise ValueError(f"lower and upper must have the same shape, got {lower.shape} and {upper.shape}")
     if zero_threshold < 0:
         raise ValueError(f"zero_threshold must be non-negative, got {zero_threshold}")
 
-    constant_tensor = torch.as_tensor(constant, dtype=lower.dtype, device=lower.device)
+    constant_tensor = torch.as_tensor(constant, dtype=bounds.lower.dtype, device=bounds.lower.device)
     try:
-        constant_tensor = torch.broadcast_to(constant_tensor, lower.shape)
+        constant_tensor = torch.broadcast_to(constant_tensor, bounds.lower.shape)
     except RuntimeError as error:
         constant_shape = tuple(constant_tensor.shape)
         raise ValueError(
-            f"constant must be broadcastable to denominator bounds shape {lower.shape}, "
+            f"constant must be broadcastable to denominator bounds shape {bounds.lower.shape}, "
             f"got constant shape {constant_shape}"
         ) from error
 
-    recip = compute_reciprocal_relaxation(lower, upper, zero_threshold=zero_threshold)
+    recip = compute_reciprocal_relaxation(bounds, zero_threshold=zero_threshold)
 
     positive_constant = constant_tensor > 0
     zero_constant = constant_tensor == 0
-    crosses_zero = (lower < 0) & (upper > 0)
+    crosses_zero = (bounds.lower < 0) & (bounds.upper > 0)
 
     # Multiplication by a negative constant flips lower/upper inequalities.
     alpha_lower = constant_tensor * torch.where(positive_constant, recip.alpha_lower, recip.alpha_upper)
@@ -718,8 +693,7 @@ def compute_constant_div_relaxation(
 
 
 def compute_relu_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     adaptive: bool = False,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
@@ -727,28 +701,27 @@ def compute_relu_relaxation(
     Compute alpha/beta parameters for ReLU linear relaxation.
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
         adaptive: Whether to use adaptive ReLU relaxation
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
     # negative = (~zero_width) & (upper <= 0)
-    positive = (~zero_width) & (lower >= 0)
-    crossing = (~zero_width) & (lower < 0) & (upper > 0)
+    positive = (~zero_width) & (bounds.lower >= 0)
+    crossing = (~zero_width) & (bounds.lower < 0) & (bounds.upper > 0)
 
     # Zero-width: use the value itself
-    beta_lower[zero_width] = torch.relu(lower[zero_width])
-    beta_upper[zero_width] = torch.relu(upper[zero_width])
+    beta_lower[zero_width] = torch.relu(bounds.lower[zero_width])
+    beta_upper[zero_width] = torch.relu(bounds.upper[zero_width])
 
     # Negative regime: output is always 0
 
@@ -757,14 +730,14 @@ def compute_relu_relaxation(
     alpha_upper[positive] = 1
 
     # Crossing regime: use linear relaxation
-    l_cross = lower[crossing]
-    u_cross = upper[crossing]
+    l_cross = bounds.lower[crossing]
+    u_cross = bounds.upper[crossing]
 
     z = u_cross / (u_cross - l_cross)
 
     if adaptive:
         # Adaptive: choose slope based on which bound is tighter
-        a = (u_cross >= torch.abs(l_cross)).to(lower.dtype)
+        a = (u_cross >= torch.abs(l_cross)).to(bounds.lower.dtype)
     else:
         a = z
 
@@ -782,8 +755,7 @@ def compute_relu_relaxation(
 
 
 def compute_sigmoid_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -798,36 +770,35 @@ def compute_sigmoid_relaxation(
     This ensures sound bounds while preferring simpler secant when valid.
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
 
     # Compute sigmoid and derivative
-    lower_act = torch.sigmoid(lower)
-    upper_act = torch.sigmoid(upper)
+    lower_act = torch.sigmoid(bounds.lower)
+    upper_act = torch.sigmoid(bounds.upper)
 
     def sigmoid_derivative(x):
         s = torch.sigmoid(x)
         return s * (1 - s)
 
     # Midpoint for tangent line
-    d = (lower + upper) * 0.5
+    d = (bounds.lower + bounds.upper) * 0.5
     d_act = torch.sigmoid(d)
     d_prime = sigmoid_derivative(d)
 
     # Slope of secant line
-    slope = torch.where(zero_width, torch.zeros_like(lower), (upper_act - lower_act) / (upper - lower))
+    slope = torch.where(zero_width, 0, (upper_act - lower_act) / (bounds.upper - bounds.lower))
 
     # Zero-width case: use the value itself
     beta_lower[zero_width] = lower_act[zero_width]
@@ -837,14 +808,14 @@ def compute_sigmoid_relaxation(
     non_zero = ~zero_width
 
     # Determine negative/positive regimes
-    negative = non_zero & (upper <= 0)
-    positive = non_zero & (lower >= 0)
-    crossing = non_zero & (lower < 0) & (upper > 0)
+    negative = non_zero & (bounds.upper <= 0)
+    positive = non_zero & (bounds.lower >= 0)
+    crossing = non_zero & (bounds.lower < 0) & (bounds.upper > 0)
 
     # Negative regime
     # Upper: secant line between lower and upper
     alpha_upper[negative] = slope[negative]
-    beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
+    beta_upper[negative] = upper_act[negative] - slope[negative] * bounds.upper[negative]
 
     # Lower: tangent line at midpoint
     alpha_lower[negative] = d_prime[negative]
@@ -857,11 +828,11 @@ def compute_sigmoid_relaxation(
 
     # Lower: secant line
     alpha_lower[positive] = slope[positive]
-    beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
+    beta_lower[positive] = lower_act[positive] - slope[positive] * bounds.lower[positive]
 
     # Crossing regime (contains both negative and positive)
-    lower_prime = sigmoid_derivative(lower)
-    upper_prime = sigmoid_derivative(upper)
+    lower_prime = sigmoid_derivative(bounds.lower)
+    upper_prime = sigmoid_derivative(bounds.upper)
 
     # Upper bound strategy:
     # Check if sigmoid'(upper) >= secant slope
@@ -873,8 +844,8 @@ def compute_sigmoid_relaxation(
     alpha_upper[crossing] = torch.where(use_secant_upper, slope[crossing], upper_prime[crossing])
     beta_upper[crossing] = torch.where(
         use_secant_upper,
-        upper_act[crossing] - slope[crossing] * upper[crossing],
-        upper_act[crossing] - upper_prime[crossing] * upper[crossing],
+        upper_act[crossing] - slope[crossing] * bounds.upper[crossing],
+        upper_act[crossing] - upper_prime[crossing] * bounds.upper[crossing],
     )
 
     # Lower bound strategy:
@@ -886,8 +857,8 @@ def compute_sigmoid_relaxation(
     alpha_lower[crossing] = torch.where(use_secant_lower, slope[crossing], lower_prime[crossing])
     beta_lower[crossing] = torch.where(
         use_secant_lower,
-        lower_act[crossing] - slope[crossing] * lower[crossing],
-        lower_act[crossing] - lower_prime[crossing] * lower[crossing],
+        lower_act[crossing] - slope[crossing] * bounds.lower[crossing],
+        lower_act[crossing] - lower_prime[crossing] * bounds.lower[crossing],
     )
 
     return ElementwiseParams(
@@ -899,8 +870,7 @@ def compute_sigmoid_relaxation(
 
 
 def compute_sin_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -915,39 +885,31 @@ def compute_sin_relaxation(
     For concave regions: secant is lower bound, tangent is upper bound
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds
         zero_threshold: Threshold for considering an interval as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Handle zero-width case
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
 
-    lower_act, upper_act = torch.sin(lower[zero_width]), torch.sin(upper[zero_width])
+    lower_act, upper_act = torch.sin(bounds.lower[zero_width]), torch.sin(bounds.upper[zero_width])
     alpha_lower[zero_width] = 0
     beta_lower[zero_width] = torch.min(lower_act, upper_act)
     alpha_upper[zero_width] = 0
     beta_upper[zero_width] = torch.max(lower_act, upper_act)
 
     non_zero = ~zero_width
-    if not torch.any(non_zero):
-        return ElementwiseParams(
-            alpha_lower=alpha_lower,
-            beta_lower=beta_lower,
-            alpha_upper=alpha_upper,
-            beta_upper=beta_upper,
-        )
 
     # Work with non-zero width intervals
-    lower_nz = lower[non_zero]
-    upper_nz = upper[non_zero]
+    lower_nz = bounds.lower[non_zero]
+    upper_nz = bounds.upper[non_zero]
 
     # Compute sin values and derivatives at endpoints
     sin_lower = torch.sin(lower_nz)
@@ -1126,8 +1088,7 @@ def compute_sin_relaxation(
 
 
 def compute_sqrt_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -1138,24 +1099,23 @@ def compute_sqrt_relaxation(
     - Upper bound: tangent line at midpoint
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseParams encapsulating the relaxation parameters
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
 
     # Compute sqrt values
-    lower_act = torch.sqrt(lower)
-    upper_act = torch.sqrt(upper)
+    lower_act = torch.sqrt(bounds.lower)
+    upper_act = torch.sqrt(bounds.upper)
 
     def sqrt_derivative(x):
         # d/dx sqrt(x) = 1/(2*sqrt(x))
@@ -1163,12 +1123,12 @@ def compute_sqrt_relaxation(
         return torch.where(x > 0, 1.0 / (2.0 * torch.sqrt(x)), 0)
 
     # Midpoint for tangent line
-    midpoint = (lower + upper) * 0.5
+    midpoint = (bounds.lower + bounds.upper) * 0.5
     midpoint_act = torch.sqrt(midpoint)
     midpoint_prime = sqrt_derivative(midpoint)
 
     # Slope of secant line
-    slope = (upper_act - lower_act) / (upper - lower)
+    slope = (upper_act - lower_act) / (bounds.upper - bounds.lower)
 
     # Zero-width case: use the value itself
     beta_lower[zero_width] = lower_act[zero_width]
@@ -1183,14 +1143,14 @@ def compute_sqrt_relaxation(
 
     # Lower bound: secant line
     alpha_lower[non_zero] = slope[non_zero]
-    beta_lower[non_zero] = lower_act[non_zero] - slope[non_zero] * lower[non_zero]
+    beta_lower[non_zero] = lower_act[non_zero] - slope[non_zero] * bounds.lower[non_zero]
 
     # Upper bound: tangent at midpoint
     alpha_upper[non_zero] = midpoint_prime[non_zero]
     beta_upper[non_zero] = midpoint_act[non_zero] - midpoint_prime[non_zero] * midpoint[non_zero]
 
     # Invalid regime: sqrt is undefined for negative inputs
-    invalid = lower < 0
+    invalid = bounds.lower < 0
     alpha_lower[invalid] = float("nan")
     beta_lower[invalid] = float("nan")
     alpha_upper[invalid] = float("nan")
@@ -1205,8 +1165,7 @@ def compute_sqrt_relaxation(
 
 
 def compute_tan_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -1217,20 +1176,19 @@ def compute_tan_relaxation(
     - In (0, π/2): tan is convex (tan'' > 0)
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
         zero_threshold: Threshold for zero-width intervals
 
     Returns:
         ElementwiseLinearRelaxation encapsulating the relaxation
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
 
     # Check for asymptote crossings: tan has asymptotes at x = π/2 + nπ
     # This happens when cos(x) = 0, which is at x = ±π/2, ±3π/2, ±5π/2, ...
@@ -1245,8 +1203,8 @@ def compute_tan_relaxation(
     # Compute which asymptote index (n) the lower and upper bounds are near
     # lower_n = floor((lower - π/2) / π) gives the index of the asymptote at or below lower
     # If lower_n != upper_n, we cross an asymptote
-    lower_asymptote_idx = torch.floor((lower - half_pi) / math.pi)
-    upper_asymptote_idx = torch.floor((upper - half_pi) / math.pi)
+    lower_asymptote_idx = torch.floor((bounds.lower - half_pi) / math.pi)
+    upper_asymptote_idx = torch.floor((bounds.upper - half_pi) / math.pi)
 
     crosses_asymptote = lower_asymptote_idx != upper_asymptote_idx
 
@@ -1258,19 +1216,19 @@ def compute_tan_relaxation(
 
     # Compute tan values for non-asymptote-crossing intervals
     valid = ~crosses_asymptote & ~zero_width
-    lower_act = torch.tan(lower)
-    upper_act = torch.tan(upper)
+    lower_act = torch.tan(bounds.lower)
+    upper_act = torch.tan(bounds.upper)
 
     def tan_derivative(x):
         # d/dx tan(x) = sec^2(x) = 1/cos^2(x)
         cos_x = torch.cos(x)
         return 1.0 / (cos_x * cos_x + 1e-8)
 
-    lower_prime = tan_derivative(lower)
-    upper_prime = tan_derivative(upper)
+    lower_prime = tan_derivative(bounds.lower)
+    upper_prime = tan_derivative(bounds.upper)
 
     # Slope of secant line
-    slope = (upper_act - lower_act) / torch.clamp(upper - lower, min=1e-8)
+    slope = (upper_act - lower_act) / torch.clamp(bounds.upper - bounds.lower, min=1e-8)
 
     # Zero-width case: use the value itself; if it also crosses an asymptote, we already set to inf above
     beta_lower[zero_width & ~crosses_asymptote] = lower_act[zero_width & ~crosses_asymptote]
@@ -1278,66 +1236,62 @@ def compute_tan_relaxation(
 
     # Determine convexity: tan is convex when tan(x) > 0, concave when tan(x) < 0
     # Equivalently: convex when x ∈ (nπ, nπ + π/2), concave when x ∈ (nπ - π/2, nπ)
-    # We can check this by looking at sin(x): tan is convex when sin(lower) and sin(upper) > 0
+    # We can check this by looking at sin(x): tan is convex when sin(bounds.lower) and sin(bounds.upper) > 0
     # Actually simpler: tan is convex when tan(midpoint) > 0, concave when < 0
-    midpoint = (lower + upper) * 0.5
+    midpoint = (bounds.lower + bounds.upper) * 0.5
     midpoint_tan = torch.tan(midpoint)
 
     # But we need to handle crossing zero (inflection point) specially
-    crosses_zero = (lower < 0) & (upper > 0) & valid
+    crosses_zero = (bounds.lower < 0) & (bounds.upper > 0) & valid
 
     # Convex regime: tan > 0 (e.g., x ∈ (0, π/2))
     # Use secant for upper bound, tangent for lower bound
     convex = (midpoint_tan > zero_threshold) & valid & ~crosses_zero
 
+    alpha_upper[convex] = slope[convex]
+    beta_upper[convex] = upper_act[convex] - slope[convex] * bounds.upper[convex]
+
+    alpha_lower[convex] = lower_prime[convex]
+    beta_lower[convex] = lower_act[convex] - lower_prime[convex] * bounds.lower[convex]
+
     # Concave regime: tan < 0 (e.g., x ∈ (-π/2, 0))
     # Use tangent for upper bound, secant for lower bound
     concave = (midpoint_tan < -zero_threshold) & valid & ~crosses_zero
 
-    # Handle convex regime
-    if convex.any():
-        alpha_upper[convex] = slope[convex]
-        beta_upper[convex] = upper_act[convex] - slope[convex] * upper[convex]
+    alpha_upper[concave] = upper_prime[concave]
+    beta_upper[concave] = upper_act[concave] - upper_prime[concave] * bounds.upper[concave]
 
-        alpha_lower[convex] = lower_prime[convex]
-        beta_lower[convex] = lower_act[convex] - lower_prime[convex] * lower[convex]
-
-    # Handle concave regime
-    if concave.any():
-        alpha_upper[concave] = upper_prime[concave]
-        beta_upper[concave] = upper_act[concave] - upper_prime[concave] * upper[concave]
-
-        alpha_lower[concave] = slope[concave]
-        beta_lower[concave] = lower_act[concave] - slope[concave] * lower[concave]
+    alpha_lower[concave] = slope[concave]
+    beta_lower[concave] = lower_act[concave] - slope[concave] * bounds.lower[concave]
 
     # Handle crossing zero (inflection point)
     # tan is concave left, convex right (opposite of sigmoid!)
     # For this type of S-curve, neither secant nor endpoint tangents work perfectly.
     # Solution: Use tangent slope at inflection point (x=0, slope=1) but adjust
     # intercepts to ensure the lines pass through or beyond the endpoints.
-    if crosses_zero.any():
-        # tan'(0) = 1
-        inflection_slope = torch.ones_like(lower[crosses_zero])
 
-        # For lower bound: y = 1*x + β_lower
-        # Need: 1*lower + β_lower <= tan(lower) AND 1*upper + β_lower <= tan(upper)
-        # => β_lower <= tan(lower) - lower AND β_lower <= tan(upper) - upper
-        beta_lower_from_lower = lower_act[crosses_zero] - inflection_slope * lower[crosses_zero]
-        beta_lower_from_upper = upper_act[crosses_zero] - inflection_slope * upper[crosses_zero]
-        beta_lower_val = torch.minimum(beta_lower_from_lower, beta_lower_from_upper)
+    # tan'(0) = 1
+    inflection_slope = 1.0
 
-        # For upper bound: y = 1*x + β_upper
-        # Need: 1*lower + β_upper >= tan(lower) AND 1*upper + β_upper >= tan(upper)
-        # => β_upper >= tan(lower) - lower AND β_upper >= tan(upper) - upper
-        beta_upper_from_lower = lower_act[crosses_zero] - inflection_slope * lower[crosses_zero]
-        beta_upper_from_upper = upper_act[crosses_zero] - inflection_slope * upper[crosses_zero]
-        beta_upper_val = torch.maximum(beta_upper_from_lower, beta_upper_from_upper)
+    # For lower bound: y = 1*x + β_lower
+    # Need: 1*lower + β_lower <= tan(lower) AND 1*upper + β_lower <= tan(upper)
+    # => β_lower <= tan(lower) - lower AND β_lower <= tan(upper) - upper
+    beta_lower_from_lower = lower_act[crosses_zero] - inflection_slope * bounds.lower[crosses_zero]
+    beta_lower_from_upper = upper_act[crosses_zero] - inflection_slope * bounds.upper[crosses_zero]
+    beta_lower_val = torch.minimum(beta_lower_from_lower, beta_lower_from_upper)
 
-        alpha_lower[crosses_zero] = inflection_slope
-        beta_lower[crosses_zero] = beta_lower_val
+    # For upper bound: y = 1*x + β_upper
+    # Need: 1*lower + β_upper >= tan(lower) AND 1*upper + β_upper >= tan(upper)
+    # => β_upper >= tan(lower) - lower AND β_upper >= tan(upper) - upper
+    beta_upper_from_lower = lower_act[crosses_zero] - inflection_slope * bounds.lower[crosses_zero]
+    beta_upper_from_upper = upper_act[crosses_zero] - inflection_slope * bounds.upper[crosses_zero]
+    beta_upper_val = torch.maximum(beta_upper_from_lower, beta_upper_from_upper)
 
-        alpha_upper[crosses_zero] = inflection_slope
-        beta_upper[crosses_zero] = beta_upper_val
+    alpha_lower[crosses_zero] = inflection_slope
+    beta_lower[crosses_zero] = beta_lower_val
+
+    alpha_upper[crosses_zero] = inflection_slope
+    beta_upper[crosses_zero] = beta_upper_val
 
     return ElementwiseParams(
         alpha_lower=alpha_lower,
@@ -1348,8 +1302,7 @@ def compute_tan_relaxation(
 
 
 def compute_tanh_relaxation(
-    lower: torch.Tensor,
-    upper: torch.Tensor,
+    bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
 ) -> ElementwiseParams:
     """
@@ -1364,39 +1317,40 @@ def compute_tanh_relaxation(
     This ensures sound bounds while preferring simpler secant when valid.
 
     Args:
-        lower: Lower bounds of pre-activation
-        upper: Upper bounds of pre-activation
+        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
         ElementwiseLinearRelaxation encapsulating the relaxation
     """
-    alpha_lower = torch.zeros_like(lower)
-    beta_lower = torch.zeros_like(lower)
-    alpha_upper = torch.zeros_like(lower)
-    beta_upper = torch.zeros_like(lower)
+    alpha_lower = torch.zeros_like(bounds.lower)
+    beta_lower = torch.zeros_like(bounds.lower)
+    alpha_upper = torch.zeros_like(bounds.lower)
+    beta_upper = torch.zeros_like(bounds.lower)
 
     # Determine regimes
-    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
 
     # Compute tanh and derivative
-    lower_act = torch.tanh(lower)
-    upper_act = torch.tanh(upper)
+    lower_act = torch.tanh(bounds.lower)
+    upper_act = torch.tanh(bounds.upper)
 
     def tanh_derivative(x):
         t = torch.tanh(x)
         return 1 - t * t
 
-    lower_prime = tanh_derivative(lower)
-    upper_prime = tanh_derivative(upper)
+    lower_prime = tanh_derivative(bounds.lower)
+    upper_prime = tanh_derivative(bounds.upper)
 
     # Midpoint for tangent line
-    d = (lower + upper) * 0.5
+    d = (bounds.lower + bounds.upper) * 0.5
     d_act = torch.tanh(d)
     d_prime = tanh_derivative(d)
 
     # Slope of secant line
-    slope = torch.where(zero_width, torch.zeros_like(lower), (upper_act - lower_act) / (upper - lower))
+    slope = torch.where(
+        zero_width, torch.zeros_like(bounds.lower), (upper_act - lower_act) / (bounds.upper - bounds.lower)
+    )
 
     # Zero-width case
     alpha_lower[zero_width] = 0
@@ -1407,15 +1361,15 @@ def compute_tanh_relaxation(
     # Non-zero width
     non_zero = ~zero_width
 
-    negative = non_zero & (upper <= 0)
-    positive = non_zero & (lower >= 0)
-    crossing = non_zero & (lower < 0) & (upper > 0)
+    negative = non_zero & (bounds.upper <= 0)
+    positive = non_zero & (bounds.lower >= 0)
+    crossing = non_zero & (bounds.lower < 0) & (bounds.upper > 0)
 
     # Negative regime
     if negative.any():
         # Upper: secant line between lower and upper
         alpha_upper[negative] = slope[negative]
-        beta_upper[negative] = upper_act[negative] - slope[negative] * upper[negative]
+        beta_upper[negative] = upper_act[negative] - slope[negative] * bounds.upper[negative]
 
         # Lower: tangent line at midpoint
         alpha_lower[negative] = d_prime[negative]
@@ -1429,7 +1383,7 @@ def compute_tanh_relaxation(
 
         # Lower: secant line
         alpha_lower[positive] = slope[positive]
-        beta_lower[positive] = lower_act[positive] - slope[positive] * lower[positive]
+        beta_lower[positive] = lower_act[positive] - slope[positive] * bounds.lower[positive]
 
     # Crossing regime (contains both negative and positive)
     if crossing.any():
@@ -1442,8 +1396,8 @@ def compute_tanh_relaxation(
         alpha_upper[crossing] = torch.where(use_secant_upper, slope[crossing], upper_prime[crossing])
         beta_upper[crossing] = torch.where(
             use_secant_upper,
-            upper_act[crossing] - slope[crossing] * upper[crossing],
-            upper_act[crossing] - upper_prime[crossing] * upper[crossing],
+            upper_act[crossing] - slope[crossing] * bounds.upper[crossing],
+            upper_act[crossing] - upper_prime[crossing] * bounds.upper[crossing],
         )
 
         # Lower bound strategy:
@@ -1455,8 +1409,8 @@ def compute_tanh_relaxation(
         alpha_lower[crossing] = torch.where(use_secant_lower, slope[crossing], lower_prime[crossing])
         beta_lower[crossing] = torch.where(
             use_secant_lower,
-            lower_act[crossing] - slope[crossing] * lower[crossing],
-            lower_act[crossing] - lower_prime[crossing] * lower[crossing],
+            lower_act[crossing] - slope[crossing] * bounds.lower[crossing],
+            lower_act[crossing] - lower_prime[crossing] * bounds.lower[crossing],
         )
 
     return ElementwiseParams(

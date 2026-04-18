@@ -184,10 +184,10 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         replaced with safe dummy values [1, 2] before computing the relaxation;
         their outputs are then overridden unconditionally to [-∞, +∞].
         """
-        lower_a, upper_a = a.concretize()
-        lower_b, upper_b = b.concretize()
+        bounds_a = a.concretize()
+        bounds_b = b.concretize()
 
-        params = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        params = compute_div_relaxation(bounds_a, bounds_b)
         relaxation = PairedLinearRelaxation(params)
         return relaxation.forward(a, b)
 
@@ -248,8 +248,8 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         )
 
     def _constant_div(self, constant: torch.Tensor | torch.types.Number, bounds: LinearBounds) -> LinearBounds:
-        lower_x, upper_x = bounds.concretize()
-        params = compute_constant_div_relaxation(lower_x, upper_x, constant)
+        concrete_bounds = bounds.concretize()
+        params = compute_constant_div_relaxation(concrete_bounds, constant)
         relaxation = ElementwiseForwardLinearRelaxation(params)
         return relaxation.forward(bounds)
 
@@ -291,14 +291,14 @@ class ForwardLBPMul(ForwardLBPStrategy):
           z ≤ ub * a + la * b - la*ub
           z ≤ lb * a + ua * b - ua*lb
         """
-        la, ua = a.concretize()
-        lb, ub = b.concretize()
+        bounds_a = a.concretize()
+        bounds_b = b.concretize()
 
-        params = compute_mul_relaxation(la, ua, lb, ub)
+        params = compute_mul_relaxation(bounds_a, bounds_b)
         relaxation = PairedLinearRelaxation(params)
         return relaxation.forward(a, b)
 
-    def _multiply_by_constant(self, bounds: LinearBounds, constant: object) -> LinearBounds:
+    def _multiply_by_constant(self, bounds: LinearBounds, constant: torch.Tensor | torch.types.Number) -> LinearBounds:
         constant_tensor = torch.as_tensor(
             constant, dtype=bounds.bias_lower.dtype, device=bounds.bias_lower.device
         ).expand_as(bounds.bias_lower)
@@ -378,7 +378,7 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
         raise TypeError(f"ForwardLBPMaximum requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
     @staticmethod
-    def _constant_to_bounds(constant: object, reference: LinearBounds) -> LinearBounds:
+    def _constant_to_bounds(constant: torch.Tensor | torch.types.Number, reference: LinearBounds) -> LinearBounds:
         constant_tensor = torch.as_tensor(
             constant, dtype=reference.bias_lower.dtype, device=reference.bias_lower.device
         )
@@ -393,9 +393,9 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
 
     @staticmethod
     def _max_bounds(a: LinearBounds, b: LinearBounds) -> LinearBounds:
-        lower_a, upper_a = a.concretize()
-        lower_b, upper_b = b.concretize()
-        params = compute_maximum_relaxation(lower_a, upper_a, lower_b, upper_b)
+        bounds_a = a.concretize()
+        bounds_b = b.concretize()
+        params = compute_maximum_relaxation(bounds_a, bounds_b)
         relaxation = PairedLinearRelaxation(params)
         return relaxation.forward(a, b)
 
@@ -423,7 +423,7 @@ class ForwardLBPMinimum(ForwardLBPStrategy):
         raise TypeError(f"ForwardLBPMinimum requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
     @staticmethod
-    def _constant_to_bounds(constant: object, reference: LinearBounds) -> LinearBounds:
+    def _constant_to_bounds(constant: torch.Tensor | torch.types.Number, reference: LinearBounds) -> LinearBounds:
         constant_tensor = torch.as_tensor(
             constant, dtype=reference.bias_lower.dtype, device=reference.bias_lower.device
         )
@@ -438,8 +438,8 @@ class ForwardLBPMinimum(ForwardLBPStrategy):
 
     @staticmethod
     def _min_bounds(a: LinearBounds, b: LinearBounds) -> LinearBounds:
-        lower_a, upper_a = a.concretize()
-        lower_b, upper_b = b.concretize()
-        params = compute_minimum_relaxation(lower_a, upper_a, lower_b, upper_b)
+        bounds_a = a.concretize()
+        bounds_b = b.concretize()
+        params = compute_minimum_relaxation(bounds_a, bounds_b)
         relaxation = PairedLinearRelaxation(params)
         return relaxation.forward(a, b)

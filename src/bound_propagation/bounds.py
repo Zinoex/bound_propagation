@@ -1,5 +1,12 @@
+"""
+Abstract base class for bound representations.
+
+Defines the interface that all bound types must implement.
+"""
+
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from collections.abc import Sequence
 from typing import Literal
 
@@ -7,7 +14,269 @@ import torch
 from plum import dispatch
 
 from ..regions import AbstractRegion, HyperRectangle, SimpleRegion
-from .abstract_bounds import AbstractBounds
+
+
+class AbstractBounds(ABC):
+    """
+    Abstract base class for bound representations.
+
+    All bound types (interval, linear, symbolic) must implement this interface.
+    Bounds represent constraints on tensor values - typically lower and upper bounds,
+    but can be more complex (e.g., affine relaxations).
+
+    Each bounds object carries a reference to the input region, which is needed
+    for concretization (converting symbolic/affine bounds to concrete intervals).
+
+    The key operations are:
+    - Propagation through operations (add, mul, matmul, etc.)
+    - Combination of bounds from different sources
+    - Concretization to intervals for local analysis
+    """
+
+    def __init__(self, region: AbstractRegion):
+        self.region = region
+
+    @property
+    @abstractmethod
+    def shape(self) -> tuple[int, ...]:
+        """
+        Get shape of bounded tensor.
+
+        Returns:
+            Shape tuple
+        """
+        pass
+
+    @property
+    @abstractmethod
+    def device(self) -> torch.device:
+        """
+        Get device of bounds.
+
+        Returns:
+            Device where bound tensors are stored
+        """
+        pass
+
+    @abstractmethod
+    def to(self, device: str | torch.device) -> AbstractBounds:
+        """
+        Move bounds to a device.
+
+        Args:
+            device: Target device
+
+        Returns:
+            New bounds on target device
+        """
+        pass
+
+    @abstractmethod
+    def __getitem__(self, item) -> AbstractBounds:
+        """
+        Slice/index the bounds.
+
+        Args:
+            item: Slice/index specification (e.g., for batch slicing)
+        Returns:
+            New bounds corresponding to the slice/index
+        """
+        raise NotImplementedError("Bounds slicing not implemented for this bound type")
+
+    @abstractmethod
+    def concretize(self) -> IntervalBounds:
+        """
+        Concretize bounds to interval bounds.
+
+        This method uses the input region to convert symbolic/affine bounds
+        into concrete interval bounds. The default implementation assumes that
+        the bounds are already concrete intervals and simply returns them.
+
+        Subclasses with more complex bound types (e.g., linear bounds) should
+        override this method to perform the necessary concretization logic.
+
+        Returns:
+            IntervalBounds representing the concretized bounds
+        """
+        raise NotImplementedError("Concretize method must be implemented by subclasses")
+
+    @abstractmethod
+    def clone(self) -> AbstractBounds:
+        """
+        Create a deep copy of these bounds.
+
+        Returns:
+            Cloned bounds
+        """
+        pass
+
+
+class IntervalBounds(AbstractBounds):
+    """
+    Interval bounds using simple lower and upper bound tensors.
+
+    This is the simplest form of bounds - just [lower, upper] intervals
+    for each element. Propagation uses interval arithmetic rules.
+
+    Attributes:
+        lower: Lower bound tensor
+        upper: Upper bound tensor
+    """
+
+    def __init__(self, lower: torch.Tensor, upper: torch.Tensor) -> None:
+        """
+        Initialize interval bounds.
+
+        Args:
+            region: Input region (e.g., HyperRectangle)
+            lower: Lower bound tensor
+            upper: Upper bound tensor
+
+        Raises:
+            ValueError: If shapes don't match or bounds are invalid
+        """
+        if lower.shape != upper.shape:
+            raise ValueError(f"Lower and upper bounds must have same shape: {lower.shape} vs {upper.shape}")
+
+        if lower.device != upper.device:
+            raise ValueError(f"Lower and upper bounds must be on same device: {lower.device} vs {upper.device}")
+
+        # Check that lower <= upper (allow some numerical tolerance)
+        if not torch.all(lower <= upper + 1e-6):
+            violations = torch.sum(lower > upper + 1e-6).item()
+            raise ValueError(f"Lower bound must be <= upper bound (found {violations} violations)")
+
+        self._lower = lower
+        self._upper = upper
+
+    @property
+    def lower(self) -> torch.Tensor:
+        """Get lower bound tensor."""
+        return self._lower
+
+    @property
+    def upper(self) -> torch.Tensor:
+        """Get upper bound tensor."""
+        return self._upper
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        """Get shape of bounded tensor."""
+        return tuple(self._lower.shape)
+
+    @property
+    def device(self) -> torch.device:
+        """Get device of bounds."""
+        return self._lower.device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Get dtype of bounds."""
+        return self._lower.dtype
+
+    def to(self, device: str | torch.device) -> IntervalBounds:
+        """
+        Move bounds to a device.
+
+        Args:
+            device: Target device
+
+        Returns:
+            New bounds on target device
+        """
+        return IntervalBounds(
+            lower=self._lower.to(device),
+            upper=self._upper.to(device),
+        )
+
+    def __getitem__(self, item) -> IntervalBounds:
+        """
+        Slice/index the bounds.
+
+        Args:
+            item: Slice/index specification (e.g., for batch slicing)
+        Returns:
+            New bounds corresponding to the slice/index
+        """
+        return IntervalBounds(
+            lower=self._lower[item],
+            upper=self._upper[item],
+        )
+
+    def concretize(self) -> IntervalBounds:
+        """
+        Concretize interval bounds to get lower and upper tensors.
+
+        For interval bounds, this simply returns the lower and upper tensors.
+
+        Returns:
+            Tuple of (lower, upper) tensors
+        """
+        return self
+
+    @property
+    def width(self) -> torch.Tensor:
+        """
+        Get interval width (upper - lower).
+
+        Returns:
+            Tensor of interval widths
+        """
+        return self._upper - self._lower
+
+    @property
+    def center(self) -> torch.Tensor:
+        """
+        Get interval center (lower + upper) / 2.
+
+        Returns:
+            Tensor of interval centers
+        """
+        return (self._lower + self._upper) / 2
+
+    @staticmethod
+    @dispatch
+    def unbounded_like(x: torch.Tensor) -> IntervalBounds:
+        """
+        Create unbounded interval bounds ([-inf, inf]).
+
+        Args:
+            x: Tensor to match shape, device, and dtype
+
+        Returns:
+            Unbounded IntervalBounds
+        """
+        lower = torch.full_like(x, float("-inf"))
+        upper = torch.full_like(x, float("inf"))
+        return IntervalBounds(lower, upper)
+
+    @staticmethod
+    @dispatch
+    def unbounded_like(x: IntervalBounds) -> IntervalBounds:  # noqa: F811
+        """
+        Create unbounded interval bounds ([-inf, inf]) matching another IntervalBounds.
+
+        Args:
+            x: IntervalBounds to match shape, device, and dtype
+
+        Returns:
+            Unbounded IntervalBounds
+        """
+        lower = torch.full_like(x.lower, float("-inf"))
+        upper = torch.full_like(x.upper, float("inf"))
+        return IntervalBounds(lower, upper)
+
+    def clone(self) -> IntervalBounds:
+        """
+        Create a copy of these bounds.
+
+        Returns:
+            New IntervalBounds with cloned tensors
+        """
+        return IntervalBounds(
+            lower=self._lower.clone(),
+            upper=self._upper.clone(),
+        )
 
 
 class LinearBounds(AbstractBounds):
@@ -454,7 +723,7 @@ class LinearBounds(AbstractBounds):
             input_ids=self._input_ids.copy() if self._input_ids else None,
         )
 
-    def concretize(self) -> tuple[torch.Tensor, torch.Tensor]:
+    def concretize(self) -> IntervalBounds:
         """
         Concretize bounds to interval bounds.
 
@@ -477,7 +746,7 @@ class LinearBounds(AbstractBounds):
         for region, linear_upper in zip(self._regions, self._linear_upper, strict=True):
             upper_result = upper_result + self._maximize_affine_term(region, linear_upper, self.bias_upper.shape)
 
-        return lower_result, upper_result
+        return IntervalBounds(lower=lower_result, upper=upper_result)
 
     def clone(self) -> LinearBounds:
         """Create a deep copy."""
