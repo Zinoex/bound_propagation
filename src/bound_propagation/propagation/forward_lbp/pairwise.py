@@ -1,22 +1,150 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, final
 
 import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
+from ...regions import SimpleRegion
 from ..linear_relaxations.elementwise import compute_constant_div_relaxation
 from ..linear_relaxations.pairwise import (
+    PairedParams,
     compute_div_relaxation,
     compute_maximum_relaxation,
     compute_minimum_relaxation,
     compute_mul_relaxation,
 )
 from .base import ForwardLBPStrategy
+from .elementwise import ElementwiseForwardLinearRelaxation
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
+
+
+@final
+@dataclass
+class PairedLinearRelaxation:
+    """
+    Paired linear relaxation for binary operations z = f(x1, x2).
+
+    Represents:
+        z_lower >= alpha1_lower * x1 + alpha2_lower * x2 + beta_lower
+        z_upper <= alpha1_upper * x1 + alpha2_upper * x2 + beta_upper
+
+    The abstract dimension convention for linear terms is
+    (*batch_dims, *output_dims, *input_dims).  Each element of coeffs_lower /
+    coeffs_upper lives in (*batch_dims, *output_dims); the corresponding input's
+    trailing axes are broadcast in forward.
+
+    Attributes:
+        coeffs_lower: List of element-wise coefficient tensors, one per input,
+                      giving the lower-bound relaxation slopes.
+        coeffs_upper: Same structure for the upper-bound relaxation slopes.
+        bias_lower:   Element-wise bias for the lower bound.
+        bias_upper:   Element-wise bias for the upper bound.
+    """
+
+    params: PairedParams
+
+    # ------------------------------------------------------------------
+    # Forward composition
+    # ------------------------------------------------------------------
+
+    def forward(self, input_bounds_a: LinearBounds, input_bounds_b: LinearBounds) -> LinearBounds:
+        """
+        Compose z = sum_i(alpha_i * x_i) + beta with linear bounds on each x_i.
+
+        Linear terms have shape (*batch_dims, *output_dims, *input_dims).
+        Contributions from all inputs are merged by input_id so that shared regions
+        are accumulated correctly.
+        """
+
+        def broadcast(alpha: torch.Tensor, linear: torch.Tensor) -> torch.Tensor:
+            # alpha: (*batch_dims, *output_dims)
+            # linear: (*batch_dims, *output_dims, *input_dims)
+            extra = linear.ndim - alpha.ndim
+            return alpha.reshape(alpha.shape + (1,) * extra)
+
+        # Merge linear contributions by input_id (handles shared regions)
+        merged_lower: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
+        merged_upper: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
+        ordered_ids: list[int] = []
+
+        bias_lower = self.params.bias_lower.clone()
+        bias_upper = self.params.bias_upper.clone()
+
+        # input_bounds_a
+        al_pos = self.params.alpha_lower_a.clamp(min=0)
+        al_neg = self.params.alpha_lower_a.clamp(max=0)
+        au_pos = self.params.alpha_upper_a.clamp(min=0)
+        au_neg = self.params.alpha_upper_a.clamp(max=0)
+
+        # Bias contribution from input a
+        bias_lower = bias_lower + al_pos * input_bounds_a.bias_lower + al_neg * input_bounds_a.bias_upper
+        bias_upper = bias_upper + au_pos * input_bounds_a.bias_upper + au_neg * input_bounds_a.bias_lower
+
+        # Linear contributions from input a
+        for iid, region, wl, wu in zip(
+            input_bounds_a.input_ids,
+            input_bounds_a.regions,
+            input_bounds_a.linear_lowers,
+            input_bounds_a.linear_uppers,
+            strict=True,
+        ):
+            contrib_lower = broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
+            contrib_upper = broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
+
+            if iid in merged_lower:
+                merged_lower[iid] = (merged_lower[iid][0], merged_lower[iid][1] + contrib_lower)
+                merged_upper[iid] = (merged_upper[iid][0], merged_upper[iid][1] + contrib_upper)
+            else:
+                ordered_ids.append(iid)
+                merged_lower[iid] = (region, contrib_lower)
+                merged_upper[iid] = (region, contrib_upper)
+
+        # input_bounds_b
+        al_pos = self.params.alpha_lower_b.clamp(min=0)
+        al_neg = self.params.alpha_lower_b.clamp(max=0)
+        au_pos = self.params.alpha_upper_b.clamp(min=0)
+        au_neg = self.params.alpha_upper_b.clamp(max=0)
+
+        # Bias contribution from input b
+        bias_lower = bias_lower + al_pos * input_bounds_b.bias_lower + al_neg * input_bounds_b.bias_upper
+        bias_upper = bias_upper + au_pos * input_bounds_b.bias_upper + au_neg * input_bounds_b.bias_lower
+
+        # Linear contributions from input b
+        for iid, region, wl, wu in zip(
+            input_bounds_b.input_ids,
+            input_bounds_b.regions,
+            input_bounds_b.linear_lowers,
+            input_bounds_b.linear_uppers,
+            strict=True,
+        ):
+            contrib_lower = broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
+            contrib_upper = broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
+
+            if iid in merged_lower:
+                merged_lower[iid] = (merged_lower[iid][0], merged_lower[iid][1] + contrib_lower)
+                merged_upper[iid] = (merged_upper[iid][0], merged_upper[iid][1] + contrib_upper)
+            else:
+                ordered_ids.append(iid)
+                merged_lower[iid] = (region, contrib_lower)
+                merged_upper[iid] = (region, contrib_upper)
+
+        regions = [merged_lower[iid][0] for iid in ordered_ids]
+        linear_lower = [merged_lower[iid][1] for iid in ordered_ids]
+        linear_upper = [merged_upper[iid][1] for iid in ordered_ids]
+
+        return LinearBounds(
+            regions=regions,
+            linear_lower=linear_lower or None,
+            bias_lower=bias_lower,
+            linear_upper=linear_upper or None,
+            bias_upper=bias_upper,
+            input_ids=ordered_ids or None,
+        )
 
 
 class ForwardLBPDiv(ForwardLBPStrategy):
@@ -59,9 +187,9 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         lower_a, upper_a = a.concretize()
         lower_b, upper_b = b.concretize()
 
-        relaxation = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
-
-        return relaxation.forward([a, b])
+        params = compute_div_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = PairedLinearRelaxation(params)
+        return relaxation.forward(a, b)
 
     def _divide_by_constant(self, bounds: LinearBounds, divisor: torch.Tensor | torch.types.Number) -> LinearBounds:
         divisor = torch.as_tensor(divisor, dtype=bounds.bias_lower.dtype, device=bounds.bias_lower.device).expand_as(
@@ -121,8 +249,9 @@ class ForwardLBPDiv(ForwardLBPStrategy):
 
     def _constant_div(self, constant: torch.Tensor | torch.types.Number, bounds: LinearBounds) -> LinearBounds:
         lower_x, upper_x = bounds.concretize()
-        relaxation = compute_constant_div_relaxation(lower_x, upper_x, constant)
-        return relaxation.forward([bounds])
+        params = compute_constant_div_relaxation(lower_x, upper_x, constant)
+        relaxation = ElementwiseForwardLinearRelaxation(params)
+        return relaxation.forward(bounds)
 
 
 class ForwardLBPMul(ForwardLBPStrategy):
@@ -165,8 +294,9 @@ class ForwardLBPMul(ForwardLBPStrategy):
         la, ua = a.concretize()
         lb, ub = b.concretize()
 
-        relaxation = compute_mul_relaxation(la, ua, lb, ub)
-        return relaxation.forward([a, b])
+        params = compute_mul_relaxation(la, ua, lb, ub)
+        relaxation = PairedLinearRelaxation(params)
+        return relaxation.forward(a, b)
 
     def _multiply_by_constant(self, bounds: LinearBounds, constant: object) -> LinearBounds:
         constant_tensor = torch.as_tensor(
@@ -265,8 +395,9 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
     def _max_bounds(a: LinearBounds, b: LinearBounds) -> LinearBounds:
         lower_a, upper_a = a.concretize()
         lower_b, upper_b = b.concretize()
-        relaxation = compute_maximum_relaxation(lower_a, upper_a, lower_b, upper_b)
-        return relaxation.forward([a, b])
+        params = compute_maximum_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = PairedLinearRelaxation(params)
+        return relaxation.forward(a, b)
 
 
 class ForwardLBPMinimum(ForwardLBPStrategy):
@@ -309,5 +440,6 @@ class ForwardLBPMinimum(ForwardLBPStrategy):
     def _min_bounds(a: LinearBounds, b: LinearBounds) -> LinearBounds:
         lower_a, upper_a = a.concretize()
         lower_b, upper_b = b.concretize()
-        relaxation = compute_minimum_relaxation(lower_a, upper_a, lower_b, upper_b)
-        return relaxation.forward([a, b])
+        params = compute_minimum_relaxation(lower_a, upper_a, lower_b, upper_b)
+        relaxation = PairedLinearRelaxation(params)
+        return relaxation.forward(a, b)

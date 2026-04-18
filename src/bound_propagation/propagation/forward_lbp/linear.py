@@ -60,19 +60,24 @@ class ForwardLBPLinear(ForwardLBPStrategy):
             raise TypeError("ForwardLBPLinear requires input to be LinearBounds")
 
         if node.op == "call_module":
+            if not isinstance(node.target, str):
+                raise TypeError(f"Expected node.target to be str for call_module, got {type(node.target)}")
+
             module = ctx.get_module(node.target)
-            weight = module.weight
-            bias = getattr(module, "bias", None)
+            weight: torch.Tensor = module.weight  # ty:ignore[invalid-assignment]
+            bias: torch.Tensor | None = getattr(module, "bias", None)
         else:
             # F.linear(input, weight, bias=None)
-            weight = args[1] if len(args) > 1 else kwargs.get("weight")
-            bias = args[2] if len(args) > 2 else kwargs.get("bias")
+            weight: torch.Tensor = args[1] if len(args) > 1 else kwargs.get("weight")  # ty:ignore[invalid-assignment]
+            bias: torch.Tensor | None = args[2] if len(args) > 2 else kwargs.get("bias")
 
         if weight is None:
             raise ValueError("ForwardLBPLinear requires a weight tensor")
 
-        if weight.ndim != 2:
-            raise ValueError(f"linear weight must be 2D, got shape {tuple(weight.shape)}")
+        # Pytorch allows the weight to be either 1D or 2D
+        # TODO: consider supporting 1D weight (i.e. elementwise multiplication) as a special case without reshaping
+        if weight.ndim not in [1, 2]:
+            raise ValueError(f"linear weight must be 1D or 2D, got shape {tuple(weight.shape)}")
 
         if bounds.bias_lower.shape[-1] != weight.shape[1]:
             raise ValueError(

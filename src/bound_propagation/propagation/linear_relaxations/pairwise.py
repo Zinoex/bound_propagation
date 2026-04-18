@@ -5,192 +5,37 @@ from typing import final
 
 import torch
 
-from ...bounds import LinearBounds
-from ...regions import SimpleRegion
-from .base import AbstractLinearRelaxation, SymbolicLinearRelaxation
 from .elementwise import compute_reciprocal_relaxation
 
 
 @final
 @dataclass
-class PairedLinearRelaxation(AbstractLinearRelaxation):
+class PairedParams:
     """
-    Paired linear relaxation for binary operations z = f(x1, x2).
+    Parameters for pairwise linear relaxations (e.g., multiplication, division, max, min).
+    For a binary operation z = f(a, b), the linear relaxation has the form:
+        lower_bound: z >= alpha_lower_a * a + alpha_lower_b * b + bias_lower
+        upper_bound: z <= alpha_upper_a * a + alpha_upper_b * b + bias_upper
 
-    Represents:
-        z_lower >= alpha1_lower * x1 + alpha2_lower * x2 + beta_lower
-        z_upper <= alpha1_upper * x1 + alpha2_upper * x2 + beta_upper
-
-    The abstract dimension convention for linear terms is
-    (*batch_dims, *output_dims, *input_dims).  Each element of coeffs_lower /
-    coeffs_upper lives in (*batch_dims, *output_dims); the corresponding input's
-    trailing axes are broadcast in forward.
+    The abstract dimension convention for these LinearBounds linear terms are
+    (*batch_dims, *output_dims, *input_dims) since they are pairwise.
+    Therefore, alpha and beta live in (*batch_dims, *output_dims).
 
     Attributes:
-        coeffs_lower: List of element-wise coefficient tensors, one per input,
-                      giving the lower-bound relaxation slopes.
-        coeffs_upper: Same structure for the upper-bound relaxation slopes.
-        bias_lower:   Element-wise bias for the lower bound.
-        bias_upper:   Element-wise bias for the upper bound.
+        alpha_lower_a: Coefficient for a in the lower bound.
+        alpha_upper_a: Coefficient for a in the upper bound.
+        alpha_lower_b: Coefficient for b in the lower bound.
+        alpha_upper_b: Coefficient for b in the upper bound.
+        bias_lower: Bias term in the lower bound.
+        bias_upper: Bias term in the upper bound.
     """
 
-    coeffs_lower: list[torch.Tensor]
-    coeffs_upper: list[torch.Tensor]
+    alpha_lower_a: torch.Tensor
+    alpha_upper_a: torch.Tensor
+    alpha_lower_b: torch.Tensor
+    alpha_upper_b: torch.Tensor
     bias_lower: torch.Tensor
     bias_upper: torch.Tensor
-
-    def __post_init__(self) -> None:
-        if len(self.coeffs_lower) != len(self.coeffs_upper):
-            raise ValueError(
-                f"coeffs_lower and coeffs_upper must have the same length, "
-                f"got {len(self.coeffs_lower)} vs {len(self.coeffs_upper)}"
-            )
-        if len(self.coeffs_lower) != 2:
-            raise ValueError("PairedLinearRelaxation requires exactly 2 input coefficients")
-
-    # ------------------------------------------------------------------
-    # Forward composition
-    # ------------------------------------------------------------------
-
-    def forward(self, input_bounds: list[LinearBounds]) -> LinearBounds:
-        """
-        Compose z = sum_i(alpha_i * x_i) + beta with linear bounds on each x_i.
-
-        Linear terms have shape (*batch_dims, *output_dims, *input_dims).
-        Contributions from all inputs are merged by input_id so that shared regions
-        are accumulated correctly.
-        """
-        if len(input_bounds) != 2:
-            raise ValueError(f"PairedLinearRelaxation expects 2 input bounds, got {len(input_bounds)}")
-
-        def broadcast(alpha: torch.Tensor, linear: torch.Tensor) -> torch.Tensor:
-            # alpha: (*batch_dims, *output_dims)
-            # linear: (*batch_dims, *output_dims, *input_dims)
-            extra = linear.ndim - alpha.ndim
-            return alpha.reshape(alpha.shape + (1,) * extra)
-
-        # Merge linear contributions by input_id (handles shared regions)
-        merged_lower: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
-        merged_upper: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
-        ordered_ids: list[int] = []
-
-        bias_lower = self.bias_lower.clone()
-        bias_upper = self.bias_upper.clone()
-
-        for alpha_lower, alpha_upper, bounds in zip(self.coeffs_lower, self.coeffs_upper, input_bounds, strict=True):
-            al_pos = alpha_lower.clamp(min=0)
-            al_neg = alpha_lower.clamp(max=0)
-            au_pos = alpha_upper.clamp(min=0)
-            au_neg = alpha_upper.clamp(max=0)
-
-            # Bias contribution from this input
-            bias_lower = bias_lower + al_pos * bounds.bias_lower + al_neg * bounds.bias_upper
-            bias_upper = bias_upper + au_pos * bounds.bias_upper + au_neg * bounds.bias_lower
-
-            # Linear contributions
-            for iid, region, wl, wu in zip(
-                bounds.input_ids, bounds.regions, bounds.linear_lowers, bounds.linear_uppers, strict=True
-            ):
-                contrib_lower = broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
-                contrib_upper = broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
-
-                if iid in merged_lower:
-                    merged_lower[iid] = (merged_lower[iid][0], merged_lower[iid][1] + contrib_lower)
-                    merged_upper[iid] = (merged_upper[iid][0], merged_upper[iid][1] + contrib_upper)
-                else:
-                    ordered_ids.append(iid)
-                    merged_lower[iid] = (region, contrib_lower)
-                    merged_upper[iid] = (region, contrib_upper)
-
-        regions = [merged_lower[iid][0] for iid in ordered_ids]
-        linear_lower = [merged_lower[iid][1] for iid in ordered_ids]
-        linear_upper = [merged_upper[iid][1] for iid in ordered_ids]
-
-        return LinearBounds(
-            regions=regions,
-            linear_lower=linear_lower or None,
-            bias_lower=bias_lower,
-            linear_upper=linear_upper or None,
-            bias_upper=bias_upper,
-            input_ids=ordered_ids or None,
-        )
-
-    def symbolic_forward(self, inputs: list[SymbolicLinearRelaxation]) -> SymbolicLinearRelaxation:
-        if len(inputs) != 2:
-            raise ValueError(f"PairedLinearRelaxation expects exactly 2 inputs, got {len(inputs)}")
-        return SymbolicPairedLinearRelaxation(concrete_relaxation=self, input_left=inputs[0], input_right=inputs[1])
-
-
-@final
-@dataclass
-class SymbolicPairedLinearRelaxation(SymbolicLinearRelaxation):
-    concrete_relaxation: PairedLinearRelaxation
-
-    input_left: SymbolicLinearRelaxation
-    input_right: SymbolicLinearRelaxation
-
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        r = self.concrete_relaxation
-        node_ndim = r.coeffs_lower[0].ndim - batch_ndim
-        bounded_ndim = A_lower.ndim - r.coeffs_lower[0].ndim
-
-        def bc(t: torch.Tensor) -> torch.Tensor:
-            """Broadcast ``(*batch, *node)`` → ``(*batch, *bounded_out, *node)``."""
-            return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
-
-        A_l_pos = A_lower.clamp(min=0)
-        A_l_neg = A_lower.clamp(max=0)
-        A_u_pos = A_upper.clamp(min=0)
-        A_u_neg = A_upper.clamp(max=0)
-
-        # Left input: sign decomposition on coeffs[0]
-        new_A_lower_left = A_l_pos * bc(r.coeffs_lower[0]) + A_l_neg * bc(r.coeffs_upper[0])
-        new_A_upper_left = A_u_pos * bc(r.coeffs_upper[0]) + A_u_neg * bc(r.coeffs_lower[0])
-        bounds_left = self.input_left.backward(new_A_lower_left, new_A_upper_left, batch_ndim)
-
-        # Right input: sign decomposition on coeffs[1]
-        new_A_lower_right = A_l_pos * bc(r.coeffs_lower[1]) + A_l_neg * bc(r.coeffs_upper[1])
-        new_A_upper_right = A_u_pos * bc(r.coeffs_upper[1]) + A_u_neg * bc(r.coeffs_lower[1])
-        bounds_right = self.input_right.backward(new_A_lower_right, new_A_upper_right, batch_ndim)
-
-        # Bias contribution: sum over the trailing node dimensions.
-        sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
-        delta_bias_lower = A_l_pos * bc(r.bias_lower) + A_l_neg * bc(r.bias_upper)
-        delta_bias_upper = A_u_pos * bc(r.bias_upper) + A_u_neg * bc(r.bias_lower)
-        if sum_dims:
-            delta_bias_lower = delta_bias_lower.sum(dim=sum_dims)
-            delta_bias_upper = delta_bias_upper.sum(dim=sum_dims)
-
-        bias_lower = bounds_left.bias_lower + bounds_right.bias_lower + delta_bias_lower
-        bias_upper = bounds_left.bias_upper + bounds_right.bias_upper + delta_bias_upper
-
-        # Merge linear contributions by input_id (handles shared regions between left and right)
-        merged: dict[int, tuple[SimpleRegion, torch.Tensor, torch.Tensor]] = {}
-        ordered_ids: list[int] = []
-
-        for bounds in [bounds_left, bounds_right]:
-            for iid, region, wl, wu in zip(
-                bounds.input_ids, bounds.regions, bounds.linear_lowers, bounds.linear_uppers, strict=True
-            ):
-                if iid in merged:
-                    merged[iid] = (merged[iid][0], merged[iid][1] + wl, merged[iid][2] + wu)
-                else:
-                    ordered_ids.append(iid)
-                    merged[iid] = (region, wl, wu)
-
-        regions = [merged[iid][0] for iid in ordered_ids]
-        linear_lower = [merged[iid][1] for iid in ordered_ids]
-        linear_upper = [merged[iid][2] for iid in ordered_ids]
-
-        return LinearBounds(
-            regions=regions,
-            linear_lower=linear_lower or None,
-            bias_lower=bias_lower,
-            linear_upper=linear_upper or None,
-            bias_upper=bias_upper,
-            input_ids=ordered_ids or None,
-            validate=False,
-        )
 
 
 def compute_mul_relaxation(
@@ -200,7 +45,7 @@ def compute_mul_relaxation(
     upper_b: torch.Tensor,
     eta_lower: torch.Tensor | torch.types.Number = 0.5,
     eta_upper: torch.Tensor | torch.types.Number = 0.5,
-) -> PairedLinearRelaxation:
+) -> PairedParams:
     """
     Compute a linear relaxation for the element-wise multiplication of two variables with given bounds.
 
@@ -215,7 +60,7 @@ def compute_mul_relaxation(
         eta_lower: Convex combination parameter for the lower bound (default 0.5).
         eta_upper: Convex combination parameter for the upper bound (default 0.5).
     Returns:
-        A PairedLinearRelaxation object representing the linear relaxation of z = a * b.
+        A PairedParams object representing the linear relaxation of z = a * b.
     """
 
     alpha1_lower = lower_b * eta_lower + upper_b * (1 - eta_lower)  # coeff of a
@@ -226,9 +71,11 @@ def compute_mul_relaxation(
     alpha2_upper = lower_a * eta_upper + upper_a * (1 - eta_upper)  # coeff of b
     bias_upper = -lower_a * upper_b * eta_upper - upper_a * lower_b * (1 - eta_upper)
 
-    relaxation = PairedLinearRelaxation(
-        coeffs_lower=[alpha1_lower, alpha2_lower],
-        coeffs_upper=[alpha1_upper, alpha2_upper],
+    relaxation = PairedParams(
+        alpha_lower_a=alpha1_lower,
+        alpha_upper_a=alpha1_upper,
+        alpha_lower_b=alpha2_lower,
+        alpha_upper_b=alpha2_upper,
         bias_lower=bias_lower,
         bias_upper=bias_upper,
     )
@@ -243,7 +90,7 @@ def compute_div_relaxation(
     zero_threshold: float = 1e-8,
     eta_lower: torch.Tensor | torch.types.Number = 0.5,
     eta_upper: torch.Tensor | torch.types.Number = 0.5,
-) -> PairedLinearRelaxation:
+) -> PairedParams:
     """
     Compute element-wise linear relaxation for z = a / b given bounds on a and b.
 
@@ -267,7 +114,7 @@ def compute_div_relaxation(
         eta_upper: The convex combination parameter for the McCormick upper bound
 
     Returns:
-        PairedLinearRelaxation encapsulating z = a / b with inputs ordered [a, b].
+        PairedParams encapsulating z = a / b with inputs ordered [a, b].
     """
     crosses_zero = (lower_b <= 0) & (upper_b >= 0)
 
@@ -333,9 +180,11 @@ def compute_div_relaxation(
     coeff_b_upper = torch.where(crosses_zero, 0, coeff_b_upper)
     bias_upper = torch.where(crosses_zero, float("inf"), bias_upper)
 
-    return PairedLinearRelaxation(
-        coeffs_lower=[coeff_a_lower, coeff_b_lower],
-        coeffs_upper=[coeff_a_upper, coeff_b_upper],
+    return PairedParams(
+        alpha_lower_a=coeff_a_lower,
+        alpha_upper_a=coeff_a_upper,
+        alpha_lower_b=coeff_b_lower,
+        alpha_upper_b=coeff_b_upper,
         bias_lower=bias_lower,
         bias_upper=bias_upper,
     )
@@ -348,7 +197,7 @@ def compute_maximum_relaxation(
     upper_b: torch.Tensor,
     eta_lower: torch.Tensor | torch.types.Number = 0.5,
     eta_upper: torch.Tensor | torch.types.Number = 0.5,
-) -> PairedLinearRelaxation:
+) -> PairedParams:
     """Compute a linear relaxation for element-wise max(a, b).
 
     Three regimes (element-wise):
@@ -398,9 +247,11 @@ def compute_maximum_relaxation(
     delta_opt2 = eta_u * (upper_b - lower_a).clamp(min=0)
     bias_upper = torch.where(crossing, torch.maximum(delta_opt1, delta_opt2), zeros)
 
-    return PairedLinearRelaxation(
-        coeffs_lower=[alpha1_lower, alpha2_lower],
-        coeffs_upper=[alpha1_upper, alpha2_upper],
+    return PairedParams(
+        alpha_lower_a=alpha1_lower,
+        alpha_upper_a=alpha1_upper,
+        alpha_lower_b=alpha2_lower,
+        alpha_upper_b=alpha2_upper,
         bias_lower=bias_lower,
         bias_upper=bias_upper,
     )
@@ -413,7 +264,7 @@ def compute_minimum_relaxation(
     upper_b: torch.Tensor,
     eta_lower: torch.Tensor | torch.types.Number = 0.5,
     eta_upper: torch.Tensor | torch.types.Number = 0.5,
-) -> PairedLinearRelaxation:
+) -> PairedParams:
     """Compute a linear relaxation for element-wise min(a, b).
 
     Three regimes (element-wise):
@@ -463,9 +314,11 @@ def compute_minimum_relaxation(
     alpha2_upper = 1 - eta_u
     bias_upper = zeros
 
-    return PairedLinearRelaxation(
-        coeffs_lower=[alpha1_lower, alpha2_lower],
-        coeffs_upper=[alpha1_upper, alpha2_upper],
+    return PairedParams(
+        alpha_lower_a=alpha1_lower,
+        alpha_upper_a=alpha1_upper,
+        alpha_lower_b=alpha2_lower,
+        alpha_upper_b=alpha2_upper,
         bias_lower=bias_lower,
         bias_upper=bias_upper,
     )

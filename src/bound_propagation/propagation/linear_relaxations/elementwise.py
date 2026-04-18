@@ -6,13 +6,10 @@ from typing import final, overload
 
 import torch
 
-from ...bounds import LinearBounds
-from .base import AbstractLinearRelaxation, SymbolicLinearRelaxation
-
 
 @final
 @dataclass
-class ElementwiseLinearRelaxation(AbstractLinearRelaxation):
+class ElementwiseParams:
     """
     Element-wise linear relaxation for unary operations y = f(x).
 
@@ -21,9 +18,8 @@ class ElementwiseLinearRelaxation(AbstractLinearRelaxation):
         y_upper <= alpha_upper * x + beta_upper
 
     The abstract dimension convention for LinearBounds linear terms is
-    (*batch_dims, *output_dims, *input_dims).  alpha and beta live in
-    (*batch_dims, *output_dims); forward appends the input trailing
-    axes via broadcasting.
+    (*batch_dims, *output_dims, *input_dims). alpha and beta live in
+    (*batch_dims, *output_dims).
 
     Attributes:
         alpha_lower: Element-wise slopes for the lower bound.
@@ -37,118 +33,12 @@ class ElementwiseLinearRelaxation(AbstractLinearRelaxation):
     alpha_upper: torch.Tensor
     beta_upper: torch.Tensor
 
-    # ------------------------------------------------------------------
-    # Forward composition
-    # ------------------------------------------------------------------
-
-    def forward(self, input_bounds: list[LinearBounds]) -> LinearBounds:
-        """
-        Compose: y = alpha * x + beta  composed with  x = W @ x0 + b  →  y = W_new @ x0 + b_new.
-
-        Linear terms have shape (*batch_dims, *output_dims, *input_dims).
-        alpha/beta have shape (*batch_dims, *output_dims); trailing input axes are
-        broadcast by appending ones.
-
-        Handles signed alpha via positive/negative clamping so the result is always
-        a valid lower/upper bound.
-        """
-        if len(input_bounds) != 1:
-            raise ValueError(f"ElementwiseLinearRelaxation expects 1 input bound, got {len(input_bounds)}")
-        bounds = input_bounds[0]
-
-        al_pos = self.alpha_lower.clamp(min=0)
-        al_neg = self.alpha_lower.clamp(max=0)
-        au_pos = self.alpha_upper.clamp(min=0)
-        au_neg = self.alpha_upper.clamp(max=0)
-
-        def broadcast(alpha: torch.Tensor, linear: torch.Tensor) -> torch.Tensor:
-            # alpha: (*batch_dims, *output_dims)
-            # linear: (*batch_dims, *output_dims, *input_dims)
-            # Append one dimension per input axis so broadcasting is correct.
-            extra = linear.ndim - alpha.ndim
-            return alpha.reshape(alpha.shape + (1,) * extra)
-
-        # Lower bound: alpha_lower_pos * W_lower  +  alpha_lower_neg * W_upper
-        linear_lower = [
-            broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
-            for wl, wu in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
-        bias_lower = al_pos * bounds.bias_lower + al_neg * bounds.bias_upper + self.beta_lower
-
-        # Upper bound: alpha_upper_pos * W_upper  +  alpha_upper_neg * W_lower
-        linear_upper = [
-            broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
-            for wl, wu in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-        ]
-        bias_upper = au_pos * bounds.bias_upper + au_neg * bounds.bias_lower + self.beta_upper
-
-        return LinearBounds(
-            regions=bounds.regions,
-            linear_lower=linear_lower or None,
-            bias_lower=bias_lower,
-            linear_upper=linear_upper or None,
-            bias_upper=bias_upper,
-            input_ids=bounds.input_ids or None,
-        )
-
-    def symbolic_forward(self, inputs: list[SymbolicLinearRelaxation]) -> SymbolicLinearRelaxation:
-        if len(inputs) != 1:
-            raise ValueError(f"ElementwiseLinearRelaxation expects exactly one input, got {len(inputs)}")
-        return SymbolicElementwiseLinearRelaxation(concrete_relaxation=self, input=inputs[0])
-
-
-@final
-@dataclass
-class SymbolicElementwiseLinearRelaxation(SymbolicLinearRelaxation):
-    concrete_relaxation: ElementwiseLinearRelaxation
-
-    input: SymbolicLinearRelaxation
-
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        r = self.concrete_relaxation
-        node_ndim = r.alpha_lower.ndim - batch_ndim
-        bounded_ndim = A_lower.ndim - r.alpha_lower.ndim
-
-        def bc(t: torch.Tensor) -> torch.Tensor:
-            """Broadcast ``(*batch, *node)`` → ``(*batch, *bounded_out, *node)``."""
-            return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
-
-        A_l_pos = A_lower.clamp(min=0)
-        A_l_neg = A_lower.clamp(max=0)
-        A_u_pos = A_upper.clamp(min=0)
-        A_u_neg = A_upper.clamp(max=0)
-
-        # Sign decomposition: where A > 0 use same-side relaxation,
-        # where A < 0 use opposite-side relaxation.
-        new_A_lower = A_l_pos * bc(r.alpha_lower) + A_l_neg * bc(r.alpha_upper)
-        new_A_upper = A_u_pos * bc(r.alpha_upper) + A_u_neg * bc(r.alpha_lower)
-
-        bounds = self.input.backward(new_A_lower, new_A_upper, batch_ndim)
-
-        # Bias contribution: sum over the trailing node dimensions.
-        sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
-        delta_bias_lower = A_l_pos * bc(r.beta_lower) + A_l_neg * bc(r.beta_upper)
-        delta_bias_upper = A_u_pos * bc(r.beta_upper) + A_u_neg * bc(r.beta_lower)
-        if sum_dims:
-            delta_bias_lower = delta_bias_lower.sum(dim=sum_dims)
-            delta_bias_upper = delta_bias_upper.sum(dim=sum_dims)
-
-        return LinearBounds(
-            regions=bounds.regions,
-            linear_lower=bounds.linear_lowers,
-            bias_lower=bounds.bias_lower + delta_bias_lower,
-            linear_upper=bounds.linear_uppers,
-            bias_upper=bounds.bias_upper + delta_bias_upper,
-            input_ids=bounds.input_ids,
-            validate=False,
-        )
-
 
 def compute_abs_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for abs linear relaxation.
 
@@ -162,7 +52,7 @@ def compute_abs_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -204,7 +94,7 @@ def compute_abs_relaxation(
     # For lower bound, use upper bound slope but zero intercept (line through the origin)
     alpha_lower[crosses_zero] = slope
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -219,7 +109,7 @@ def compute_clamp_relaxation(
     min_val: float | None,
     max_val: float | None,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation: ...
+) -> ElementwiseParams: ...
 
 
 @overload
@@ -229,7 +119,7 @@ def compute_clamp_relaxation(
     min_val: torch.Tensor | None,
     max_val: torch.Tensor | None,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation: ...
+) -> ElementwiseParams: ...
 
 
 def compute_clamp_relaxation(
@@ -238,7 +128,7 @@ def compute_clamp_relaxation(
     min_val: float | torch.Tensor | None = None,
     max_val: float | torch.Tensor | None = None,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for clamp linear relaxation.
 
@@ -252,7 +142,7 @@ def compute_clamp_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
 
     # TODO: assert the overload inputs
@@ -337,7 +227,7 @@ def compute_clamp_relaxation(
     alpha_upper[crosses_both] = 0
     beta_upper[crosses_both] = max_val[crosses_both] if isinstance(max_val, torch.Tensor) else max_val
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -349,7 +239,7 @@ def compute_cos_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for cos linear relaxation.
 
@@ -367,7 +257,7 @@ def compute_cos_relaxation(
         zero_threshold: Threshold for considering an interval as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -385,7 +275,7 @@ def compute_cos_relaxation(
 
     non_zero = ~zero_width
     if not torch.any(non_zero):
-        return ElementwiseLinearRelaxation(
+        return ElementwiseParams(
             alpha_lower=alpha_lower,
             beta_lower=beta_lower,
             alpha_upper=alpha_upper,
@@ -564,7 +454,7 @@ def compute_cos_relaxation(
     alpha_upper[non_zero] = alpha_nz_upper
     beta_upper[non_zero] = beta_nz_upper
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -572,9 +462,7 @@ def compute_cos_relaxation(
     )
 
 
-def compute_exp_relaxation(
-    lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8
-) -> ElementwiseLinearRelaxation:
+def compute_exp_relaxation(lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for exp linear relaxation.
 
@@ -587,7 +475,7 @@ def compute_exp_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     zero_width = torch.isclose(lower, upper, atol=zero_threshold)
     midpoint = (lower + upper) / 2
@@ -604,7 +492,7 @@ def compute_exp_relaxation(
     alpha_upper = torch.where(zero_width, 0, slope)
     beta_upper = torch.where(zero_width, exp_upper, exp_lower - slope * lower)
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -616,7 +504,7 @@ def compute_log_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for log linear relaxation.
 
@@ -629,7 +517,7 @@ def compute_log_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     log_lower = torch.log(lower)
     log_upper = torch.log(upper)
@@ -652,7 +540,7 @@ def compute_log_relaxation(
     alpha_upper[invalid] = float("nan")
     beta_upper[invalid] = float("nan")
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -662,7 +550,7 @@ def compute_log_relaxation(
 
 def compute_reciprocal_relaxation(
     lower: torch.Tensor, upper: torch.Tensor, zero_threshold: float = 1e-8
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for reciprocal (1/x) linear relaxation.
 
@@ -676,7 +564,7 @@ def compute_reciprocal_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -746,7 +634,7 @@ def compute_reciprocal_relaxation(
     alpha_lower[all_negative] = slope[all_negative]
     beta_lower[all_negative] = upper_act[all_negative] - slope[all_negative] * upper_safe[all_negative]
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -759,7 +647,7 @@ def compute_constant_div_relaxation(
     upper: torch.Tensor,
     constant: object,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """Compute linear-relaxation parameters for constant-over-bounds division ``constant / x``.
 
     The function ``f(x) = c / x`` is a scaled reciprocal.
@@ -775,7 +663,7 @@ def compute_constant_div_relaxation(
         zero_threshold: Threshold used by reciprocal relaxation for zero-width handling.
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation.
+        ElementwiseParams encapsulating the relaxation parameters.
     """
     if not isinstance(lower, torch.Tensor):
         raise TypeError(f"lower must be a torch.Tensor, got {type(lower)!r}")
@@ -821,7 +709,7 @@ def compute_constant_div_relaxation(
     alpha_upper[zero_constant] = 0.0
     beta_upper[zero_constant] = 0.0
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -834,7 +722,7 @@ def compute_relu_relaxation(
     upper: torch.Tensor,
     adaptive: bool = False,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for ReLU linear relaxation.
 
@@ -845,7 +733,7 @@ def compute_relu_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -885,7 +773,7 @@ def compute_relu_relaxation(
     alpha_upper[crossing] = z
     beta_upper[crossing] = -l_cross * z
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -897,7 +785,7 @@ def compute_sigmoid_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for sigmoid linear relaxation.
 
@@ -915,7 +803,7 @@ def compute_sigmoid_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -1002,7 +890,7 @@ def compute_sigmoid_relaxation(
         lower_act[crossing] - lower_prime[crossing] * lower[crossing],
     )
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -1014,7 +902,7 @@ def compute_sin_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for sin linear relaxation.
 
@@ -1032,7 +920,7 @@ def compute_sin_relaxation(
         zero_threshold: Threshold for considering an interval as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -1050,7 +938,7 @@ def compute_sin_relaxation(
 
     non_zero = ~zero_width
     if not torch.any(non_zero):
-        return ElementwiseLinearRelaxation(
+        return ElementwiseParams(
             alpha_lower=alpha_lower,
             beta_lower=beta_lower,
             alpha_upper=alpha_upper,
@@ -1229,7 +1117,7 @@ def compute_sin_relaxation(
     alpha_upper[non_zero] = alpha_nz_upper
     beta_upper[non_zero] = beta_nz_upper
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -1241,7 +1129,7 @@ def compute_sqrt_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for sqrt linear relaxation.
 
@@ -1255,7 +1143,7 @@ def compute_sqrt_relaxation(
         zero_threshold: Threshold to treat bounds as zero-width
 
     Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+        ElementwiseParams encapsulating the relaxation parameters
     """
     alpha_lower = torch.zeros_like(lower)
     beta_lower = torch.zeros_like(lower)
@@ -1308,7 +1196,7 @@ def compute_sqrt_relaxation(
     alpha_upper[invalid] = float("nan")
     beta_upper[invalid] = float("nan")
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -1320,7 +1208,7 @@ def compute_tan_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for tan linear relaxation.
 
@@ -1451,7 +1339,7 @@ def compute_tan_relaxation(
         alpha_upper[crosses_zero] = inflection_slope
         beta_upper[crosses_zero] = beta_upper_val
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,
@@ -1463,7 +1351,7 @@ def compute_tanh_relaxation(
     lower: torch.Tensor,
     upper: torch.Tensor,
     zero_threshold: float = 1e-8,
-) -> ElementwiseLinearRelaxation:
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for tanh linear relaxation.
 
@@ -1571,7 +1459,7 @@ def compute_tanh_relaxation(
             lower_act[crossing] - lower_prime[crossing] * lower[crossing],
         )
 
-    return ElementwiseLinearRelaxation(
+    return ElementwiseParams(
         alpha_lower=alpha_lower,
         beta_lower=beta_lower,
         alpha_upper=alpha_upper,

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Literal
 
 import torch
@@ -30,13 +31,12 @@ class LinearBounds(AbstractBounds):
 
     def __init__(
         self,
-        regions: SimpleRegion | list[SimpleRegion],
-        linear_lower: torch.Tensor | list[torch.Tensor] | None = None,
-        bias_lower: torch.Tensor | None = None,
-        linear_upper: torch.Tensor | list[torch.Tensor] | None = None,
-        bias_upper: torch.Tensor | None = None,
-        input_ids: list[int] | None = None,
-        validate: bool = True,
+        bias_lower: torch.Tensor,
+        bias_upper: torch.Tensor,
+        linear_lower: torch.Tensor | Sequence[torch.Tensor] | None = None,
+        linear_upper: torch.Tensor | Sequence[torch.Tensor] | None = None,
+        regions: SimpleRegion | Sequence[SimpleRegion] | None = None,
+        input_ids: int | Sequence[int] | None = None,
     ) -> None:
         """
         Initialize linear bounds.
@@ -48,40 +48,35 @@ class LinearBounds(AbstractBounds):
             linear_upper: Linear coefficients for upper bound (can be empty for constant bounds)
             bias_upper: Bias for upper bound
             input_ids: Optional list of input node IDs
-            validate: Whether to run the gap validity check.  Set to ``False``
-                for intermediate results in backward CROWN where bias
-                corrections have not yet been applied.
         """
-        if bias_lower is None or bias_upper is None:
-            raise ValueError("LinearBounds requires both bias_lower and bias_upper")
-
         normalized_regions = self._normalize_regions(regions)
         normalized_linear_lower = self._normalize_linear_terms(linear_lower, "linear_lower")
         normalized_linear_upper = self._normalize_linear_terms(linear_upper, "linear_upper")
+        normalized_input_ids = self._normalize_input_ids(input_ids)
 
-        self._check_uniformity(normalized_regions, normalized_linear_lower, normalized_linear_upper)
-
-        if normalized_linear_lower:
-            normalized_input_ids = self._normalize_input_ids(input_ids, normalized_regions)
-        else:
-            normalized_regions = []
-            normalized_input_ids = []
+        self._check_uniformity(
+            normalized_regions, normalized_linear_lower, normalized_linear_upper, normalized_input_ids
+        )
 
         self._check_shapes(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
-        if validate:
-            self._check_gap(
-                normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper
-            )
+        self._check_gap(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
 
-        self._regions = normalized_regions
-        self._linear_lower = normalized_linear_lower
         self._bias_lower = bias_lower
-        self._linear_upper = normalized_linear_upper
         self._bias_upper = bias_upper
+        self._linear_lower = normalized_linear_lower
+        self._linear_upper = normalized_linear_upper
+        self._regions = normalized_regions
         self._input_ids = normalized_input_ids
 
+    def has_linear_terms(self) -> bool:
+        """Whether these bounds include linear terms (as opposed to being purely constant)."""
+        return self._linear_lower is not None and self._linear_upper is not None
+
     @staticmethod
-    def _normalize_regions(regions: SimpleRegion | list[SimpleRegion]) -> list[SimpleRegion]:
+    def _normalize_regions(regions: SimpleRegion | Sequence[SimpleRegion] | None) -> list[SimpleRegion]:
+        if regions is None:
+            return []
+
         if isinstance(regions, SimpleRegion):
             return [regions]
 
@@ -92,27 +87,30 @@ class LinearBounds(AbstractBounds):
 
     @staticmethod
     def _normalize_linear_terms(
-        linear_terms: torch.Tensor | list[torch.Tensor] | None,
+        linear_terms: torch.Tensor | Sequence[torch.Tensor] | None,
         name: str,
     ) -> list[torch.Tensor]:
         if linear_terms is None:
             return []
+
         if isinstance(linear_terms, torch.Tensor):
             return [linear_terms]
 
         normalized_terms = list(linear_terms)
         if any(not isinstance(linear, torch.Tensor) for linear in normalized_terms):
             raise TypeError(f"{name} must contain only torch.Tensor entries")
+
         return normalized_terms
 
     @staticmethod
-    def _normalize_input_ids(input_ids: list[int] | None, regions: list[SimpleRegion]) -> list[int]:
-        normalized_input_ids = list(input_ids) if input_ids is not None else [id(region) for region in regions]
+    def _normalize_input_ids(input_ids: int | Sequence[int] | None) -> list[int]:
+        if input_ids is None:
+            input_ids = []
 
-        if len(normalized_input_ids) != len(regions):
-            raise ValueError(
-                f"input_ids must have the same length as regions: {len(normalized_input_ids)} vs {len(regions)}"
-            )
+        if isinstance(input_ids, int):
+            input_ids = [input_ids]
+
+        normalized_input_ids = list(input_ids)
         if len(set(normalized_input_ids)) != len(normalized_input_ids):
             raise ValueError(f"input_ids must be unique, but got {normalized_input_ids!r}")
 
@@ -181,19 +179,23 @@ class LinearBounds(AbstractBounds):
         regions: list[SimpleRegion],
         linear_lower: list[torch.Tensor],
         linear_upper: list[torch.Tensor],
+        input_ids: list[int],
     ) -> None:
         if bool(linear_lower) != bool(linear_upper):
             raise ValueError("linear_lower and linear_upper must either both be provided or both be empty")
 
-        if linear_lower and len(linear_lower) != len(regions):
+        if len(linear_lower) != len(regions):
             raise ValueError(
                 f"linear_lower must have the same length as regions: {len(linear_lower)} vs {len(regions)}"
             )
 
-        if linear_upper and len(linear_upper) != len(regions):
+        if len(linear_upper) != len(regions):
             raise ValueError(
                 f"linear_upper must have the same length as regions: {len(linear_upper)} vs {len(regions)}"
             )
+
+        if len(input_ids) != len(regions):
+            raise ValueError(f"input_ids must have the same length as regions: {len(input_ids)} vs {len(regions)}")
 
     def _check_gap(
         self,
@@ -318,6 +320,13 @@ class LinearBounds(AbstractBounds):
         return self._input_ids.copy()
 
     @property
+    def input_id(self) -> int:
+        """Get the single input ID associated with these bounds."""
+        if len(self._input_ids) != 1:
+            raise ValueError(f"LinearBounds has {len(self._input_ids)} input IDs; use input_ids instead of input_id")
+        return self._input_ids[0]
+
+    @property
     def linear_lowers(self) -> list[torch.Tensor]:
         """Get linear coefficients for the lower bound, one tensor per input region."""
         return self._linear_lower.copy()
@@ -365,6 +374,20 @@ class LinearBounds(AbstractBounds):
         return tuple(self.bias_lower.shape)
 
     @property
+    def input_shapes(self) -> list[tuple[int, ...]]:
+        """Get shapes of input tensors corresponding to each region."""
+        shape = self.shape
+        batch_output_ndim = len(shape)
+
+        input_shapes: list[tuple[int, ...]] = []
+        for linear_lower in self._linear_lower:
+            term_shape: torch.Size = linear_lower.shape
+            input_shape: torch.Size = term_shape[batch_output_ndim:]
+            input_shapes.append(tuple(*input_shape))
+
+        return input_shapes
+
+    @property
     def input_dim(self) -> int:
         """Get input dimensions of linear bounds."""
         if not self._linear_lower:
@@ -406,29 +429,26 @@ class LinearBounds(AbstractBounds):
 
     def __getitem__(self, item) -> LinearBounds:
         """Slice/index the bounds."""
-        output_item = item if isinstance(item, tuple) else (item,)
 
-        def _index_linear(linear: torch.Tensor, region: SimpleRegion) -> torch.Tensor:
-            _, input_shape = self._split_region_shape(
-                torch.Size(region.shape),
-                self.bias_lower.shape,
-                torch.Size(linear.shape[len(self.bias_lower.shape) :]),
-            )
+        def _index_linear(linear: torch.Tensor, input_shape: tuple[int, ...]) -> torch.Tensor:
             input_ndim = len(input_shape)
-            if input_ndim > 0:
-                linear_item = output_item + (slice(None),) * input_ndim
+            if isinstance(item, tuple) and Ellipsis in item:
+                linear_item = item + (slice(None),) * input_ndim
             else:
-                linear_item = output_item
+                linear_item = item
+
             return linear[linear_item]
 
         return LinearBounds(
             regions=self._regions,
             linear_lower=[
-                _index_linear(linear, region) for linear, region in zip(self._linear_lower, self._regions, strict=True)
+                _index_linear(linear, input_shape)
+                for linear, input_shape in zip(self._linear_lower, self.input_shapes, strict=True)
             ],
             bias_lower=self.bias_lower[item],
             linear_upper=[
-                _index_linear(linear, region) for linear, region in zip(self._linear_upper, self._regions, strict=True)
+                _index_linear(linear, input_shape)
+                for linear, input_shape in zip(self._linear_upper, self.input_shapes, strict=True)
             ],
             bias_upper=self.bias_upper[item],
             input_ids=self._input_ids.copy() if self._input_ids else None,
@@ -467,5 +487,5 @@ class LinearBounds(AbstractBounds):
             bias_lower=self.bias_lower.clone(),
             linear_upper=[linear.clone() for linear in self._linear_upper],
             bias_upper=self.bias_upper.clone(),
-            input_ids=self._input_ids.copy() if self._input_ids else None,
+            input_ids=self._input_ids,
         )

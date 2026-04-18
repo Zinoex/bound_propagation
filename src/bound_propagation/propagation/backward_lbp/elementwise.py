@@ -32,6 +32,53 @@ if TYPE_CHECKING:
     from ..context import PropagationContext
 
 
+@final
+@dataclass
+class SymbolicElementwiseLinearRelaxation(SymbolicLinearRelaxation):
+    concrete_relaxation: ElementwiseLinearRelaxation
+
+    input: SymbolicLinearRelaxation
+
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        r = self.concrete_relaxation
+        node_ndim = r.alpha_lower.ndim - batch_ndim
+        bounded_ndim = A_lower.ndim - r.alpha_lower.ndim
+
+        def bc(t: torch.Tensor) -> torch.Tensor:
+            """Broadcast ``(*batch, *node)`` → ``(*batch, *bounded_out, *node)``."""
+            return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
+
+        A_l_pos = A_lower.clamp(min=0)
+        A_l_neg = A_lower.clamp(max=0)
+        A_u_pos = A_upper.clamp(min=0)
+        A_u_neg = A_upper.clamp(max=0)
+
+        # Sign decomposition: where A > 0 use same-side relaxation,
+        # where A < 0 use opposite-side relaxation.
+        new_A_lower = A_l_pos * bc(r.alpha_lower) + A_l_neg * bc(r.alpha_upper)
+        new_A_upper = A_u_pos * bc(r.alpha_upper) + A_u_neg * bc(r.alpha_lower)
+
+        bounds = self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        # Bias contribution: sum over the trailing node dimensions.
+        sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
+        delta_bias_lower = A_l_pos * bc(r.beta_lower) + A_l_neg * bc(r.beta_upper)
+        delta_bias_upper = A_u_pos * bc(r.beta_upper) + A_u_neg * bc(r.beta_lower)
+        if sum_dims:
+            delta_bias_lower = delta_bias_lower.sum(dim=sum_dims)
+            delta_bias_upper = delta_bias_upper.sum(dim=sum_dims)
+
+        return LinearBounds(
+            regions=bounds.regions,
+            linear_lower=bounds.linear_lowers,
+            bias_lower=bounds.bias_lower + delta_bias_lower,
+            linear_upper=bounds.linear_uppers,
+            bias_upper=bounds.bias_upper + delta_bias_upper,
+            input_ids=bounds.input_ids,
+            validate=False,
+        )
+
+
 class _ElementwiseBackwardLBP(BackwardLBPStrategy):
     """Base for element-wise nonlinear backward LBP strategies."""
 

@@ -129,256 +129,153 @@ class BackwardLBPNeg(BackwardLBPStrategy):
         return SymbolicNeg(input=sym_input)
 
 
-class BackwardLBPMul(BackwardLBPStrategy):
-    """Backward LBP strategy for multiplication (abstract*constant or abstract*abstract)."""
+@final
+@dataclass
+class SymbolicLinear(SymbolicLinearRelaxation):
+    """Backward through ``nn.Linear`` / ``F.linear``: ``y = x @ W^T + b``."""
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
-        left, right = args[0], args[1]
+    weight: torch.Tensor  # (out_features, in_features)
+    bias: torch.Tensor | None  # (out_features,) or None
+    input: SymbolicLinearRelaxation
 
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, SymbolicLinearRelaxation):
-            return self._mul_abstract(node, left, right)
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        # A: (*batch, *bounded_out, out_features)
+        # W: (out_features, in_features) -> A @ W gives (..., in_features)
+        new_A_lower = A_lower @ self.weight
+        new_A_upper = A_upper @ self.weight
 
-        if isinstance(left, SymbolicLinearRelaxation):
-            scale = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"]).expand(
-                node.meta["tensor_meta"]["shape"]
+        bounds = self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        if self.bias is not None:
+            # delta_bias = A @ bias: (..., out_features) @ (out_features,) -> (...)
+            delta_bias_lower = A_lower @ self.bias
+            delta_bias_upper = A_upper @ self.bias
+            return LinearBounds(
+                regions=bounds.regions,
+                linear_lower=bounds.linear_lowers,
+                bias_lower=bounds.bias_lower + delta_bias_lower,
+                linear_upper=bounds.linear_uppers,
+                bias_upper=bounds.bias_upper + delta_bias_upper,
+                input_ids=bounds.input_ids,
+                validate=False,
             )
-            return SymbolicScale(scale=scale, input=left)
+        return bounds
 
-        if isinstance(right, SymbolicLinearRelaxation):
-            scale = torch.as_tensor(left, dtype=node.meta["tensor_meta"]["dtype"]).expand(
-                node.meta["tensor_meta"]["shape"]
-            )
-            return SymbolicScale(scale=scale, input=right)
 
-        raise TypeError(
-            f"BackwardLBPMul requires at least one SymbolicLinearRelaxation, got {type(left)} and {type(right)}"
+@final
+@dataclass
+class SymbolicMatmulRightConstant(SymbolicLinearRelaxation):
+    """Backward through ``y = x @ W`` (right operand constant)."""
+
+    weight: torch.Tensor  # (in_features, out_features)
+    input: SymbolicLinearRelaxation
+
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        # A: (*batch, *bounded_out, out_features)
+        # W.T: (out_features, in_features) -> A @ W.T gives (..., in_features)
+        new_A_lower = A_lower @ self.weight.T
+        new_A_upper = A_upper @ self.weight.T
+        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+
+@final
+@dataclass
+class SymbolicMatmulLeftConstant(SymbolicLinearRelaxation):
+    """Backward through ``y = W @ x`` (left operand constant)."""
+
+    weight: torch.Tensor  # (out_features, in_features)
+    input: SymbolicLinearRelaxation
+
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        # A: (*batch, *bounded_out, out_features)
+        # W: (out_features, in_features) -> A @ W gives (..., in_features)
+        new_A_lower = A_lower @ self.weight
+        new_A_upper = A_upper @ self.weight
+        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+
+@final
+@dataclass
+class SymbolicAddBounds(SymbolicLinearRelaxation):
+    """Backward through ``y = x1 + x2`` (both abstract)."""
+
+    input_left: SymbolicLinearRelaxation
+    input_right: SymbolicLinearRelaxation
+
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        bounds_left = self.input_left.backward(A_lower, A_upper, batch_ndim)
+        bounds_right = self.input_right.backward(A_lower, A_upper, batch_ndim)
+        zero = torch.zeros_like(bounds_left.bias_lower)
+        return _merge_backward_bounds([bounds_left, bounds_right], zero, zero)
+
+
+@final
+@dataclass
+class SymbolicSubBounds(SymbolicLinearRelaxation):
+    """Backward through ``y = x1 - x2`` (both abstract)."""
+
+    input_left: SymbolicLinearRelaxation
+    input_right: SymbolicLinearRelaxation
+
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        bounds_left = self.input_left.backward(A_lower, A_upper, batch_ndim)
+        bounds_right = self.input_right.backward(-A_lower, -A_upper, batch_ndim)
+        zero = torch.zeros_like(bounds_left.bias_lower)
+        return _merge_backward_bounds([bounds_left, bounds_right], zero, zero)
+
+
+@final
+@dataclass
+class SymbolicConstantAdd(SymbolicLinearRelaxation):
+    """Backward through ``y = x + c`` (constant addend)."""
+
+    constant: torch.Tensor
+    input: SymbolicLinearRelaxation
+
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        bounds = self.input.backward(A_lower, A_upper, batch_ndim)
+        node_ndim = self.constant.ndim - batch_ndim
+        bounded_ndim = A_lower.ndim - self.constant.ndim
+
+        c_bc = self.constant.reshape(
+            self.constant.shape[:batch_ndim] + (1,) * bounded_ndim + self.constant.shape[batch_ndim:]
         )
 
-    def _mul_abstract(
-        self,
-        node: fx.Node,
-        left: SymbolicLinearRelaxation,
-        right: SymbolicLinearRelaxation,
-    ) -> SymbolicLinearRelaxation:
-        """Abstract * abstract: McCormick relaxation via PairedLinearRelaxation."""
-        from ..linear_relaxations.mul import compute_mul_relaxation
-        from .base import concretize_symbolic
+        sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
+        delta_lower = (A_lower * c_bc).sum(dim=sum_dims) if sum_dims else A_lower * c_bc
+        delta_upper = (A_upper * c_bc).sum(dim=sum_dims) if sum_dims else A_upper * c_bc
 
-        left_node = node.args[0]
-        right_node = node.args[1]
-        left_shape = left_node.meta["tensor_meta"]["shape"]
-        right_shape = right_node.meta["tensor_meta"]["shape"]
-        dtype = node.meta["tensor_meta"]["dtype"]
-        device = node.meta.get("device", "cpu")
-
-        la, ua = concretize_symbolic(left, left_shape, dtype, device)
-        lb, ub = concretize_symbolic(right, right_shape, dtype, device)
-
-        relaxation = compute_mul_relaxation(la, ua, lb, ub)
-        return relaxation.symbolic_forward([left, right])
-
-
-class BackwardLBPDiv(BackwardLBPStrategy):
-    """Backward LBP strategy for division (abstract/constant, constant/abstract, abstract/abstract)."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
-        left, right = args[0], args[1]
-
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, SymbolicLinearRelaxation):
-            return self._div_abstract(node, left, right)
-
-        if isinstance(left, SymbolicLinearRelaxation) and not isinstance(right, SymbolicLinearRelaxation):
-            # abstract / constant = abstract * (1/constant)
-            divisor = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"]).expand(
-                node.meta["tensor_meta"]["shape"]
-            )
-            return SymbolicScale(scale=1.0 / divisor, input=left)
-
-        if isinstance(right, SymbolicLinearRelaxation) and not isinstance(left, SymbolicLinearRelaxation):
-            return self._constant_div_abstract(node, left, right)
-
-        raise TypeError(
-            f"BackwardLBPDiv requires at least one SymbolicLinearRelaxation, got {type(left)} and {type(right)}"
+        return LinearBounds(
+            regions=bounds.regions,
+            linear_lower=bounds.linear_lowers,
+            bias_lower=bounds.bias_lower + delta_lower,
+            linear_upper=bounds.linear_uppers,
+            bias_upper=bounds.bias_upper + delta_upper,
+            input_ids=bounds.input_ids,
+            validate=False,
         )
 
-    def _div_abstract(
-        self,
-        node: fx.Node,
-        left: SymbolicLinearRelaxation,
-        right: SymbolicLinearRelaxation,
-    ) -> SymbolicLinearRelaxation:
-        """Abstract / abstract: decompose as a * (1/b) via relaxation."""
-        from ..linear_relaxations.div import compute_div_relaxation
-        from .base import concretize_symbolic
 
-        left_node = node.args[0]
-        right_node = node.args[1]
-        left_shape = left_node.meta["tensor_meta"]["shape"]
-        right_shape = right_node.meta["tensor_meta"]["shape"]
-        dtype = node.meta["tensor_meta"]["dtype"]
-        device = node.meta.get("device", "cpu")
+@final
+@dataclass
+class SymbolicNeg(SymbolicLinearRelaxation):
+    """Backward through ``y = -x``."""
 
-        la, ua = concretize_symbolic(left, left_shape, dtype, device)
-        lb, ub = concretize_symbolic(right, right_shape, dtype, device)
+    input: SymbolicLinearRelaxation
 
-        relaxation = compute_div_relaxation(la, ua, lb, ub)
-        return relaxation.symbolic_forward([left, right])
-
-    def _constant_div_abstract(
-        self,
-        node: fx.Node,
-        constant: object,
-        right: SymbolicLinearRelaxation,
-    ) -> SymbolicLinearRelaxation:
-        """Constant / abstract: use constant_div relaxation."""
-        from ..linear_relaxations.constant_div import compute_constant_div_relaxation
-        from .base import concretize_symbolic
-
-        right_node = node.args[1]
-        right_shape = right_node.meta["tensor_meta"]["shape"]
-        dtype = node.meta["tensor_meta"]["dtype"]
-        device = node.meta.get("device", "cpu")
-
-        lower_x, upper_x = concretize_symbolic(right, right_shape, dtype, device)
-        relaxation = compute_constant_div_relaxation(lower_x, upper_x, constant)
-        return relaxation.symbolic_forward([right])
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        return self.input.backward(-A_lower, -A_upper, batch_ndim)
 
 
-class BackwardLBPMaximum(BackwardLBPStrategy):
-    """Backward LBP strategy for element-wise maximum."""
+@final
+@dataclass
+class SymbolicScale(SymbolicLinearRelaxation):
+    """Backward through ``y = c * x`` (element-wise constant scale)."""
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
+    scale: torch.Tensor
+    input: SymbolicLinearRelaxation
 
-        args, _ = ctx.resolve_args(node)
-        left, right = args[0], args[1]
-
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, SymbolicLinearRelaxation):
-            return self._max_abstract(node, left, right)
-
-        if isinstance(left, SymbolicLinearRelaxation):
-            return self._max_with_constant(node, left, right, sym_is_left=True)
-
-        if isinstance(right, SymbolicLinearRelaxation):
-            return self._max_with_constant(node, right, left, sym_is_left=False)
-
-        raise TypeError(
-            f"BackwardLBPMaximum requires at least one SymbolicLinearRelaxation, got {type(left)} and {type(right)}"
-        )
-
-    def _max_abstract(
-        self,
-        node: fx.Node,
-        left: SymbolicLinearRelaxation,
-        right: SymbolicLinearRelaxation,
-    ) -> SymbolicLinearRelaxation:
-        from ..linear_relaxations.maximum import compute_maximum_relaxation
-        from .base import concretize_symbolic
-
-        left_node = node.args[0]
-        right_node = node.args[1]
-        dtype = node.meta["tensor_meta"]["dtype"]
-        device = node.meta.get("device", "cpu")
-
-        la, ua = concretize_symbolic(left, left_node.meta["tensor_meta"]["shape"], dtype, device)
-        lb, ub = concretize_symbolic(right, right_node.meta["tensor_meta"]["shape"], dtype, device)
-
-        relaxation = compute_maximum_relaxation(la, ua, lb, ub)
-        return relaxation.symbolic_forward([left, right])
-
-    def _max_with_constant(
-        self,
-        node: fx.Node,
-        sym: SymbolicLinearRelaxation,
-        constant: object,
-        sym_is_left: bool,
-    ) -> SymbolicLinearRelaxation:
-        from ..linear_relaxations.maximum import compute_maximum_relaxation
-        from .base import concretize_symbolic
-
-        sym_node = node.args[0] if sym_is_left else node.args[1]
-        dtype = node.meta["tensor_meta"]["dtype"]
-        device = node.meta.get("device", "cpu")
-
-        ls, us = concretize_symbolic(sym, sym_node.meta["tensor_meta"]["shape"], dtype, device)
-        c = torch.as_tensor(constant, dtype=dtype, device=device).expand_as(ls)
-
-        if sym_is_left:
-            relaxation = compute_maximum_relaxation(ls, us, c, c)
-        else:
-            relaxation = compute_maximum_relaxation(c, c, ls, us)
-
-        # The constant input needs a SymbolicIntervalLeaf
-        const_sym = SymbolicIntervalLeaf(lower=c, upper=c)
-        if sym_is_left:
-            return relaxation.symbolic_forward([sym, const_sym])
-        return relaxation.symbolic_forward([const_sym, sym])
-
-
-class BackwardLBPMinimum(BackwardLBPStrategy):
-    """Backward LBP strategy for element-wise minimum."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
-        left, right = args[0], args[1]
-
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, SymbolicLinearRelaxation):
-            return self._min_abstract(node, left, right)
-
-        if isinstance(left, SymbolicLinearRelaxation):
-            return self._min_with_constant(node, left, right, sym_is_left=True)
-
-        if isinstance(right, SymbolicLinearRelaxation):
-            return self._min_with_constant(node, right, left, sym_is_left=False)
-
-        raise TypeError(
-            f"BackwardLBPMinimum requires at least one SymbolicLinearRelaxation, got {type(left)} and {type(right)}"
-        )
-
-    def _min_abstract(
-        self,
-        node: fx.Node,
-        left: SymbolicLinearRelaxation,
-        right: SymbolicLinearRelaxation,
-    ) -> SymbolicLinearRelaxation:
-        from ..linear_relaxations.minimum import compute_minimum_relaxation
-        from .base import concretize_symbolic
-
-        left_node = node.args[0]
-        right_node = node.args[1]
-        dtype = node.meta["tensor_meta"]["dtype"]
-        device = node.meta.get("device", "cpu")
-
-        la, ua = concretize_symbolic(left, left_node.meta["tensor_meta"]["shape"], dtype, device)
-        lb, ub = concretize_symbolic(right, right_node.meta["tensor_meta"]["shape"], dtype, device)
-
-        relaxation = compute_minimum_relaxation(la, ua, lb, ub)
-        return relaxation.symbolic_forward([left, right])
-
-    def _min_with_constant(
-        self,
-        node: fx.Node,
-        sym: SymbolicLinearRelaxation,
-        constant: object,
-        sym_is_left: bool,
-    ) -> SymbolicLinearRelaxation:
-        from ..linear_relaxations.minimum import compute_minimum_relaxation
-        from .base import concretize_symbolic
-
-        sym_node = node.args[0] if sym_is_left else node.args[1]
-        dtype = node.meta["tensor_meta"]["dtype"]
-        device = node.meta.get("device", "cpu")
-
-        ls, us = concretize_symbolic(sym, sym_node.meta["tensor_meta"]["shape"], dtype, device)
-        c = torch.as_tensor(constant, dtype=dtype, device=device).expand_as(ls)
-
-        if sym_is_left:
-            relaxation = compute_minimum_relaxation(ls, us, c, c)
-        else:
-            relaxation = compute_minimum_relaxation(c, c, ls, us)
-
-        const_sym = SymbolicIntervalLeaf(lower=c, upper=c)
-        if sym_is_left:
-            return relaxation.symbolic_forward([sym, const_sym])
-        return relaxation.symbolic_forward([const_sym, sym])
+    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+        bounded_ndim = A_lower.ndim - self.scale.ndim
+        c = self.scale.reshape(self.scale.shape[:batch_ndim] + (1,) * bounded_ndim + self.scale.shape[batch_ndim:])
+        return self.input.backward(A_lower * c, A_upper * c, batch_ndim)
