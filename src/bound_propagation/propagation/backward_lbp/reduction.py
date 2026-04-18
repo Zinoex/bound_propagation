@@ -1,127 +1,38 @@
-"""Backward LBP strategies for reduction operations."""
+"""Backward LBP strategies and relaxations for reduction operations."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import torch
 import torch.fx as fx
+from beartype.typing import final
 
-from ..linear_relaxations.base import (
-    SymbolicIntervalLeaf,
-    SymbolicLinearRelaxation,
-)
-from ..linear_relaxations.reduction import SymbolicMean, SymbolicSum
-from .base import BackwardLBPStrategy, concretize_symbolic
+from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, IntervalLeafRelaxation
 
 if TYPE_CHECKING:
-    from ..context import PropagationContext
-
-
-class BackwardLBPSum(BackwardLBPStrategy):
-    """Backward LBP strategy for sum reduction."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPSum requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        dim = args[1] if len(args) > 1 else kwargs.get("dim")
-        keepdim = kwargs.get("keepdim", False)
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
-
-        return SymbolicSum(dim=dim, keepdim=keepdim, source_shape=source_shape, input=sym_input)
-
-
-class BackwardLBPMean(BackwardLBPStrategy):
-    """Backward LBP strategy for mean reduction."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPMean requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        dim = args[1] if len(args) > 1 else kwargs.get("dim")
-        keepdim = kwargs.get("keepdim", False)
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
-
-        return SymbolicMean(dim=dim, keepdim=keepdim, source_shape=source_shape, input=sym_input)
-
-
-class BackwardLBPMax(BackwardLBPStrategy):
-    """Backward LBP strategy for amax reduction.
-
-    Since amax is nonlinear, this concretizes the input subtree and wraps the
-    result as an interval leaf (breaks the symbolic chain).
-    """
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPMax requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        dim = args[1] if len(args) > 1 else kwargs.get("dim")
-        keepdim = kwargs.get("keepdim", False)
-
-        input_shape = node.args[0].meta["tensor_meta"]["shape"]
-        input_dtype = node.args[0].meta["tensor_meta"]["dtype"]
-        input_device = node.meta.get("device", "cpu")
-        lower, upper = concretize_symbolic(sym_input, input_shape, input_dtype, input_device)
-
-        if dim is not None:
-            lower = lower.amax(dim=dim, keepdim=keepdim)
-            upper = upper.amax(dim=dim, keepdim=keepdim)
-        else:
-            lower = lower.amax()
-            upper = upper.amax()
-
-        return SymbolicIntervalLeaf(lower=lower, upper=upper)
-
-
-class BackwardLBPMin(BackwardLBPStrategy):
-    """Backward LBP strategy for amin reduction.
-
-    Since amin is nonlinear, this concretizes the input subtree and wraps the
-    result as an interval leaf (breaks the symbolic chain).
-    """
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPMin requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        dim = args[1] if len(args) > 1 else kwargs.get("dim")
-        keepdim = kwargs.get("keepdim", False)
-
-        input_shape = node.args[0].meta["tensor_meta"]["shape"]
-        input_dtype = node.args[0].meta["tensor_meta"]["dtype"]
-        input_device = node.meta.get("device", "cpu")
-        lower, upper = concretize_symbolic(sym_input, input_shape, input_dtype, input_device)
-
-        if dim is not None:
-            lower = lower.amin(dim=dim, keepdim=keepdim)
-            upper = upper.amin(dim=dim, keepdim=keepdim)
-        else:
-            lower = lower.amin()
-            upper = upper.amin()
-
-        return SymbolicIntervalLeaf(lower=lower, upper=upper)
+    from .tape import BackwardTape
 
 
 @final
 @dataclass
-class SymbolicSum(SymbolicLinearRelaxation):
-    """Backward through sum(dim, keepdim)."""
+class SumRelaxation(BackwardRelaxation):
+    """Backward relaxation for sum reduction.
+
+    Reverses the sum by expanding A-matrices back to the source shape
+    and contributes zero bias.
+    """
 
     dim: int | tuple[int, ...] | None
     keepdim: bool
-    source_shape: tuple[int, ...]  # full input shape (including batch)
-    input: SymbolicLinearRelaxation
+    source_shape: tuple[int, ...]
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
         source_features = self.source_shape[batch_ndim:]
 
         if self.dim is None:
@@ -161,21 +72,36 @@ class SymbolicSum(SymbolicLinearRelaxation):
             new_A_lower = new_A_lower.expand(expand_shape)
             new_A_upper = new_A_upper.expand(expand_shape)
 
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+        # Bias shape is everything except the source node dimensions
+        source_node_ndim = len(source_features)
+        bias_shape = new_A_lower.shape[: new_A_lower.ndim - source_node_ndim]
+        zero = torch.zeros(bias_shape, dtype=A_lower.dtype, device=A_lower.device)
+
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=zero,
+            bias_upper=zero,
+        )
 
 
 @final
 @dataclass
-class SymbolicMean(SymbolicLinearRelaxation):
-    """Backward through mean(dim, keepdim)."""
+class MeanRelaxation(BackwardRelaxation):
+    """Backward relaxation for mean reduction.
+
+    Delegates to ``SumRelaxation`` after dividing the A-matrices by the
+    number of elements being averaged.
+    """
 
     dim: int | tuple[int, ...] | None
     keepdim: bool
-    source_shape: tuple[int, ...]  # full input shape (including batch)
-    input: SymbolicLinearRelaxation
+    source_shape: tuple[int, ...]
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        # mean = sum / count
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
         if self.dim is None:
             count = 1
             for d in self.source_shape[batch_ndim:]:
@@ -187,10 +113,102 @@ class SymbolicMean(SymbolicLinearRelaxation):
             for d in norm_dims:
                 count *= self.source_shape[d]
 
-        sym_sum = SymbolicSum(
+        sum_relaxation = SumRelaxation(
             dim=self.dim,
             keepdim=self.keepdim,
             source_shape=self.source_shape,
-            input=self.input,
+            input_node=self.input_node,
         )
-        return sym_sum.backward(A_lower / count, A_upper / count, batch_ndim)
+        return sum_relaxation.backward_through(A_lower / count, A_upper / count, batch_ndim)
+
+
+class BackwardLBPSum(BackwardLBPStrategy):
+    """Backward LBP strategy for sum reduction."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPSum requires input to be BackwardRelaxation, got {type(sym_input).__name__}")
+
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = kwargs.get("keepdim", False)
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+
+        return SumRelaxation(dim=dim, keepdim=keepdim, source_shape=source_shape, input_node=node.args[0])
+
+
+class BackwardLBPMean(BackwardLBPStrategy):
+    """Backward LBP strategy for mean reduction."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPMean requires input to be BackwardRelaxation, got {type(sym_input).__name__}")
+
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = kwargs.get("keepdim", False)
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+
+        return MeanRelaxation(dim=dim, keepdim=keepdim, source_shape=source_shape, input_node=node.args[0])
+
+
+class BackwardLBPMax(BackwardLBPStrategy):
+    """Backward LBP strategy for amax reduction.
+
+    Since amax is nonlinear, this concretizes the input subtree and wraps
+    the result as an interval leaf (breaks the symbolic chain).
+    """
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPMax requires input to be BackwardRelaxation, got {type(sym_input).__name__}")
+
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = kwargs.get("keepdim", False)
+
+        input_node = node.args[0]
+        bounds = tape.concretize_at(input_node)
+        lower, upper = bounds.lower, bounds.upper
+
+        if dim is not None:
+            lower = lower.amax(dim=dim, keepdim=keepdim)
+            upper = upper.amax(dim=dim, keepdim=keepdim)
+        else:
+            lower = lower.amax()
+            upper = upper.amax()
+
+        return IntervalLeafRelaxation(lower=lower, upper=upper)
+
+
+class BackwardLBPMin(BackwardLBPStrategy):
+    """Backward LBP strategy for amin reduction.
+
+    Since amin is nonlinear, this concretizes the input subtree and wraps
+    the result as an interval leaf (breaks the symbolic chain).
+    """
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPMin requires input to be BackwardRelaxation, got {type(sym_input).__name__}")
+
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        keepdim = kwargs.get("keepdim", False)
+
+        input_node = node.args[0]
+        bounds = tape.concretize_at(input_node)
+        lower, upper = bounds.lower, bounds.upper
+
+        if dim is not None:
+            lower = lower.amin(dim=dim, keepdim=keepdim)
+            upper = upper.amin(dim=dim, keepdim=keepdim)
+        else:
+            lower = lower.amin()
+            upper = upper.amin()
+
+        return IntervalLeafRelaxation(lower=lower, upper=upper)

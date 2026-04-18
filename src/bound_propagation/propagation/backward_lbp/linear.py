@@ -1,43 +1,33 @@
-"""Backward LBP strategies for linear / affine operations."""
+"""Backward LBP strategies and relaxations for linear / affine operations."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 import torch
 import torch.fx as fx
+from beartype.typing import final
 
-from ..linear_relaxations.base import (
-    SymbolicIntervalLeaf,
-    SymbolicLinearRelaxation,
-)
-from ..linear_relaxations.linear import (
-    SymbolicAddBounds,
-    SymbolicConstantAdd,
-    SymbolicLinear,
-    SymbolicMatmulLeftConstant,
-    SymbolicMatmulRightConstant,
-    SymbolicNeg,
-    SymbolicScale,
-    SymbolicSubBounds,
-)
-from .base import BackwardLBPStrategy
+from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, accumulate_a_terms
 
 if TYPE_CHECKING:
-    from ..context import PropagationContext
+    from .tape import BackwardTape
+
+
+# ---------------------------------------------------------------------------
+# Strategy classes
+# ---------------------------------------------------------------------------
 
 
 class BackwardLBPLinear(BackwardLBPStrategy):
-    """Backward LBP strategy for nn.Linear / F.linear."""
+    """Backward LBP strategy for ``nn.Linear`` / ``F.linear``."""
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPLinear requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
 
         if node.op == "call_module":
-            module = ctx.get_module(node.target)
+            module = tape.get_module(node.target)
             weight = module.weight
             bias = getattr(module, "bias", None)
         else:
@@ -47,193 +37,310 @@ class BackwardLBPLinear(BackwardLBPStrategy):
         if weight is None:
             raise ValueError("BackwardLBPLinear requires a weight tensor")
 
-        return SymbolicLinear(weight=weight, bias=bias, input=sym_input)
+        return LinearBackwardRelaxation(weight=weight, bias=bias, input_node=node.args[0])
 
 
 class BackwardLBPMatmul(BackwardLBPStrategy):
-    """Backward LBP strategy for matmul (abstract@constant or constant@abstract)."""
+    """Backward LBP strategy for matmul (abstract @ constant or constant @ abstract)."""
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, _ = tape.resolve_args(node)
         left, right = args[0], args[1]
 
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, torch.Tensor):
-            return SymbolicMatmulRightConstant(weight=right, input=left)
+        if isinstance(left, BackwardRelaxation) and isinstance(right, torch.Tensor):
+            return MatmulRightConstantRelaxation(weight=right, input_node=node.args[0])
 
-        if isinstance(left, torch.Tensor) and isinstance(right, SymbolicLinearRelaxation):
-            return SymbolicMatmulLeftConstant(weight=left, input=right)
+        if isinstance(left, torch.Tensor) and isinstance(right, BackwardRelaxation):
+            return MatmulLeftConstantRelaxation(weight=left, input_node=node.args[1])
 
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, SymbolicLinearRelaxation):
+        if isinstance(left, BackwardRelaxation) and isinstance(right, BackwardRelaxation):
+            # TODO: Implement this case. It is absolutely crucial for handling e.g. Jacobian terms.
             raise NotImplementedError("Backward LBP matmul with two abstract operands is not supported")
 
         raise TypeError(
-            f"BackwardLBPMatmul requires at least one SymbolicLinearRelaxation, got {type(left)} and {type(right)}"
+            f"BackwardLBPMatmul requires at least one BackwardRelaxation operand, got {type(left)} and {type(right)}"
         )
 
 
 class BackwardLBPAdd(BackwardLBPStrategy):
     """Backward LBP strategy for addition."""
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, _ = tape.resolve_args(node)
         left, right = args[0], args[1]
 
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, SymbolicLinearRelaxation):
-            return SymbolicAddBounds(input_left=left, input_right=right)
+        if isinstance(left, BackwardRelaxation) and isinstance(right, BackwardRelaxation):
+            return AddRelaxation(left_node=node.args[0], right_node=node.args[1])
 
-        if isinstance(left, SymbolicLinearRelaxation):
+        if isinstance(left, BackwardRelaxation):
             constant = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
-            return SymbolicConstantAdd(constant=constant, input=left)
+            return ConstantAddRelaxation(constant=constant, input_node=node.args[0])
 
-        if isinstance(right, SymbolicLinearRelaxation):
+        if isinstance(right, BackwardRelaxation):
             constant = torch.as_tensor(left, dtype=node.meta["tensor_meta"]["dtype"])
-            return SymbolicConstantAdd(constant=constant, input=right)
+            return ConstantAddRelaxation(constant=constant, input_node=node.args[1])
 
         raise TypeError(
-            f"BackwardLBPAdd requires at least one SymbolicLinearRelaxation, got {type(left)} and {type(right)}"
+            f"BackwardLBPAdd requires at least one BackwardRelaxation operand, got {type(left)} and {type(right)}"
         )
 
 
 class BackwardLBPSub(BackwardLBPStrategy):
     """Backward LBP strategy for subtraction."""
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, _ = tape.resolve_args(node)
         left, right = args[0], args[1]
 
-        if isinstance(left, SymbolicLinearRelaxation) and isinstance(right, SymbolicLinearRelaxation):
-            return SymbolicSubBounds(input_left=left, input_right=right)
+        if isinstance(left, BackwardRelaxation) and isinstance(right, BackwardRelaxation):
+            return SubRelaxation(left_node=node.args[0], right_node=node.args[1])
 
-        if isinstance(left, SymbolicLinearRelaxation):
+        if isinstance(left, BackwardRelaxation):
+            # x - c = x + (-c)
             constant = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
-            return SymbolicConstantAdd(constant=-constant, input=left)
+            return ConstantAddRelaxation(constant=-constant, input_node=node.args[0])
 
-        if isinstance(right, SymbolicLinearRelaxation):
-            # c - x = -(x - c) = -(x) + c
+        if isinstance(right, BackwardRelaxation):
+            # c - x: bias gets +c contribution, A gets negated for x
             constant = torch.as_tensor(left, dtype=node.meta["tensor_meta"]["dtype"])
-            return SymbolicConstantAdd(constant=constant, input=SymbolicNeg(input=right))
+            return ConstantAddRelaxation(constant=constant, input_node=node.args[1], negate_input=True)
 
         raise TypeError(
-            f"BackwardLBPSub requires at least one SymbolicLinearRelaxation, got {type(left)} and {type(right)}"
+            f"BackwardLBPSub requires at least one BackwardRelaxation operand, got {type(left)} and {type(right)}"
         )
 
 
 class BackwardLBPNeg(BackwardLBPStrategy):
     """Backward LBP strategy for negation."""
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPNeg requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-        return SymbolicNeg(input=sym_input)
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        return NegRelaxation(input_node=node.args[0])
+
+
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
+
+
+def _zero_bias(A: torch.Tensor, node_ndim: int) -> torch.Tensor:
+    """Create a zero bias tensor with shape ``(*batch, *bounded_out)``.
+
+    Parameters
+    ----------
+    A : torch.Tensor
+        An A-matrix with shape ``(*batch, *bounded_out, *node)``.
+    node_ndim : int
+        Number of trailing dimensions that belong to the node output.
+    """
+    bias_shape = A.shape[: A.ndim - node_ndim] if node_ndim > 0 else A.shape
+    return torch.zeros(bias_shape, dtype=A.dtype, device=A.device)
+
+
+def _node_ndim_from_meta(node: fx.Node, batch_ndim: int) -> int:
+    """Infer the number of non-batch feature dimensions from node metadata.
+
+    Falls back to 0 when ``tensor_meta`` is unavailable.
+    """
+    meta = node.meta.get("tensor_meta")
+    if meta is not None:
+        return len(meta["shape"]) - batch_ndim
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# Relaxation dataclasses
+# ---------------------------------------------------------------------------
 
 
 @final
 @dataclass
-class SymbolicLinear(SymbolicLinearRelaxation):
-    """Backward through ``nn.Linear`` / ``F.linear``: ``y = x @ W^T + b``."""
+class LinearBackwardRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``nn.Linear`` / ``F.linear``: ``y = x @ W^T + b``.
 
-    weight: torch.Tensor  # (out_features, in_features)
-    bias: torch.Tensor | None  # (out_features,) or None
-    input: SymbolicLinearRelaxation
+    Parameters
+    ----------
+    weight : torch.Tensor
+        Weight matrix of shape ``(out_features, in_features)``.
+    bias : torch.Tensor | None
+        Bias vector of shape ``(out_features,)``, or ``None``.
+    input_node : fx.Node
+        The fx graph node for the input to this linear layer.
+    """
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    weight: torch.Tensor
+    bias: torch.Tensor | None
+    input_node: fx.Node
+
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
         # A: (*batch, *bounded_out, out_features)
-        # W: (out_features, in_features) -> A @ W gives (..., in_features)
+        # weight: (out_features, in_features) -> A @ weight gives (..., in_features)
         new_A_lower = A_lower @ self.weight
         new_A_upper = A_upper @ self.weight
-
-        bounds = self.input.backward(new_A_lower, new_A_upper, batch_ndim)
 
         if self.bias is not None:
-            # delta_bias = A @ bias: (..., out_features) @ (out_features,) -> (...)
-            delta_bias_lower = A_lower @ self.bias
-            delta_bias_upper = A_upper @ self.bias
-            return LinearBounds(
-                regions=bounds.regions,
-                linear_lower=bounds.linear_lowers,
-                bias_lower=bounds.bias_lower + delta_bias_lower,
-                linear_upper=bounds.linear_uppers,
-                bias_upper=bounds.bias_upper + delta_bias_upper,
-                input_ids=bounds.input_ids,
-                validate=False,
-            )
-        return bounds
+            bias_lower = A_lower @ self.bias
+            bias_upper = A_upper @ self.bias
+        else:
+            zero = _zero_bias(A_lower, node_ndim=1)
+            bias_lower = zero
+            bias_upper = zero
+
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=bias_lower,
+            bias_upper=bias_upper,
+        )
 
 
 @final
 @dataclass
-class SymbolicMatmulRightConstant(SymbolicLinearRelaxation):
-    """Backward through ``y = x @ W`` (right operand constant)."""
+class MatmulRightConstantRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``y = x @ W`` (right operand constant).
 
-    weight: torch.Tensor  # (in_features, out_features)
-    input: SymbolicLinearRelaxation
+    Parameters
+    ----------
+    weight : torch.Tensor
+        Constant right operand of shape ``(in_features, out_features)``.
+    input_node : fx.Node
+        The fx graph node for the left (abstract) operand.
+    """
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        # A: (*batch, *bounded_out, out_features)
-        # W.T: (out_features, in_features) -> A @ W.T gives (..., in_features)
+    weight: torch.Tensor
+    input_node: fx.Node
+
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
         new_A_lower = A_lower @ self.weight.T
         new_A_upper = A_upper @ self.weight.T
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        zero = _zero_bias(A_lower, node_ndim=1)
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=zero,
+            bias_upper=zero,
+        )
 
 
 @final
 @dataclass
-class SymbolicMatmulLeftConstant(SymbolicLinearRelaxation):
-    """Backward through ``y = W @ x`` (left operand constant)."""
+class MatmulLeftConstantRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``y = W @ x`` (left operand constant).
 
-    weight: torch.Tensor  # (out_features, in_features)
-    input: SymbolicLinearRelaxation
+    Parameters
+    ----------
+    weight : torch.Tensor
+        Constant left operand of shape ``(out_features, in_features)``.
+    input_node : fx.Node
+        The fx graph node for the right (abstract) operand.
+    """
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        # A: (*batch, *bounded_out, out_features)
-        # W: (out_features, in_features) -> A @ W gives (..., in_features)
+    weight: torch.Tensor
+    input_node: fx.Node
+
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
         new_A_lower = A_lower @ self.weight
         new_A_upper = A_upper @ self.weight
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        zero = _zero_bias(A_lower, node_ndim=1)
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=zero,
+            bias_upper=zero,
+        )
 
 
 @final
 @dataclass
-class SymbolicAddBounds(SymbolicLinearRelaxation):
-    """Backward through ``y = x1 + x2`` (both abstract)."""
+class AddRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``y = x1 + x2`` (both abstract).
 
-    input_left: SymbolicLinearRelaxation
-    input_right: SymbolicLinearRelaxation
+    Parameters
+    ----------
+    left_node : fx.Node
+        The fx graph node for the left operand.
+    right_node : fx.Node
+        The fx graph node for the right operand.
+    """
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        bounds_left = self.input_left.backward(A_lower, A_upper, batch_ndim)
-        bounds_right = self.input_right.backward(A_lower, A_upper, batch_ndim)
-        zero = torch.zeros_like(bounds_left.bias_lower)
-        return _merge_backward_bounds([bounds_left, bounds_right], zero, zero)
+    left_node: fx.Node
+    right_node: fx.Node
+
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return list({self.left_node, self.right_node})
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
+        accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
+        accumulate_a_terms(a_terms, self.right_node, A_lower, A_upper)
+
+        node_ndim = _node_ndim_from_meta(self.left_node, batch_ndim)
+        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
 
 
 @final
 @dataclass
-class SymbolicSubBounds(SymbolicLinearRelaxation):
-    """Backward through ``y = x1 - x2`` (both abstract)."""
+class SubRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``y = x1 - x2`` (both abstract).
 
-    input_left: SymbolicLinearRelaxation
-    input_right: SymbolicLinearRelaxation
+    Parameters
+    ----------
+    left_node : fx.Node
+        The fx graph node for the left operand.
+    right_node : fx.Node
+        The fx graph node for the right operand.
+    """
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        bounds_left = self.input_left.backward(A_lower, A_upper, batch_ndim)
-        bounds_right = self.input_right.backward(-A_lower, -A_upper, batch_ndim)
-        zero = torch.zeros_like(bounds_left.bias_lower)
-        return _merge_backward_bounds([bounds_left, bounds_right], zero, zero)
+    left_node: fx.Node
+    right_node: fx.Node
+
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return list({self.left_node, self.right_node})
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
+        accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
+        accumulate_a_terms(a_terms, self.right_node, -A_lower, -A_upper)
+
+        node_ndim = _node_ndim_from_meta(self.left_node, batch_ndim)
+        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
 
 
 @final
 @dataclass
-class SymbolicConstantAdd(SymbolicLinearRelaxation):
-    """Backward through ``y = x + c`` (constant addend)."""
+class ConstantAddRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``y = x + c`` (constant addend).
+
+    When ``negate_input`` is ``True``, the A-matrices are negated before
+    being passed to the predecessor, implementing ``y = c - x``.
+
+    Parameters
+    ----------
+    constant : torch.Tensor
+        The constant tensor being added.
+    input_node : fx.Node
+        The fx graph node for the abstract operand.
+    negate_input : bool
+        If ``True``, negate the A-matrices for the predecessor (for ``c - x``).
+    """
 
     constant: torch.Tensor
-    input: SymbolicLinearRelaxation
+    input_node: fx.Node
+    negate_input: bool = False
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        bounds = self.input.backward(A_lower, A_upper, batch_ndim)
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
         node_ndim = self.constant.ndim - batch_ndim
         bounded_ndim = A_lower.ndim - self.constant.ndim
 
@@ -242,40 +349,81 @@ class SymbolicConstantAdd(SymbolicLinearRelaxation):
         )
 
         sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
-        delta_lower = (A_lower * c_bc).sum(dim=sum_dims) if sum_dims else A_lower * c_bc
-        delta_upper = (A_upper * c_bc).sum(dim=sum_dims) if sum_dims else A_upper * c_bc
+        if sum_dims:
+            delta_lower = (A_lower * c_bc).sum(dim=sum_dims)
+            delta_upper = (A_upper * c_bc).sum(dim=sum_dims)
+        else:
+            delta_lower = A_lower * c_bc
+            delta_upper = A_upper * c_bc
 
-        return LinearBounds(
-            regions=bounds.regions,
-            linear_lower=bounds.linear_lowers,
-            bias_lower=bounds.bias_lower + delta_lower,
-            linear_upper=bounds.linear_uppers,
-            bias_upper=bounds.bias_upper + delta_upper,
-            input_ids=bounds.input_ids,
-            validate=False,
+        if self.negate_input:
+            pred_A_lower, pred_A_upper = -A_lower, -A_upper
+        else:
+            pred_A_lower, pred_A_upper = A_lower, A_upper
+
+        return BackwardContributions(
+            a_terms={self.input_node: (pred_A_lower, pred_A_upper)},
+            bias_lower=delta_lower,
+            bias_upper=delta_upper,
         )
 
 
 @final
 @dataclass
-class SymbolicNeg(SymbolicLinearRelaxation):
-    """Backward through ``y = -x``."""
+class NegRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``y = -x``.
 
-    input: SymbolicLinearRelaxation
+    Parameters
+    ----------
+    input_node : fx.Node
+        The fx graph node for the input operand.
+    """
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        return self.input.backward(-A_lower, -A_upper, batch_ndim)
+    input_node: fx.Node
+
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+        node_ndim = _node_ndim_from_meta(self.input_node, batch_ndim)
+        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        return BackwardContributions(
+            a_terms={self.input_node: (-A_lower, -A_upper)},
+            bias_lower=zero,
+            bias_upper=zero,
+        )
 
 
 @final
 @dataclass
-class SymbolicScale(SymbolicLinearRelaxation):
-    """Backward through ``y = c * x`` (element-wise constant scale)."""
+class ScaleRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``y = c * x`` (element-wise constant scale).
+
+    Parameters
+    ----------
+    scale : torch.Tensor
+        The constant scale tensor.
+    input_node : fx.Node
+        The fx graph node for the abstract operand.
+    """
 
     scale: torch.Tensor
-    input: SymbolicLinearRelaxation
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
         bounded_ndim = A_lower.ndim - self.scale.ndim
         c = self.scale.reshape(self.scale.shape[:batch_ndim] + (1,) * bounded_ndim + self.scale.shape[batch_ndim:])
-        return self.input.backward(A_lower * c, A_upper * c, batch_ndim)
+
+        new_A_lower = A_lower * c
+        new_A_upper = A_upper * c
+
+        node_ndim = self.scale.ndim - batch_ndim
+        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=zero,
+            bias_upper=zero,
+        )

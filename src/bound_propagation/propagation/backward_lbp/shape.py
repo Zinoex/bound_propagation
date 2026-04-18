@@ -1,227 +1,72 @@
-"""Backward LBP strategies for shape manipulation operations."""
+"""Backward LBP strategies for shape manipulation operations.
+
+All shape operations are pure A-matrix dimension transforms with zero bias
+contributions. No sign decomposition or concretization is needed.
+"""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+import torch
 import torch.fx as fx
+from beartype.typing import final
 
-from ..linear_relaxations.base import SymbolicLinearRelaxation
-from ..linear_relaxations.shape import (
-    SymbolicCatNode,
-    SymbolicGetItem,
-    SymbolicPermute,
-    SymbolicReshape,
-    SymbolicSelect,
-    SymbolicSqueeze,
-    SymbolicStackNode,
-    SymbolicTranspose,
-    SymbolicUnsqueeze,
-)
-from .base import BackwardLBPStrategy
+from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, accumulate_a_terms
 
 if TYPE_CHECKING:
-    from ..context import PropagationContext
+    from .tape import BackwardTape
 
 
-class BackwardLBPReshape(BackwardLBPStrategy):
-    """Backward LBP strategy for reshape / view / flatten."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPReshape requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
-        target_shape = node.meta["tensor_meta"]["shape"]
-
-        return SymbolicReshape(source_shape=source_shape, target_shape=target_shape, input=sym_input)
+# ---------------------------------------------------------------------------
+# Helper
+# ---------------------------------------------------------------------------
 
 
-class BackwardLBPUnsqueeze(BackwardLBPStrategy):
-    """Backward LBP strategy for unsqueeze."""
+def _zero_bias(A: torch.Tensor, node_ndim: int) -> torch.Tensor:
+    """Create zero bias tensor with shape ``(*batch, *bounded_out)``.
 
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(
-                f"BackwardLBPUnsqueeze requires input to be SymbolicLinearRelaxation, got {type(sym_input)}"
-            )
+    Parameters
+    ----------
+    A : torch.Tensor
+        An A-matrix whose leading dimensions encode batch and bounded-output
+        shape, followed by ``node_ndim`` trailing node dimensions.
+    node_ndim : int
+        Number of trailing dimensions that belong to the node (not batch/bounded).
 
-        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
-        output_ndim = len(node.meta["tensor_meta"]["shape"])
-
-        # Normalize negative dim
-        if dim < 0:
-            dim += output_ndim
-
-        return SymbolicUnsqueeze(dim=dim, output_ndim=output_ndim, input=sym_input)
-
-
-class BackwardLBPSqueeze(BackwardLBPStrategy):
-    """Backward LBP strategy for squeeze."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPSqueeze requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        dim = args[1] if len(args) > 1 else kwargs.get("dim")
-        input_ndim = len(node.args[0].meta["tensor_meta"]["shape"])
-
-        if dim is not None:
-            if dim < 0:
-                dim += input_ndim
-            return SymbolicSqueeze(dim=dim, input_ndim=input_ndim, input=sym_input)
-
-        # squeeze(None) removes all size-1 dims -> use reshape
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
-        target_shape = node.meta["tensor_meta"]["shape"]
-        return SymbolicReshape(source_shape=source_shape, target_shape=target_shape, input=sym_input)
+    Returns
+    -------
+    torch.Tensor
+        Zero tensor with shape ``A.shape[:A.ndim - node_ndim]``.
+    """
+    bias_ndim = A.ndim - node_ndim
+    return torch.zeros(A.shape[:bias_ndim], dtype=A.dtype, device=A.device)
 
 
-class BackwardLBPTranspose(BackwardLBPStrategy):
-    """Backward LBP strategy for transpose."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(
-                f"BackwardLBPTranspose requires input to be SymbolicLinearRelaxation, got {type(sym_input)}"
-            )
-
-        dim0 = args[1] if len(args) > 1 else kwargs.get("dim0", 0)
-        dim1 = args[2] if len(args) > 2 else kwargs.get("dim1", 1)
-        output_ndim = len(node.meta["tensor_meta"]["shape"])
-
-        if dim0 < 0:
-            dim0 += output_ndim
-        if dim1 < 0:
-            dim1 += output_ndim
-
-        return SymbolicTranspose(dim0=dim0, dim1=dim1, output_ndim=output_ndim, input=sym_input)
-
-
-class BackwardLBPPermute(BackwardLBPStrategy):
-    """Backward LBP strategy for permute."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPPermute requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        if len(args) == 2 and isinstance(args[1], (tuple, list)):
-            dims = tuple(args[1])
-        else:
-            dims = tuple(args[1:])
-
-        output_ndim = len(node.meta["tensor_meta"]["shape"])
-        dims = tuple(d + output_ndim if d < 0 else d for d in dims)
-
-        return SymbolicPermute(perm=dims, output_ndim=output_ndim, input=sym_input)
-
-
-class BackwardLBPSelect(BackwardLBPStrategy):
-    """Backward LBP strategy for select."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        sym_input = args[0]
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPSelect requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
-        index = args[2] if len(args) > 2 else kwargs.get("index", 0)
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
-
-        input_ndim = len(source_shape)
-        if dim < 0:
-            dim += input_ndim
-
-        return SymbolicSelect(dim=dim, index=index, source_shape=source_shape, input=sym_input)
-
-
-class BackwardLBPGetItem(BackwardLBPStrategy):
-    """Backward LBP strategy for getitem (operator.getitem)."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, _ = ctx.resolve_args(node)
-        sym_input = args[0]
-        index = args[1]
-
-        if not isinstance(sym_input, SymbolicLinearRelaxation):
-            raise TypeError(f"BackwardLBPGetItem requires input to be SymbolicLinearRelaxation, got {type(sym_input)}")
-
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
-        output_shape = node.meta["tensor_meta"]["shape"]
-
-        return SymbolicGetItem(index=index, source_shape=source_shape, output_shape=output_shape, input=sym_input)
-
-
-class BackwardLBPConcat(BackwardLBPStrategy):
-    """Backward LBP strategy for torch.cat."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        tensors = args[0]
-        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
-
-        inputs: list[SymbolicLinearRelaxation] = []
-        split_sizes: list[int] = []
-
-        for i, (t, raw_arg) in enumerate(zip(tensors, node.args[0], strict=True)):
-            if not isinstance(t, SymbolicLinearRelaxation):
-                raise TypeError(
-                    f"BackwardLBPConcat requires all inputs to be SymbolicLinearRelaxation, but input {i} is {type(t)}"
-                )
-            inputs.append(t)
-            split_sizes.append(raw_arg.meta["tensor_meta"]["shape"][dim])
-
-        output_ndim = len(node.meta["tensor_meta"]["shape"])
-        if dim < 0:
-            dim += output_ndim
-
-        return SymbolicCatNode(dim=dim, split_sizes=tuple(split_sizes), output_ndim=output_ndim, inputs=inputs)
-
-
-class BackwardLBPStack(BackwardLBPStrategy):
-    """Backward LBP strategy for torch.stack."""
-
-    def build_symbolic(self, node: fx.Node, ctx: PropagationContext) -> SymbolicLinearRelaxation:
-        args, kwargs = ctx.resolve_args(node)
-        tensors = args[0]
-        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
-
-        inputs: list[SymbolicLinearRelaxation] = []
-        for i, t in enumerate(tensors):
-            if not isinstance(t, SymbolicLinearRelaxation):
-                raise TypeError(
-                    f"BackwardLBPStack requires all inputs to be SymbolicLinearRelaxation, but input {i} is {type(t)}"
-                )
-            inputs.append(t)
-
-        output_ndim = len(node.meta["tensor_meta"]["shape"])
-        if dim < 0:
-            dim += output_ndim
-
-        return SymbolicStackNode(dim=dim, output_ndim=output_ndim, inputs=inputs)
+# ---------------------------------------------------------------------------
+# Relaxation dataclasses
+# ---------------------------------------------------------------------------
 
 
 @final
 @dataclass
-class SymbolicReshape(SymbolicLinearRelaxation):
-    """Backward through reshape / flatten / view."""
+class ReshapeRelaxation(BackwardRelaxation):
+    """Backward relaxation for reshape / flatten / view."""
 
-    source_shape: tuple[int, ...]  # full input shape (with batch)
-    target_shape: tuple[int, ...]  # full output shape (with batch)
-    input: SymbolicLinearRelaxation
+    source_shape: tuple[int, ...]
+    target_shape: tuple[int, ...]
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         target_features = self.target_shape[batch_ndim:]
         source_features = self.source_shape[batch_ndim:]
         bounded_ndim = A_lower.ndim - batch_ndim - len(target_features)
@@ -232,79 +77,132 @@ class SymbolicReshape(SymbolicLinearRelaxation):
         new_A_lower = A_lower.reshape(new_shape)
         new_A_upper = A_upper.reshape(new_shape)
 
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+        node_ndim = len(target_features)
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicUnsqueeze(SymbolicLinearRelaxation):
-    """Backward through unsqueeze(dim)."""
+class UnsqueezeRelaxation(BackwardRelaxation):
+    """Backward relaxation for unsqueeze(dim)."""
 
-    dim: int  # non-negative, absolute dim in the output tensor
-    output_ndim: int  # total ndim of the output tensor (including batch)
-    input: SymbolicLinearRelaxation
+    dim: int
+    output_ndim: int
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        # The unsqueezed dim in A's node portion
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         bounded_ndim = A_lower.ndim - self.output_ndim
         a_dim = batch_ndim + bounded_ndim + (self.dim - batch_ndim)
         new_A_lower = A_lower.squeeze(a_dim)
         new_A_upper = A_upper.squeeze(a_dim)
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        node_ndim = self.output_ndim - batch_ndim
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicSqueeze(SymbolicLinearRelaxation):
-    """Backward through squeeze(dim).
+class SqueezeRelaxation(BackwardRelaxation):
+    """Backward relaxation for squeeze(dim).
 
-    For squeeze without a dim (squeeze all size-1 dims), use SymbolicReshape instead.
+    For squeeze without a dim (squeeze all size-1 dims), use
+    ``ReshapeRelaxation`` instead.
     """
 
-    dim: int  # non-negative, absolute dim in the input tensor that was squeezed
-    input_ndim: int  # total ndim of the input tensor (including batch)
-    input: SymbolicLinearRelaxation
+    dim: int
+    input_ndim: int
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        # Inverse of squeeze is unsqueeze at the same position
-        output_ndim = self.input_ndim - 1  # squeeze removes one dim
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
+        output_ndim = self.input_ndim - 1
         bounded_ndim = A_lower.ndim - (output_ndim - batch_ndim) - batch_ndim
         a_dim = batch_ndim + bounded_ndim + (self.dim - batch_ndim)
         new_A_lower = A_lower.unsqueeze(a_dim)
         new_A_upper = A_upper.unsqueeze(a_dim)
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        node_ndim = output_ndim - batch_ndim
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicTranspose(SymbolicLinearRelaxation):
-    """Backward through transpose(dim0, dim1)."""
+class TransposeRelaxation(BackwardRelaxation):
+    """Backward relaxation for transpose(dim0, dim1)."""
 
-    dim0: int  # non-negative, absolute dim in the output tensor
-    dim1: int  # non-negative, absolute dim in the output tensor
-    output_ndim: int  # total ndim of the output (including batch)
-    input: SymbolicLinearRelaxation
+    dim0: int
+    dim1: int
+    output_ndim: int
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
-        # transpose is its own inverse
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         bounded_ndim = A_lower.ndim - self.output_ndim
         a_dim0 = batch_ndim + bounded_ndim + (self.dim0 - batch_ndim)
         a_dim1 = batch_ndim + bounded_ndim + (self.dim1 - batch_ndim)
         new_A_lower = A_lower.transpose(a_dim0, a_dim1)
         new_A_upper = A_upper.transpose(a_dim0, a_dim1)
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        node_ndim = self.output_ndim - batch_ndim
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicPermute(SymbolicLinearRelaxation):
-    """Backward through permute(dims)."""
+class PermuteRelaxation(BackwardRelaxation):
+    """Backward relaxation for permute(dims)."""
 
-    perm: tuple[int, ...]  # non-negative, absolute dims in the output tensor
-    output_ndim: int  # total ndim of the output (including batch)
-    input: SymbolicLinearRelaxation
+    perm: tuple[int, ...]
+    output_ndim: int
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         bounded_ndim = A_lower.ndim - self.output_ndim
         node_perm = tuple(p - batch_ndim for p in self.perm)
 
@@ -320,20 +218,34 @@ class SymbolicPermute(SymbolicLinearRelaxation):
         )
         new_A_lower = A_lower.permute(a_perm)
         new_A_upper = A_upper.permute(a_perm)
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+
+        node_ndim = self.output_ndim - batch_ndim
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicSelect(SymbolicLinearRelaxation):
-    """Backward through select(dim, index)."""
+class SelectRelaxation(BackwardRelaxation):
+    """Backward relaxation for select(dim, index)."""
 
-    dim: int  # non-negative, absolute dim in the input tensor
+    dim: int
     index: int
-    source_shape: tuple[int, ...]  # full input shape (including batch)
-    input: SymbolicLinearRelaxation
+    source_shape: tuple[int, ...]
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         source_features = self.source_shape[batch_ndim:]
         bounded_ndim = A_lower.ndim - batch_ndim - (len(source_features) - 1)
         a_dim = batch_ndim + bounded_ndim + (self.dim - batch_ndim)
@@ -351,20 +263,34 @@ class SymbolicSelect(SymbolicLinearRelaxation):
         new_A_lower.narrow(a_dim, self.index, 1).copy_(A_lower_expanded)
         new_A_upper.narrow(a_dim, self.index, 1).copy_(A_upper_expanded)
 
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+        # select removes one dim, so output node_ndim = len(source_features) - 1
+        node_ndim = len(source_features) - 1
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicGetItem(SymbolicLinearRelaxation):
-    """Backward through getitem (indexing)."""
+class GetItemRelaxation(BackwardRelaxation):
+    """Backward relaxation for operator.getitem (indexing)."""
 
     index: object
-    source_shape: tuple[int, ...]  # full input shape (including batch)
-    output_shape: tuple[int, ...]  # full output shape (including batch)
-    input: SymbolicLinearRelaxation
+    source_shape: tuple[int, ...]
+    output_shape: tuple[int, ...]
+    input_node: fx.Node
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return [self.input_node]
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         source_features = self.source_shape[batch_ndim:]
         output_features = self.output_shape[batch_ndim:]
         bounded_ndim = A_lower.ndim - batch_ndim - len(output_features)
@@ -384,20 +310,33 @@ class SymbolicGetItem(SymbolicLinearRelaxation):
         new_A_lower[full_index] = A_lower
         new_A_upper[full_index] = A_upper
 
-        return self.input.backward(new_A_lower, new_A_upper, batch_ndim)
+        node_ndim = len(output_features)
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicCatNode(SymbolicLinearRelaxation):
-    """Backward through cat(tensors, dim)."""
+class CatRelaxation(BackwardRelaxation):
+    """Backward relaxation for torch.cat."""
 
-    dim: int  # non-negative, absolute dim in the output tensor
-    split_sizes: tuple[int, ...]  # size of each input along the cat dim
-    output_ndim: int  # total ndim of the output (including batch)
-    inputs: list[SymbolicLinearRelaxation]
+    dim: int
+    split_sizes: tuple[int, ...]
+    output_ndim: int
+    input_nodes: list[fx.Node]
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return list(dict.fromkeys(self.input_nodes))
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         node_ndim = self.output_ndim - batch_ndim
         bounded_ndim = A_lower.ndim - batch_ndim - node_ndim
         a_dim = batch_ndim + bounded_ndim + (self.dim - batch_ndim)
@@ -405,33 +344,264 @@ class SymbolicCatNode(SymbolicLinearRelaxation):
         A_lowers = A_lower.split(list(self.split_sizes), dim=a_dim)
         A_uppers = A_upper.split(list(self.split_sizes), dim=a_dim)
 
-        bounds_list = []
-        for A_l, A_u, inp in zip(A_lowers, A_uppers, self.inputs, strict=True):
-            bounds_list.append(inp.backward(A_l, A_u, batch_ndim))
+        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
+        for A_l, A_u, inp_node in zip(A_lowers, A_uppers, self.input_nodes, strict=True):
+            accumulate_a_terms(a_terms, inp_node, A_l, A_u)
 
-        zero = torch.zeros_like(bounds_list[0].bias_lower)
-        return _merge_backward_bounds(bounds_list, zero, zero)
+        return BackwardContributions(
+            a_terms=a_terms,
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
 
 
 @final
 @dataclass
-class SymbolicStackNode(SymbolicLinearRelaxation):
-    """Backward through stack(tensors, dim)."""
+class StackRelaxation(BackwardRelaxation):
+    """Backward relaxation for torch.stack."""
 
-    dim: int  # non-negative, absolute dim in the output tensor
-    output_ndim: int  # total ndim of the output (including batch)
-    inputs: list[SymbolicLinearRelaxation]
+    dim: int
+    output_ndim: int
+    input_nodes: list[fx.Node]
 
-    def backward(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> LinearBounds:
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return list(dict.fromkeys(self.input_nodes))
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
         node_ndim = self.output_ndim - batch_ndim
         bounded_ndim = A_lower.ndim - batch_ndim - node_ndim
         a_dim = batch_ndim + bounded_ndim + (self.dim - batch_ndim)
 
-        bounds_list = []
-        for i, inp in enumerate(self.inputs):
+        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
+        for i, inp_node in enumerate(self.input_nodes):
             A_l = A_lower.select(a_dim, i)
             A_u = A_upper.select(a_dim, i)
-            bounds_list.append(inp.backward(A_l, A_u, batch_ndim))
+            accumulate_a_terms(a_terms, inp_node, A_l, A_u)
 
-        zero = torch.zeros_like(bounds_list[0].bias_lower)
-        return _merge_backward_bounds(bounds_list, zero, zero)
+        return BackwardContributions(
+            a_terms=a_terms,
+            bias_lower=_zero_bias(A_lower, node_ndim),
+            bias_upper=_zero_bias(A_upper, node_ndim),
+        )
+
+
+# ---------------------------------------------------------------------------
+# Strategy classes
+# ---------------------------------------------------------------------------
+
+
+class BackwardLBPReshape(BackwardLBPStrategy):
+    """Backward LBP strategy for reshape / view / flatten."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, _ = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPReshape requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+        target_shape = node.meta["tensor_meta"]["shape"]
+
+        return ReshapeRelaxation(
+            source_shape=source_shape,
+            target_shape=target_shape,
+            input_node=node.args[0],
+        )
+
+
+class BackwardLBPUnsqueeze(BackwardLBPStrategy):
+    """Backward LBP strategy for unsqueeze."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPUnsqueeze requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
+        output_ndim = len(node.meta["tensor_meta"]["shape"])
+
+        # Normalize negative dim
+        if dim < 0:
+            dim += output_ndim
+
+        return UnsqueezeRelaxation(dim=dim, output_ndim=output_ndim, input_node=node.args[0])
+
+
+class BackwardLBPSqueeze(BackwardLBPStrategy):
+    """Backward LBP strategy for squeeze."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPSqueeze requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        dim = args[1] if len(args) > 1 else kwargs.get("dim")
+        input_ndim = len(node.args[0].meta["tensor_meta"]["shape"])
+
+        if dim is not None:
+            if dim < 0:
+                dim += input_ndim
+            return SqueezeRelaxation(dim=dim, input_ndim=input_ndim, input_node=node.args[0])
+
+        # squeeze(None) removes all size-1 dims -> use reshape
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+        target_shape = node.meta["tensor_meta"]["shape"]
+        return ReshapeRelaxation(
+            source_shape=source_shape,
+            target_shape=target_shape,
+            input_node=node.args[0],
+        )
+
+
+class BackwardLBPTranspose(BackwardLBPStrategy):
+    """Backward LBP strategy for transpose."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPTranspose requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        dim0 = args[1] if len(args) > 1 else kwargs.get("dim0", 0)
+        dim1 = args[2] if len(args) > 2 else kwargs.get("dim1", 1)
+        output_ndim = len(node.meta["tensor_meta"]["shape"])
+
+        if dim0 < 0:
+            dim0 += output_ndim
+        if dim1 < 0:
+            dim1 += output_ndim
+
+        return TransposeRelaxation(
+            dim0=dim0,
+            dim1=dim1,
+            output_ndim=output_ndim,
+            input_node=node.args[0],
+        )
+
+
+class BackwardLBPPermute(BackwardLBPStrategy):
+    """Backward LBP strategy for permute."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPPermute requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        if len(args) == 2 and isinstance(args[1], (tuple, list)):
+            dims = tuple(args[1])
+        else:
+            dims = tuple(args[1:])
+
+        output_ndim = len(node.meta["tensor_meta"]["shape"])
+        dims = tuple(d + output_ndim if d < 0 else d for d in dims)
+
+        return PermuteRelaxation(perm=dims, output_ndim=output_ndim, input_node=node.args[0])
+
+
+class BackwardLBPSelect(BackwardLBPStrategy):
+    """Backward LBP strategy for select."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPSelect requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
+        index = args[2] if len(args) > 2 else kwargs.get("index", 0)
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+
+        input_ndim = len(source_shape)
+        if dim < 0:
+            dim += input_ndim
+
+        return SelectRelaxation(
+            dim=dim,
+            index=index,
+            source_shape=source_shape,
+            input_node=node.args[0],
+        )
+
+
+class BackwardLBPGetItem(BackwardLBPStrategy):
+    """Backward LBP strategy for operator.getitem."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, _ = tape.resolve_args(node)
+        sym_input = args[0]
+        index = args[1]
+
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPGetItem requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+        output_shape = node.meta["tensor_meta"]["shape"]
+
+        return GetItemRelaxation(
+            index=index,
+            source_shape=source_shape,
+            output_shape=output_shape,
+            input_node=node.args[0],
+        )
+
+
+class BackwardLBPConcat(BackwardLBPStrategy):
+    """Backward LBP strategy for torch.cat."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        tensors = args[0]
+        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
+
+        input_nodes: list[fx.Node] = []
+        split_sizes: list[int] = []
+
+        for i, (t, raw_arg) in enumerate(zip(tensors, node.args[0], strict=True)):
+            if not isinstance(t, BackwardRelaxation):
+                raise TypeError(
+                    f"BackwardLBPConcat requires all inputs to be BackwardRelaxation, but input {i} is {type(t)}"
+                )
+            input_nodes.append(raw_arg)
+            split_sizes.append(raw_arg.meta["tensor_meta"]["shape"][dim])
+
+        output_ndim = len(node.meta["tensor_meta"]["shape"])
+        if dim < 0:
+            dim += output_ndim
+
+        return CatRelaxation(
+            dim=dim,
+            split_sizes=tuple(split_sizes),
+            output_ndim=output_ndim,
+            input_nodes=input_nodes,
+        )
+
+
+class BackwardLBPStack(BackwardLBPStrategy):
+    """Backward LBP strategy for torch.stack."""
+
+    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+        args, kwargs = tape.resolve_args(node)
+        tensors = args[0]
+        dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
+
+        input_nodes: list[fx.Node] = []
+        for i, (t, raw_arg) in enumerate(zip(tensors, node.args[0], strict=True)):
+            if not isinstance(t, BackwardRelaxation):
+                raise TypeError(
+                    f"BackwardLBPStack requires all inputs to be BackwardRelaxation, but input {i} is {type(t)}"
+                )
+            input_nodes.append(raw_arg)
+
+        output_ndim = len(node.meta["tensor_meta"]["shape"])
+        if dim < 0:
+            dim += output_ndim
+
+        return StackRelaxation(dim=dim, output_ndim=output_ndim, input_nodes=input_nodes)

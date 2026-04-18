@@ -1,6 +1,6 @@
 """
-Tests for ElementwiseForwardLinearRelaxation.forward and
-PairedLinearRelaxation.forward.
+Tests for ElementwiseForwardRelaxation.forward and
+PairedForwardRelaxation.forward.
 
 Adapted from legacy tests that lived on LinearBounds directly, extended with
 edge cases for multi-region bounds, shared input IDs, and mixed-sign coefficients.
@@ -9,15 +9,15 @@ edge cases for multi-region bounds, shared input IDs, and mixed-sign coefficient
 import torch
 
 from bound_propagation.bounds import LinearBounds
-from bound_propagation.propagation.forward_lbp.elementwise import ElementwiseForwardLinearRelaxation
-from bound_propagation.propagation.forward_lbp.pairwise import PairedLinearRelaxation
+from bound_propagation.propagation.forward_lbp.elementwise import ElementwiseForwardRelaxation
+from bound_propagation.propagation.forward_lbp.pairwise import PairedForwardRelaxation
 from bound_propagation.propagation.linear_relaxations.elementwise import ElementwiseParams
 from bound_propagation.propagation.linear_relaxations.pairwise import PairedParams
 from bound_propagation.regions import HyperRectangle
 
 
 class TestElementwiseLinearRelaxationForwardCompose:
-    """Tests for ElementwiseForwardLinearRelaxation.forward."""
+    """Tests for ElementwiseForwardRelaxation.forward."""
 
     def test_basic_positive_alpha(self):
         """Positive alpha: lower uses lower input, upper uses upper input."""
@@ -31,7 +31,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([2.0]),
         )
 
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([1.0]),
                 beta_lower=torch.tensor([0.5]),
@@ -68,7 +68,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
         )
 
         # alpha_lower < alpha_upper (both negative): -2 < -1
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([-2.0]),
                 beta_lower=torch.tensor([0.5]),
@@ -104,7 +104,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
         )
 
         # Output 0: alpha=+1 (positive), output 1: alpha=-1 (negative)
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([1.0, -1.0]),
                 beta_lower=torch.tensor([0.0, 0.0]),
@@ -138,7 +138,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([4.0]),
         )
 
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([0.0]),
                 beta_lower=torch.tensor([1.0]),
@@ -174,7 +174,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             bias_upper=bu,
         )
 
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.ones(2),
                 beta_lower=torch.zeros(2),
@@ -200,7 +200,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([3.0]),
         )
 
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([2.0]),
                 beta_lower=torch.tensor([1.0]),
@@ -225,7 +225,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([3.0]),
         )
 
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([-1.0]),
                 beta_lower=torch.tensor([0.0]),
@@ -254,7 +254,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             input_ids=[10, 20],
         )
 
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([2.0]),
                 beta_lower=torch.tensor([1.0]),
@@ -297,7 +297,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
         )
 
         # Per-output slopes: alpha_lower <= alpha_upper for each output so the composed bounds are valid
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([1.0, 1.0]),
                 beta_lower=torch.tensor([0.0, 0.5]),
@@ -333,7 +333,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
             input_ids=[99],
         )
 
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([1.0]),
                 beta_lower=torch.tensor([0.0]),
@@ -366,7 +366,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
         )
 
         # Different alpha per batch element; alpha_lower < alpha_upper element-wise
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.tensor([[1.0], [2.0]]),
                 beta_lower=torch.tensor([[0.5], [0.0]]),
@@ -415,7 +415,7 @@ class TestElementwiseLinearRelaxationForwardCompose:
         )
 
         # Uniform alpha across batch for simplicity; per-element alpha is tested in 1d case
-        relaxation = ElementwiseForwardLinearRelaxation(
+        relaxation = ElementwiseForwardRelaxation(
             params=ElementwiseParams(
                 alpha_lower=torch.ones(2, 2, 1),
                 beta_lower=torch.zeros(2, 2, 1),
@@ -441,8 +441,8 @@ class TestElementwiseLinearRelaxationForwardCompose:
         assert torch.allclose(result.bias_upper, 2 * bu + torch.ones(2, 2, 1))
 
 
-class TestPairedLinearRelaxationForwardCompose:
-    """Tests for PairedLinearRelaxation.forward."""
+class TestPairedForwardRelaxationForwardCompose:
+    """Tests for PairedForwardRelaxation.forward."""
 
     def test_basic_positive_coeffs_distinct_input_ids(self):
         """Both coefficients positive, distinct input IDs: contributions remain separate."""
@@ -467,7 +467,7 @@ class TestPairedLinearRelaxationForwardCompose:
         )
 
         # z >= 1*x1 + 1*x2  (lower),  z <= 2*x1 + 3*x2 + 0.5 (upper)
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.tensor([1.0]),
                 alpha_upper_a=torch.tensor([2.0]),
@@ -518,7 +518,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([1.0]),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.tensor([1.0]),
                 alpha_upper_a=torch.tensor([1.0]),
@@ -566,7 +566,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([3.0]),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.tensor([1.0]),
                 alpha_upper_a=torch.tensor([1.0]),
@@ -612,7 +612,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([0.0]),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.tensor([1.0]),
                 alpha_upper_a=torch.tensor([1.0]),
@@ -647,7 +647,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([4.0]),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.tensor([1.0]),
                 alpha_upper_a=torch.tensor([1.0]),
@@ -683,7 +683,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([2.0]),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.tensor([2.0]),
                 alpha_upper_a=torch.tensor([3.0]),
@@ -728,7 +728,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.tensor([0.0, 0.0]),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.tensor([1.0, 1.0]),
                 alpha_upper_a=torch.tensor([2.0, 2.0]),
@@ -762,7 +762,7 @@ class TestPairedLinearRelaxationForwardCompose:
         assert torch.allclose(result.bias_upper, torch.tensor([1.0, 1.0]))
 
     def test_1d_batch_distinct_input_ids(self):
-        """PairedLinearRelaxation with 1D batch (B=2): per-batch coefficients, two distinct IDs."""
+        """PairedForwardRelaxation with 1D batch (B=2): per-batch coefficients, two distinct IDs."""
         # region.lower shape (B=2, I=1)
         region = HyperRectangle(torch.tensor([[0.0], [0.0]]), torch.tensor([[1.0], [1.0]]))
         bounds1 = LinearBounds(
@@ -782,7 +782,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=0.5 * torch.ones(2, 1),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.ones(2, 1),
                 alpha_upper_a=2 * torch.ones(2, 1),
@@ -812,7 +812,7 @@ class TestPairedLinearRelaxationForwardCompose:
         assert torch.allclose(result.bias_upper, 3 * torch.ones(2, 1))
 
     def test_2d_batch_shared_input_id(self):
-        """PairedLinearRelaxation with 2D batch (B1=2, B2=2): shared input_id merges per-batch."""
+        """PairedForwardRelaxation with 2D batch (B1=2, B2=2): shared input_id merges per-batch."""
         region = HyperRectangle(torch.zeros(2, 2, 1), torch.ones(2, 2, 1))
         # Both bounds share input_id=99 (representing z = f(x, x))
         bounds1 = LinearBounds(
@@ -832,7 +832,7 @@ class TestPairedLinearRelaxationForwardCompose:
             bias_upper=torch.ones(2, 2, 1),
         )
 
-        relaxation = PairedLinearRelaxation(
+        relaxation = PairedForwardRelaxation(
             params=PairedParams(
                 alpha_lower_a=torch.ones(2, 2, 1),
                 alpha_upper_a=2 * torch.ones(2, 2, 1),

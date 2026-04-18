@@ -22,14 +22,16 @@ from .elementwise import (
 )
 from .linear import (
     BackwardLBPAdd,
-    BackwardLBPDiv,
     BackwardLBPLinear,
     BackwardLBPMatmul,
+    BackwardLBPNeg,
+    BackwardLBPSub,
+)
+from .pairwise import (
+    BackwardLBPDiv,
     BackwardLBPMaximum,
     BackwardLBPMinimum,
     BackwardLBPMul,
-    BackwardLBPNeg,
-    BackwardLBPSub,
 )
 from .reduction import BackwardLBPMax, BackwardLBPMean, BackwardLBPMin, BackwardLBPSum
 from .shape import (

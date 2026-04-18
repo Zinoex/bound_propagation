@@ -17,7 +17,7 @@ from ..linear_relaxations.pairwise import (
     compute_mul_relaxation,
 )
 from .base import ForwardLBPStrategy
-from .elementwise import ElementwiseForwardLinearRelaxation
+from .elementwise import ElementwiseForwardRelaxation
 
 if TYPE_CHECKING:
     from ..context import PropagationContext
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
 @final
 @dataclass
-class PairedLinearRelaxation:
+class PairedForwardRelaxation:
     """
     Paired linear relaxation for binary operations z = f(x1, x2).
 
@@ -188,7 +188,7 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         bounds_b = b.concretize()
 
         params = compute_div_relaxation(bounds_a, bounds_b)
-        relaxation = PairedLinearRelaxation(params)
+        relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)
 
     def _divide_by_constant(self, bounds: LinearBounds, divisor: torch.Tensor | torch.types.Number) -> LinearBounds:
@@ -250,7 +250,7 @@ class ForwardLBPDiv(ForwardLBPStrategy):
     def _constant_div(self, constant: torch.Tensor | torch.types.Number, bounds: LinearBounds) -> LinearBounds:
         concrete_bounds = bounds.concretize()
         params = compute_constant_div_relaxation(concrete_bounds, constant)
-        relaxation = ElementwiseForwardLinearRelaxation(params)
+        relaxation = ElementwiseForwardRelaxation(params)
         return relaxation.forward(bounds)
 
 
@@ -279,7 +279,7 @@ class ForwardLBPMul(ForwardLBPStrategy):
     def _mul_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
         """McCormick relaxation for element-wise z = a * b.
 
-        Uses PairedLinearRelaxation to preserve linear structure from both inputs.
+        Uses PairedForwardRelaxation to preserve linear structure from both inputs.
         At each element, we choose element-wise between the two McCormick lower bounds
         and the two McCormick upper bounds by evaluating tightness at the midpoint.
 
@@ -295,7 +295,7 @@ class ForwardLBPMul(ForwardLBPStrategy):
         bounds_b = b.concretize()
 
         params = compute_mul_relaxation(bounds_a, bounds_b)
-        relaxation = PairedLinearRelaxation(params)
+        relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)
 
     def _multiply_by_constant(self, bounds: LinearBounds, constant: torch.Tensor | torch.types.Number) -> LinearBounds:
@@ -396,7 +396,7 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
         bounds_a = a.concretize()
         bounds_b = b.concretize()
         params = compute_maximum_relaxation(bounds_a, bounds_b)
-        relaxation = PairedLinearRelaxation(params)
+        relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)
 
 
@@ -441,5 +441,5 @@ class ForwardLBPMinimum(ForwardLBPStrategy):
         bounds_a = a.concretize()
         bounds_b = b.concretize()
         params = compute_minimum_relaxation(bounds_a, bounds_b)
-        relaxation = PairedLinearRelaxation(params)
+        relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)

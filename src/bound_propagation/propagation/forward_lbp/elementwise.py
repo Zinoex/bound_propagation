@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 @final
 @dataclass
-class ElementwiseForwardLinearRelaxation:
+class ElementwiseForwardRelaxation:
     """
     Element-wise linear relaxation for unary operations y = f(x).
 
@@ -123,7 +123,7 @@ class ForwardLBPAbs(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_abs_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -146,7 +146,7 @@ class ForwardLBPClamp(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_clamp_relaxation(concrete_bounds, min_val, max_val)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -166,7 +166,7 @@ class ForwardLBPCos(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_cos_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -186,7 +186,7 @@ class ForwardLBPExp(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_exp_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -206,7 +206,7 @@ class ForwardLBPLog(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_log_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -226,7 +226,7 @@ class ForwardLBPReciprocal(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_reciprocal_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -246,7 +246,7 @@ class ForwardLBPRelu(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_relu_relaxation(concrete_bounds, adaptive=False)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -266,7 +266,7 @@ class ForwardLBPSigmoid(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_sigmoid_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -286,7 +286,7 @@ class ForwardLBPSin(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_sin_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -306,7 +306,7 @@ class ForwardLBPSqrt(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_sqrt_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -326,7 +326,7 @@ class ForwardLBPTan(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_tan_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
 
@@ -346,5 +346,5 @@ class ForwardLBPTanh(ForwardLBPStrategy):
 
         concrete_bounds = bounds.concretize()
         params = compute_tanh_relaxation(concrete_bounds)
-        relaxation = ElementwiseForwardLinearRelaxation(params=params)
+        relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
