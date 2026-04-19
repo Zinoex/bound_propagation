@@ -2,14 +2,16 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 import torch
 import torch.fx as fx
 
+from ...bounds import IntervalBounds
 from ..strategy import BoundingStrategy
 
 if TYPE_CHECKING:
+    from ..context import PropagationContext
     from .tape import BackwardTape
 
 
@@ -127,6 +129,73 @@ class IntervalLeafRelaxation(BackwardRelaxation):
         return BackwardContributions(a_terms={}, bias_lower=bias_lower, bias_upper=bias_upper)
 
 
+class IntermediateBoundsProvider(Protocol):
+    """Callable that returns ``IntervalBounds`` for a given fx.Node.
+
+    Backward LBP strategies request the interval bounds of a predecessor
+    node through this abstraction. Different callers plug in different
+    sources of bounds:
+
+    - ``CrownBoundsProvider``: concretizes via the tape (recursive CROWN).
+    - ``PrecomputedBoundsProvider``: looks up IBP bounds computed during a
+      prior forward sweep (CROWN-IBP).
+    """
+
+    def __call__(self, node: fx.Node) -> IntervalBounds: ...
+
+
+class CrownBoundsProvider:
+    """Bounds provider that concretizes via the tape (standard CROWN)."""
+
+    def __init__(self, tape: BackwardTape, batch_ndim: int = 0) -> None:
+        self._tape = tape
+        self._batch_ndim = batch_ndim
+
+    def __call__(self, node: fx.Node) -> IntervalBounds:
+        return self._tape.concretize_at(node, batch_ndim=self._batch_ndim)
+
+
+class PrecomputedBoundsProvider:
+    """Bounds provider backed by a pre-computed mapping (e.g. IBP bounds).
+
+    The mapping is keyed by fx.Node name. Construct directly from a dict or
+    from an existing ``PropagationContext`` (which already stores bounds
+    keyed by node name).
+    """
+
+    def __init__(self, bounds: dict[str, IntervalBounds]) -> None:
+        self._bounds = bounds
+
+    @classmethod
+    def from_context(cls, ctx: PropagationContext[IntervalBounds]) -> PrecomputedBoundsProvider:
+        """Create a provider that reads from *ctx* lazily via ``ctx.resolve``."""
+        return _ContextBoundsProvider(ctx)
+
+    def __call__(self, node: fx.Node) -> IntervalBounds:
+        try:
+            return self._bounds[node.name]
+        except KeyError as e:
+            raise KeyError(
+                f"No precomputed IntervalBounds for node {node.name!r}; "
+                f"known nodes: {sorted(self._bounds)}"
+            ) from e
+
+
+class _ContextBoundsProvider(PrecomputedBoundsProvider):
+    """Adapter that reads ``IntervalBounds`` directly from a PropagationContext."""
+
+    def __init__(self, ctx: PropagationContext[IntervalBounds]) -> None:
+        self._ctx = ctx
+
+    def __call__(self, node: fx.Node) -> IntervalBounds:
+        value = self._ctx.resolve(node)
+        if not isinstance(value, IntervalBounds):
+            raise TypeError(
+                f"Expected IntervalBounds for node {node.name!r}, got {type(value).__name__}"
+            )
+        return value
+
+
 class BackwardLBPStrategy(BoundingStrategy):
     """Base class for backward LBP strategies.
 
@@ -144,6 +213,7 @@ class BackwardLBPStrategy(BoundingStrategy):
         self,
         node: fx.Node,
         tape: BackwardTape,
+        bounds: IntermediateBoundsProvider,
     ) -> BackwardRelaxation:
         """Build a single-step backward relaxation for this operation.
 
@@ -152,7 +222,12 @@ class BackwardLBPStrategy(BoundingStrategy):
         node : fx.Node
             The fx.Node being processed.
         tape : BackwardTape
-            The backward tape (provides resolve_args, concretize_at, etc.).
+            The backward tape (provides resolve_args, get_module, fetch_attr).
+        bounds : IntermediateBoundsProvider
+            Callable returning ``IntervalBounds`` for a predecessor fx.Node.
+            Use this whenever the strategy needs concrete interval bounds of
+            an input to construct the linear relaxation; do not call
+            ``tape.concretize_at`` directly.
 
         Returns
         -------

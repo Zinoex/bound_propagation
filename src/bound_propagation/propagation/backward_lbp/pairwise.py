@@ -18,7 +18,13 @@ from ..linear_relaxations.pairwise import (
     compute_minimum_relaxation,
     compute_mul_relaxation,
 )
-from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, accumulate_a_terms
+from .base import (
+    BackwardContributions,
+    BackwardLBPStrategy,
+    BackwardRelaxation,
+    IntermediateBoundsProvider,
+    accumulate_a_terms,
+)
 from .elementwise import ElementwiseBackwardRelaxation
 from .linear import ScaleRelaxation
 
@@ -105,7 +111,9 @@ class PairedBackwardRelaxation(BackwardRelaxation):
 class BackwardLBPMul(BackwardLBPStrategy):
     """Backward LBP strategy for element-wise multiplication."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         """Build a backward relaxation for multiplication.
 
         Handles three cases:
@@ -117,7 +125,9 @@ class BackwardLBPMul(BackwardLBPStrategy):
         node : fx.Node
             The multiplication node.
         tape : BackwardTape
-            Tape providing argument resolution and concretization.
+            Tape providing argument resolution.
+        bounds : IntermediateBoundsProvider
+            Provider for predecessor interval bounds.
 
         Returns
         -------
@@ -129,21 +139,24 @@ class BackwardLBPMul(BackwardLBPStrategy):
         left_is_abstract = isinstance(left, BackwardRelaxation)
         right_is_abstract = isinstance(right, BackwardRelaxation)
 
+        left_node: fx.Node = node.args[0]  # ty:ignore[invalid-assignment]
+        right_node: fx.Node = node.args[1]  # ty:ignore[invalid-assignment]
+
         if left_is_abstract and right_is_abstract:
-            bounds_a = tape.concretize_at(node.args[0])
-            bounds_b = tape.concretize_at(node.args[1])
+            bounds_a = bounds(left_node)
+            bounds_b = bounds(right_node)
             params = compute_mul_relaxation(bounds_a, bounds_b)
-            return PairedBackwardRelaxation(params=params, left_node=node.args[0], right_node=node.args[1])
+            return PairedBackwardRelaxation(params=params, left_node=left_node, right_node=right_node)
 
         if left_is_abstract:
             constant = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
             scale = constant.expand(node.meta["tensor_meta"]["shape"])
-            return ScaleRelaxation(scale=scale, input_node=node.args[0])
+            return ScaleRelaxation(scale=scale, input_node=left_node)
 
         if right_is_abstract:
             constant = torch.as_tensor(left, dtype=node.meta["tensor_meta"]["dtype"])
             scale = constant.expand(node.meta["tensor_meta"]["shape"])
-            return ScaleRelaxation(scale=scale, input_node=node.args[1])
+            return ScaleRelaxation(scale=scale, input_node=right_node)
 
         raise TypeError(f"BackwardLBPMul requires at least one abstract operand, got {type(left)} and {type(right)}")
 
@@ -151,7 +164,9 @@ class BackwardLBPMul(BackwardLBPStrategy):
 class BackwardLBPDiv(BackwardLBPStrategy):
     """Backward LBP strategy for element-wise division."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         """Build a backward relaxation for division.
 
         Handles three cases:
@@ -164,7 +179,9 @@ class BackwardLBPDiv(BackwardLBPStrategy):
         node : fx.Node
             The division node.
         tape : BackwardTape
-            Tape providing argument resolution and concretization.
+            Tape providing argument resolution.
+        bounds : IntermediateBoundsProvider
+            Provider for predecessor interval bounds.
 
         Returns
         -------
@@ -175,24 +192,26 @@ class BackwardLBPDiv(BackwardLBPStrategy):
         left, right = args[0], args[1]
         left_is_abstract = isinstance(left, BackwardRelaxation)
         right_is_abstract = isinstance(right, BackwardRelaxation)
+        left_node: fx.Node = node.args[0]  # ty:ignore[invalid-assignment]
+        right_node: fx.Node = node.args[1]  # ty:ignore[invalid-assignment]
 
         if left_is_abstract and right_is_abstract:
-            bounds_a = tape.concretize_at(node.args[0])
-            bounds_b = tape.concretize_at(node.args[1])
+            bounds_a = bounds(left_node)
+            bounds_b = bounds(right_node)
             params = compute_div_relaxation(bounds_a, bounds_b)
-            return PairedBackwardRelaxation(params=params, left_node=node.args[0], right_node=node.args[1])
+            return PairedBackwardRelaxation(params=params, left_node=left_node, right_node=right_node)
 
         if left_is_abstract:
             # abstract / constant = abstract * (1/constant)
             divisor = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
             scale = (1.0 / divisor).expand(node.meta["tensor_meta"]["shape"])
-            return ScaleRelaxation(scale=scale, input_node=node.args[0])
+            return ScaleRelaxation(scale=scale, input_node=left_node)
 
         if right_is_abstract:
             # constant / abstract
-            bounds = tape.concretize_at(node.args[1])
-            params = compute_constant_div_relaxation(bounds, left)
-            return ElementwiseBackwardRelaxation(params=params, input_node=node.args[1])
+            input_bounds = bounds(right_node)
+            params = compute_constant_div_relaxation(input_bounds, left)
+            return ElementwiseBackwardRelaxation(params=params, input_node=right_node)
 
         raise TypeError(f"BackwardLBPDiv requires at least one abstract operand, got {type(left)} and {type(right)}")
 
@@ -208,7 +227,9 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
     def _compute_relaxation(bounds_a: IntervalBounds, bounds_b: IntervalBounds) -> PairedParams:
         raise NotImplementedError
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         """Build a backward relaxation for an element-wise comparison operation.
 
         Handles two cases:
@@ -221,7 +242,9 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
         node : fx.Node
             The comparison node.
         tape : BackwardTape
-            Tape providing argument resolution and concretization.
+            Tape providing argument resolution.
+        bounds : IntermediateBoundsProvider
+            Provider for predecessor interval bounds.
 
         Returns
         -------
@@ -232,17 +255,17 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
         left, right = args[0], args[1]
         left_is_abstract = isinstance(left, BackwardRelaxation)
         right_is_abstract = isinstance(right, BackwardRelaxation)
-        left_node: fx.Node = node.args[0]  # type: ignore[assignment]
-        right_node: fx.Node = node.args[1]  # type: ignore[assignment]
+        left_node: fx.Node = node.args[0]  # ty:ignore[invalid-assignment]
+        right_node: fx.Node = node.args[1]  # ty:ignore[invalid-assignment]
 
         if left_is_abstract and right_is_abstract:
-            bounds_a = tape.concretize_at(left_node)
-            bounds_b = tape.concretize_at(right_node)
+            bounds_a = bounds(left_node)
+            bounds_b = bounds(right_node)
             paired = self._compute_relaxation(bounds_a, bounds_b)
             return PairedBackwardRelaxation(params=paired, left_node=left_node, right_node=right_node)
 
         if left_is_abstract:
-            bounds_a = tape.concretize_at(left_node)
+            bounds_a = bounds(left_node)
             c = torch.as_tensor(right, dtype=bounds_a.lower.dtype, device=bounds_a.lower.device)
             c = c.expand_as(bounds_a.lower)
             paired = self._compute_relaxation(bounds_a, IntervalBounds(c, c))
@@ -256,7 +279,7 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
             return ElementwiseBackwardRelaxation(params=params, input_node=left_node)
 
         if right_is_abstract:
-            bounds_b = tape.concretize_at(right_node)
+            bounds_b = bounds(right_node)
             c = torch.as_tensor(left, dtype=bounds_b.lower.dtype, device=bounds_b.lower.device)
             c = c.expand_as(bounds_b.lower)
             paired = self._compute_relaxation(IntervalBounds(c, c), bounds_b)

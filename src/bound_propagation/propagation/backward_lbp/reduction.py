@@ -9,7 +9,13 @@ import torch
 import torch.fx as fx
 from beartype.typing import final
 
-from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, IntervalLeafRelaxation
+from .base import (
+    BackwardContributions,
+    BackwardLBPStrategy,
+    BackwardRelaxation,
+    IntermediateBoundsProvider,
+    IntervalLeafRelaxation,
+)
 
 if TYPE_CHECKING:
     from .tape import BackwardTape
@@ -125,7 +131,9 @@ class MeanRelaxation(BackwardRelaxation):
 class BackwardLBPSum(BackwardLBPStrategy):
     """Backward LBP strategy for sum reduction."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -141,7 +149,9 @@ class BackwardLBPSum(BackwardLBPStrategy):
 class BackwardLBPMean(BackwardLBPStrategy):
     """Backward LBP strategy for mean reduction."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -161,7 +171,9 @@ class BackwardLBPMax(BackwardLBPStrategy):
     the result as an interval leaf (breaks the symbolic chain).
     """
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -170,9 +182,9 @@ class BackwardLBPMax(BackwardLBPStrategy):
         dim = args[1] if len(args) > 1 else kwargs.get("dim")
         keepdim = kwargs.get("keepdim", False)
 
-        input_node = node.args[0]
-        bounds = tape.concretize_at(input_node)
-        lower, upper = bounds.lower, bounds.upper
+        input_node: fx.Node = node.args[0]  # ty:ignore[invalid-assignment]
+        input_bounds = bounds(input_node)
+        lower, upper = input_bounds.lower, input_bounds.upper
 
         if dim is not None:
             lower = lower.amax(dim=dim, keepdim=keepdim)
@@ -191,7 +203,9 @@ class BackwardLBPMin(BackwardLBPStrategy):
     the result as an interval leaf (breaks the symbolic chain).
     """
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -200,9 +214,9 @@ class BackwardLBPMin(BackwardLBPStrategy):
         dim = args[1] if len(args) > 1 else kwargs.get("dim")
         keepdim = kwargs.get("keepdim", False)
 
-        input_node = node.args[0]
-        bounds = tape.concretize_at(input_node)
-        lower, upper = bounds.lower, bounds.upper
+        input_node: fx.Node = node.args[0]  # ty:ignore[invalid-assignment]
+        input_bounds = bounds(input_node)
+        lower, upper = input_bounds.lower, input_bounds.upper
 
         if dim is not None:
             lower = lower.amin(dim=dim, keepdim=keepdim)

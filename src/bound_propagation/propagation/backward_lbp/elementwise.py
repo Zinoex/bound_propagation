@@ -30,7 +30,7 @@ from ..linear_relaxations.elementwise import (
     compute_tan_relaxation,
     compute_tanh_relaxation,
 )
-from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation
+from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, IntermediateBoundsProvider
 
 if TYPE_CHECKING:
     from ...bounds import IntervalBounds
@@ -122,7 +122,7 @@ class _ElementwiseBackwardLBP(BackwardLBPStrategy):
     def _get_input_and_bounds(
         self,
         node: fx.Node,
-        tape: BackwardTape,
+        bounds: IntermediateBoundsProvider,
     ) -> tuple[fx.Node, IntervalBounds]:
         """Get the input fx.Node and its concrete interval bounds.
 
@@ -130,8 +130,8 @@ class _ElementwiseBackwardLBP(BackwardLBPStrategy):
         ----------
         node : fx.Node
             The current node being processed.
-        tape : BackwardTape
-            The backward tape for resolving arguments and concretizing bounds.
+        bounds : IntermediateBoundsProvider
+            Callable returning interval bounds for a predecessor node.
 
         Returns
         -------
@@ -139,106 +139,127 @@ class _ElementwiseBackwardLBP(BackwardLBPStrategy):
             The input node and its concretized interval bounds.
         """
         input_node = node.args[0]
-        bounds = tape.concretize_at(input_node)
-        return input_node, bounds
+        return input_node, bounds(input_node)
 
 
 class BackwardLBPRelu(_ElementwiseBackwardLBP):
     """Backward LBP strategy for ReLU."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_relu_relaxation(bounds, adaptive=False)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_relu_relaxation(input_bounds, adaptive=False)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPSigmoid(_ElementwiseBackwardLBP):
     """Backward LBP strategy for sigmoid."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_sigmoid_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_sigmoid_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPTanh(_ElementwiseBackwardLBP):
     """Backward LBP strategy for tanh."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_tanh_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_tanh_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPExp(_ElementwiseBackwardLBP):
     """Backward LBP strategy for exp."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_exp_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_exp_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPLog(_ElementwiseBackwardLBP):
     """Backward LBP strategy for log."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_log_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_log_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPSqrt(_ElementwiseBackwardLBP):
     """Backward LBP strategy for sqrt."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_sqrt_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_sqrt_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPReciprocal(_ElementwiseBackwardLBP):
     """Backward LBP strategy for reciprocal."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_reciprocal_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_reciprocal_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPAbs(_ElementwiseBackwardLBP):
     """Backward LBP strategy for abs."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_abs_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_abs_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPSin(_ElementwiseBackwardLBP):
     """Backward LBP strategy for sin."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_sin_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_sin_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPCos(_ElementwiseBackwardLBP):
     """Backward LBP strategy for cos."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_cos_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_cos_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
 class BackwardLBPTan(_ElementwiseBackwardLBP):
     """Backward LBP strategy for tan."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
-        input_node, bounds = self._get_input_and_bounds(node, tape)
-        params = compute_tan_relaxation(bounds)
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        input_node, input_bounds = self._get_input_and_bounds(node, bounds)
+        params = compute_tan_relaxation(input_bounds)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -249,11 +270,13 @@ class BackwardLBPClamp(BackwardLBPStrategy):
     ``min`` and ``max`` arguments from the tape before computing the relaxation.
     """
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> ElementwiseBackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         input_node = node.args[0]
         min_val = args[1] if len(args) > 1 else kwargs.get("min")
         max_val = args[2] if len(args) > 2 else kwargs.get("max")
-        bounds = tape.concretize_at(input_node)
-        params = compute_clamp_relaxation(bounds, min_val, max_val)
+        input_bounds = bounds(input_node)
+        params = compute_clamp_relaxation(input_bounds, min_val, max_val)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)

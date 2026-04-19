@@ -18,7 +18,7 @@ import torch.fx as fx
 from ...bounds import LinearBounds
 from ...regions import SimpleRegion
 from ..backward_lbp import create_default_backward_lbp_registry
-from ..backward_lbp.base import BackwardLBPStrategy
+from ..backward_lbp.base import BackwardLBPStrategy, CrownBoundsProvider
 from ..backward_lbp.tape import BackwardTape
 from ..registry import TargetRegistry
 from .base import BoundPropagator
@@ -56,6 +56,7 @@ class BackwardLBPPropagator(BoundPropagator):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
 
         tape = BackwardTape(self._graph_module, list(input_regions))
+        provider = CrownBoundsProvider(tape)
 
         # Forward walk: build tape
         for node in self._graph_module.graph.nodes:
@@ -64,7 +65,7 @@ class BackwardLBPPropagator(BoundPropagator):
             elif node.op == "get_attr":
                 tape.record_concrete(node, tape.fetch_attr(node.target))
             elif node.op in ("call_function", "call_method", "call_module"):
-                self._propagate_operation(node, tape)
+                self._propagate_operation(node, tape, provider)
             elif node.op == "output":
                 return self._handle_output(node, tape)
 
@@ -74,7 +75,7 @@ class BackwardLBPPropagator(BoundPropagator):
     def registry(self) -> TargetRegistry[BackwardLBPStrategy]:
         return self._registry
 
-    def _propagate_operation(self, node: fx.Node, tape: BackwardTape) -> None:
+    def _propagate_operation(self, node: fx.Node, tape: BackwardTape, provider: CrownBoundsProvider) -> None:
         """Build relaxation or evaluate concretely."""
         is_abstract = node.meta.get("is_abstract", True)
 
@@ -85,7 +86,7 @@ class BackwardLBPPropagator(BoundPropagator):
         strategy = self.registry.get_strategy(node, self._graph_module)
         if not isinstance(strategy, BackwardLBPStrategy):
             raise TypeError(f"Expected BackwardLBPStrategy for node {node.name!r}, got {type(strategy).__name__}")
-        relaxation = strategy.build_relaxation(node, tape)
+        relaxation = strategy.build_relaxation(node, tape, provider)
         tape.record(node, relaxation)
 
     def _handle_output(self, node: fx.Node, tape: BackwardTape) -> list[LinearBounds]:

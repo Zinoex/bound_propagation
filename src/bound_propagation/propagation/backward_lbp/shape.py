@@ -13,7 +13,13 @@ import torch
 import torch.fx as fx
 from beartype.typing import final
 
-from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, accumulate_a_terms
+from .base import (
+    BackwardContributions,
+    BackwardLBPStrategy,
+    BackwardRelaxation,
+    IntermediateBoundsProvider,
+    accumulate_a_terms,
+)
 
 if TYPE_CHECKING:
     from .tape import BackwardTape
@@ -398,7 +404,9 @@ class StackRelaxation(BackwardRelaxation):
 class BackwardLBPReshape(BackwardLBPStrategy):
     """Backward LBP strategy for reshape / view / flatten."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, _ = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -417,7 +425,9 @@ class BackwardLBPReshape(BackwardLBPStrategy):
 class BackwardLBPUnsqueeze(BackwardLBPStrategy):
     """Backward LBP strategy for unsqueeze."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -436,7 +446,9 @@ class BackwardLBPUnsqueeze(BackwardLBPStrategy):
 class BackwardLBPSqueeze(BackwardLBPStrategy):
     """Backward LBP strategy for squeeze."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -463,7 +475,9 @@ class BackwardLBPSqueeze(BackwardLBPStrategy):
 class BackwardLBPTranspose(BackwardLBPStrategy):
     """Backward LBP strategy for transpose."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -489,7 +503,9 @@ class BackwardLBPTranspose(BackwardLBPStrategy):
 class BackwardLBPPermute(BackwardLBPStrategy):
     """Backward LBP strategy for permute."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -509,7 +525,9 @@ class BackwardLBPPermute(BackwardLBPStrategy):
 class BackwardLBPSelect(BackwardLBPStrategy):
     """Backward LBP strategy for select."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
@@ -534,7 +552,9 @@ class BackwardLBPSelect(BackwardLBPStrategy):
 class BackwardLBPGetItem(BackwardLBPStrategy):
     """Backward LBP strategy for operator.getitem."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, _ = tape.resolve_args(node)
         sym_input = args[0]
         index = args[1]
@@ -556,7 +576,9 @@ class BackwardLBPGetItem(BackwardLBPStrategy):
 class BackwardLBPConcat(BackwardLBPStrategy):
     """Backward LBP strategy for torch.cat."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         tensors = args[0]
         dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)
@@ -587,7 +609,9 @@ class BackwardLBPConcat(BackwardLBPStrategy):
 class BackwardLBPStack(BackwardLBPStrategy):
     """Backward LBP strategy for torch.stack."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
         tensors = args[0]
         dim = args[1] if len(args) > 1 else kwargs.get("dim", 0)

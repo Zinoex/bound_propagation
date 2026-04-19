@@ -9,7 +9,13 @@ import torch
 import torch.fx as fx
 from beartype.typing import final
 
-from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, accumulate_a_terms
+from .base import (
+    BackwardContributions,
+    BackwardLBPStrategy,
+    BackwardRelaxation,
+    IntermediateBoundsProvider,
+    accumulate_a_terms,
+)
 
 if TYPE_CHECKING:
     from .tape import BackwardTape
@@ -23,7 +29,9 @@ if TYPE_CHECKING:
 class BackwardLBPLinear(BackwardLBPStrategy):
     """Backward LBP strategy for ``nn.Linear`` / ``F.linear``."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, kwargs = tape.resolve_args(node)
 
         if node.op == "call_module":
@@ -43,7 +51,9 @@ class BackwardLBPLinear(BackwardLBPStrategy):
 class BackwardLBPMatmul(BackwardLBPStrategy):
     """Backward LBP strategy for matmul (abstract @ constant or constant @ abstract)."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, _ = tape.resolve_args(node)
         left, right = args[0], args[1]
 
@@ -65,7 +75,9 @@ class BackwardLBPMatmul(BackwardLBPStrategy):
 class BackwardLBPAdd(BackwardLBPStrategy):
     """Backward LBP strategy for addition."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, _ = tape.resolve_args(node)
         left, right = args[0], args[1]
 
@@ -88,7 +100,9 @@ class BackwardLBPAdd(BackwardLBPStrategy):
 class BackwardLBPSub(BackwardLBPStrategy):
     """Backward LBP strategy for subtraction."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         args, _ = tape.resolve_args(node)
         left, right = args[0], args[1]
 
@@ -113,7 +127,9 @@ class BackwardLBPSub(BackwardLBPStrategy):
 class BackwardLBPNeg(BackwardLBPStrategy):
     """Backward LBP strategy for negation."""
 
-    def build_relaxation(self, node: fx.Node, tape: BackwardTape) -> BackwardRelaxation:
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
         return NegRelaxation(input_node=node.args[0])
 
 
