@@ -35,16 +35,29 @@ class ForwardLBPLinear(ForwardLBPStrategy):
             lower_flat = lower_linear.reshape(*batch_shape, feature_dim, -1)
             upper_flat = upper_linear.reshape(*batch_shape, feature_dim, -1)
 
-            if upper:
-                transformed_flat = torch.einsum("ok,...kd->...od", weight_pos, upper_flat) + torch.einsum(
-                    "ok,...kd->...od", weight_neg, lower_flat
-                )
+            if weight_pos.ndim == 2:
+                if upper:
+                    transformed_flat = torch.einsum("ok,...kd->...od", weight_pos, upper_flat) + torch.einsum(
+                        "ok,...kd->...od", weight_neg, lower_flat
+                    )
+                else:
+                    transformed_flat = torch.einsum("ok,...kd->...od", weight_pos, lower_flat) + torch.einsum(
+                        "ok,...kd->...od", weight_neg, upper_flat
+                    )
+                out_feature_shape: tuple[int, ...] = (weight_pos.shape[0],)
             else:
-                transformed_flat = torch.einsum("ok,...kd->...od", weight_pos, lower_flat) + torch.einsum(
-                    "ok,...kd->...od", weight_neg, upper_flat
-                )
+                # 1D weight: feature dim is reduced (dot product), no new output feature dim.
+                if upper:
+                    transformed_flat = torch.einsum("k,...kd->...d", weight_pos, upper_flat) + torch.einsum(
+                        "k,...kd->...d", weight_neg, lower_flat
+                    )
+                else:
+                    transformed_flat = torch.einsum("k,...kd->...d", weight_pos, lower_flat) + torch.einsum(
+                        "k,...kd->...d", weight_neg, upper_flat
+                    )
+                out_feature_shape = ()
 
-            transformed.append(transformed_flat.reshape(*batch_shape, weight_pos.shape[0], *input_axes))
+            transformed.append(transformed_flat.reshape(*batch_shape, *out_feature_shape, *input_axes))
 
         return transformed
 
@@ -74,16 +87,15 @@ class ForwardLBPLinear(ForwardLBPStrategy):
         if weight is None:
             raise ValueError("ForwardLBPLinear requires a weight tensor")
 
-        # Pytorch allows the weight to be either 1D or 2D
-        # TODO: consider supporting 1D weight (i.e. elementwise multiplication) as a special case without reshaping
-        if weight.ndim not in [1, 2]:
+        if weight.ndim not in (1, 2):
             raise ValueError(f"linear weight must be 1D or 2D, got shape {tuple(weight.shape)}")
 
-        if bounds.bias_lower.shape[-1] != weight.shape[1]:
+        reduce_dim = weight.shape[-1] if weight.ndim == 2 else weight.shape[0]
+        if bounds.bias_lower.shape[-1] != reduce_dim:
             raise ValueError(
                 "linear dimension mismatch: "
                 f"bounds last dim {bounds.bias_lower.shape[-1]} vs "
-                f"weight second dim {weight.shape[1]}"
+                f"weight reduction dim {reduce_dim}"
             )
 
         weight_pos = weight.clamp(min=0)
@@ -100,12 +112,6 @@ class ForwardLBPLinear(ForwardLBPStrategy):
             upper=False,
         )
 
-        bias_lower = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_lower) + torch.einsum(
-            "ok,...k->...o", weight_neg, bounds.bias_upper
-        )
-        if bias is not None:
-            bias_lower = bias_lower + bias
-
         # Upper bound: weight_pos @ upper_coeffs + weight_neg @ lower_coeffs
         linear_upper = self._apply_weight_to_linear_terms(
             bounds.linear_lowers,
@@ -116,10 +122,20 @@ class ForwardLBPLinear(ForwardLBPStrategy):
             upper=True,
         )
 
-        bias_upper = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_upper) + torch.einsum(
-            "ok,...k->...o", weight_neg, bounds.bias_lower
-        )
+        if weight.ndim == 2:
+            bias_lower = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_lower) + torch.einsum(
+                "ok,...k->...o", weight_neg, bounds.bias_upper
+            )
+            bias_upper = torch.einsum("ok,...k->...o", weight_pos, bounds.bias_upper) + torch.einsum(
+                "ok,...k->...o", weight_neg, bounds.bias_lower
+            )
+        else:
+            # 1D weight: last feature dim is reduced (dot product with sign decomposition).
+            bias_lower = (weight_pos * bounds.bias_lower + weight_neg * bounds.bias_upper).sum(-1)
+            bias_upper = (weight_pos * bounds.bias_upper + weight_neg * bounds.bias_lower).sum(-1)
+
         if bias is not None:
+            bias_lower = bias_lower + bias
             bias_upper = bias_upper + bias
 
         return LinearBounds(

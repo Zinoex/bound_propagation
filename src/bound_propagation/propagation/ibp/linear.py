@@ -38,11 +38,19 @@ class IBPLinear(ForwardIBPStrategy):
             weight: torch.Tensor = args[1]
             bias: torch.Tensor | None = args[2] if len(args) > 2 else kwargs.get("bias")
 
+        if weight.ndim not in (1, 2):
+            raise ValueError(f"linear weight must be 1D or 2D, got shape {tuple(weight.shape)}")
+
         weight_pos = torch.clamp(weight, min=0)
         weight_neg = torch.clamp(weight, max=0)
 
-        lower = x_bounds.lower @ weight_pos.T + x_bounds.upper @ weight_neg.T
-        upper = x_bounds.upper @ weight_pos.T + x_bounds.lower @ weight_neg.T
+        if weight.ndim == 2:
+            lower = x_bounds.lower @ weight_pos.T + x_bounds.upper @ weight_neg.T
+            upper = x_bounds.upper @ weight_pos.T + x_bounds.lower @ weight_neg.T
+        else:
+            # 1D weight: y = (x * w).sum(-1); the last feature dim is reduced.
+            lower = (x_bounds.lower * weight_pos + x_bounds.upper * weight_neg).sum(-1)
+            upper = (x_bounds.upper * weight_pos + x_bounds.lower * weight_neg).sum(-1)
 
         if bias is not None:
             lower = lower + bias

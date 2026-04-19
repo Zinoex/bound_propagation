@@ -48,6 +48,9 @@ class BackwardLBPLinear(BackwardLBPStrategy):
         if weight is None:
             raise ValueError("BackwardLBPLinear requires a weight tensor")
 
+        if weight.ndim not in (1, 2):
+            raise ValueError(f"linear weight must be 1D or 2D, got shape {tuple(weight.shape)}")  # ty:ignore[invalid-argument-type]
+
         return LinearBackwardRelaxation(weight=weight, bias=bias, input_node=node.args[0])
 
 
@@ -257,9 +260,13 @@ class LinearBackwardRelaxation(BackwardRelaxation):
     Parameters
     ----------
     weight : torch.Tensor
-        Weight matrix of shape ``(out_features, in_features)``.
+        Weight tensor. Either 2D of shape ``(out_features, in_features)`` — in
+        which case the output gains a trailing feature dim — or 1D of shape
+        ``(in_features,)``, in which case the input's last dim is reduced via
+        dot product and the output has no trailing feature dim.
     bias : torch.Tensor | None
-        Bias vector of shape ``(out_features,)``, or ``None``.
+        Bias tensor of shape ``(out_features,)`` for a 2D weight, or a scalar
+        (0-D) tensor for a 1D weight. ``None`` if no bias.
     input_node : fx.Node
         The fx graph node for the input to this linear layer.
     """
@@ -272,16 +279,29 @@ class LinearBackwardRelaxation(BackwardRelaxation):
         return [self.input_node]
 
     def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        # A: (*batch, *bounded_out, out_features)
-        # weight: (out_features, in_features) -> A @ weight gives (..., in_features)
-        new_A_lower = A_lower @ self.weight
-        new_A_upper = A_upper @ self.weight
-
-        if self.bias is not None:
-            bias_lower = A_lower @ self.bias
-            bias_upper = A_upper @ self.bias
+        if self.weight.ndim == 2:
+            # A: (*batch, *bounded_out, out_features)
+            # weight: (out_features, in_features) -> A @ weight gives (..., in_features)
+            new_A_lower = A_lower @ self.weight
+            new_A_upper = A_upper @ self.weight
+            node_ndim = 1
+            if self.bias is not None:
+                bias_lower = A_lower @ self.bias
+                bias_upper = A_upper @ self.bias
         else:
-            zero = _zero_bias(A_lower, node_ndim=1)
+            # 1D weight: y = (x * w).sum(-1). Output has no feature dim, so
+            # A_lower has shape (*batch, *bounded_out); multiplying in a new
+            # trailing dim against ``weight`` gives the predecessor A of shape
+            # (*batch, *bounded_out, in_features).
+            new_A_lower = A_lower.unsqueeze(-1) * self.weight
+            new_A_upper = A_upper.unsqueeze(-1) * self.weight
+            node_ndim = 0
+            if self.bias is not None:
+                bias_lower = A_lower * self.bias
+                bias_upper = A_upper * self.bias
+
+        if self.bias is None:
+            zero = _zero_bias(A_lower, node_ndim=node_ndim)
             bias_lower = zero
             bias_upper = zero
 
