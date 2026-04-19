@@ -8,8 +8,8 @@
 
 # Trigonometric identities:
 # - cos(x) * sin(x) → 0.5 * sin(2x)
-# - cos²(x) → 0.5 * (1 + cos(2x)) [check]
-# - sin²(x) → 0.5 * (1 - cos(2x)) [check]
+# - cos²(x) → 0.5 * (1 + cos(2x))
+# - sin²(x) → 0.5 * (1 - cos(2x))
 
 # Exponentials and logarithms:
 # - exp(x) * exp(y) → exp(x + y)

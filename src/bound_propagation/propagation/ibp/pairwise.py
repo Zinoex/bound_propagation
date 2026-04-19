@@ -75,7 +75,6 @@ class IBPDiv(ForwardIBPStrategy):
 
     @staticmethod
     def _interval_div_interval(x: IntervalBounds, y: IntervalBounds) -> IntervalBounds:
-        # TODO: Fix because this is not sound.
         if torch.any((y.lower <= 0) & (y.upper >= 0)):
             return IntervalBounds.unbounded_like(x)
 

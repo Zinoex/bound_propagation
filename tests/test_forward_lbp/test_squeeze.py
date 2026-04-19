@@ -67,4 +67,31 @@ def test_squeeze_middle_dim() -> None:
         bias_upper=(torch.arange(6.0) + 1).view(2, 1, 3),
     )
 
-    # TODO: Add assertions
+    strategy = ForwardLBPSqueeze()
+    result = propagate(strategy, bounds, dim=1)
+
+    # Should squeeze dim 1: (2, 1, 3) -> (2, 3)
+    assert result.bias_lower.shape == (2, 3)
+    assert result.bias_upper.shape == (2, 3)
+
+
+def test_squeeze_middle_dim_from_rear() -> None:
+    """Test squeeze on a middle dimension."""
+    region = HyperRectangle(lower=torch.tensor([0.0]), upper=torch.tensor([1.0]))
+
+    # Shape: (2, 1, 3)
+    bounds = LinearBounds(
+        regions=[region],
+        input_ids=[0],
+        linear_lower=torch.ones(2, 1, 3, 1),
+        bias_lower=torch.arange(6.0).view(2, 1, 3),
+        linear_upper=torch.ones(2, 1, 3, 1),
+        bias_upper=(torch.arange(6.0) + 1).view(2, 1, 3),
+    )
+
+    strategy = ForwardLBPSqueeze()
+    result = propagate(strategy, bounds, dim=-2)
+
+    # Should squeeze dim 1: (2, 1, 3) -> (2, 3)
+    assert result.bias_lower.shape == (2, 3)
+    assert result.bias_upper.shape == (2, 3)

@@ -9,6 +9,9 @@ import torch
 import torch.fx as fx
 from beartype.typing import final
 
+from ...bounds import IntervalBounds
+from ..linear_relaxations.alpha_resolvers import resolve_matmul_etas
+from ..linear_relaxations.pairwise import PairedParams, compute_mul_relaxation
 from .base import (
     BackwardContributions,
     BackwardLBPStrategy,
@@ -64,12 +67,90 @@ class BackwardLBPMatmul(BackwardLBPStrategy):
             return MatmulLeftConstantRelaxation(weight=left, input_node=node.args[1])
 
         if isinstance(left, BackwardRelaxation) and isinstance(right, BackwardRelaxation):
-            # TODO: Implement this case. It is absolutely crucial for handling e.g. Jacobian terms.
-            raise NotImplementedError("Backward LBP matmul with two abstract operands is not supported")
+            left_node: fx.Node = node.args[0]  # ty:ignore[invalid-assignment]
+            right_node: fx.Node = node.args[1]  # ty:ignore[invalid-assignment]
+            bounds_a = bounds(left_node)
+            bounds_b = bounds(right_node)
+
+            if bounds_a.lower.ndim < 2 or bounds_b.lower.ndim < 2:
+                raise NotImplementedError(
+                    "Backward LBP matmul with two abstract operands requires each operand "
+                    f"to be at least 2D (matrix), got shapes {tuple(bounds_a.lower.shape)} "
+                    f"and {tuple(bounds_b.lower.shape)}."
+                )
+
+            params = _build_matmul_mccormick_params(bounds_a, bounds_b, node, tape)
+            return MatmulBothAbstractRelaxation(
+                params=params,
+                left_node=left_node,
+                right_node=right_node,
+            )
 
         raise TypeError(
             f"BackwardLBPMatmul requires at least one BackwardRelaxation operand, got {type(left)} and {type(right)}"
         )
+
+
+def _build_matmul_mccormick_params(
+    bounds_a: IntervalBounds,
+    bounds_b: IntervalBounds,
+    node: fx.Node,
+    tape: BackwardTape,
+) -> PairedParams:
+    """Build McCormick ``PairedParams`` for ``z = a @ b``.
+
+    Returns params with element-wise shape ``(*batch, M, K, N)``. See
+    :func:`bound_propagation.propagation.forward_lbp.matmul.ForwardLBPMatmul._matmul_bounds_bounds`
+    for the derivation of the shape conventions.
+    """
+    try:
+        batch_shape = torch.broadcast_shapes(
+            bounds_a.lower.shape[:-2],
+            bounds_b.lower.shape[:-2],
+        )
+    except RuntimeError as error:
+        raise ValueError(
+            "matmul requires broadcastable batch dimensions, "
+            f"got a.shape={tuple(bounds_a.lower.shape)} and b.shape={tuple(bounds_b.lower.shape)}"
+        ) from error
+
+    m_dim = bounds_a.lower.shape[-2]
+    k_a = bounds_a.lower.shape[-1]
+    k_b = bounds_b.lower.shape[-2]
+    n_dim = bounds_b.lower.shape[-1]
+
+    if k_a != k_b:
+        raise ValueError(f"matmul reduction dims mismatch: a.shape[-1]={k_a} vs b.shape[-2]={k_b}")
+
+    la = bounds_a.lower.expand(*batch_shape, m_dim, k_a).unsqueeze(-1)
+    ua = bounds_a.upper.expand(*batch_shape, m_dim, k_a).unsqueeze(-1)
+    lb = bounds_b.lower.expand(*batch_shape, k_a, n_dim).unsqueeze(-3)
+    ub = bounds_b.upper.expand(*batch_shape, k_a, n_dim).unsqueeze(-3)
+
+    reference = IntervalBounds(
+        la.expand(*batch_shape, m_dim, k_a, n_dim),
+        ua.expand(*batch_shape, m_dim, k_a, n_dim),
+    )
+    eta_lo, eta_up = resolve_matmul_etas(tape.alpha_provider, node, reference)
+
+    params = compute_mul_relaxation(
+        IntervalBounds(la, ua),
+        IntervalBounds(lb, ub),
+        eta_lower=eta_lo if eta_lo is not None else 0.5,
+        eta_upper=eta_up if eta_up is not None else 0.5,
+    )
+
+    # Broadcast each param to the full (*batch, M, K, N) grid so the
+    # backward-pass reshapes land on a consistent 3-D per-node feature space.
+    target = (*batch_shape, m_dim, k_a, n_dim)
+    return PairedParams(
+        alpha_lower_a=params.alpha_lower_a.expand(target).contiguous(),
+        alpha_upper_a=params.alpha_upper_a.expand(target).contiguous(),
+        alpha_lower_b=params.alpha_lower_b.expand(target).contiguous(),
+        alpha_upper_b=params.alpha_upper_b.expand(target).contiguous(),
+        bias_lower=params.bias_lower.expand(target).contiguous(),
+        bias_upper=params.bias_upper.expand(target).contiguous(),
+    )
 
 
 class BackwardLBPAdd(BackwardLBPStrategy):
@@ -239,6 +320,101 @@ class MatmulRightConstantRelaxation(BackwardRelaxation):
             a_terms={self.input_node: (new_A_lower, new_A_upper)},
             bias_lower=zero,
             bias_upper=zero,
+        )
+
+
+@final
+@dataclass
+class MatmulBothAbstractRelaxation(BackwardRelaxation):
+    """Backward relaxation for ``z = a @ b`` with both operands abstract.
+
+    Uses the McCormick envelope on every bilinear term ``a_ik * b_kj`` and
+    reduces over the shared ``K`` axis. Supports the same-node case ``x @ x``
+    via :func:`accumulate_a_terms`.
+
+    Parameters
+    ----------
+    params : PairedParams
+        McCormick parameters, each tensor of shape ``(*batch, M, K, N)``.
+    left_node : fx.Node
+        The fx graph node for the left (``a``) operand.
+    right_node : fx.Node
+        The fx graph node for the right (``b``) operand.
+    """
+
+    params: PairedParams
+    left_node: fx.Node
+    right_node: fx.Node
+
+    def predecessor_nodes(self) -> list[fx.Node]:
+        return list(dict.fromkeys([self.left_node, self.right_node]))
+
+    def backward_through(
+        self,
+        A_lower: torch.Tensor,
+        A_upper: torch.Tensor,
+        batch_ndim: int,
+    ) -> BackwardContributions:
+        """Sign-decompose downstream A-matrices against per-bilinear-term params.
+
+        ``A_lower``, ``A_upper`` carry shape ``(*batch, *bounded_out, M, N)``
+        and the params carry shape ``(*batch, M, K, N)``. We broadcast to the
+        joint shape ``(*batch, *bounded_out, M, K, N)`` by inserting a ``K``
+        singleton into the A-matrices and bounded-out singletons into the
+        params, then contract the result toward each predecessor's natural
+        feature layout (``(M, K)`` for ``a``, ``(K, N)`` for ``b``).
+        """
+        p = self.params
+        # Params carry the matmul node's full feature layout (*op_batch, M, K, N).
+        # bounded_ndim is what sits between the tape's ``batch_ndim`` and the
+        # node feature; A_lower ends with (*op_batch, M, N), i.e. all of the
+        # node's feature dims except the K reduction axis.
+        params_feature_ndim = p.alpha_lower_a.ndim - batch_ndim
+        a_feature_ndim = params_feature_ndim - 1  # (*op_batch, M, N)
+        bounded_ndim = A_lower.ndim - batch_ndim - a_feature_ndim
+
+        def bc_params(t: torch.Tensor) -> torch.Tensor:
+            """Insert ``bounded_out`` singletons between batch and params feature dims."""
+            return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
+
+        # Insert K axis as singleton into A: (*batch, *bounded_out, M, 1, N).
+        A_low_k = A_lower.unsqueeze(-2)
+        A_up_k = A_upper.unsqueeze(-2)
+
+        A_l_pos = A_low_k.clamp(min=0)
+        A_l_neg = A_low_k.clamp(max=0)
+        A_u_pos = A_up_k.clamp(min=0)
+        A_u_neg = A_up_k.clamp(max=0)
+
+        alpha_la = bc_params(p.alpha_lower_a)
+        alpha_ua = bc_params(p.alpha_upper_a)
+        alpha_lb = bc_params(p.alpha_lower_b)
+        alpha_ub = bc_params(p.alpha_upper_b)
+        gamma_l = bc_params(p.bias_lower)
+        gamma_u = bc_params(p.bias_upper)
+
+        # Predecessor A for a: (*batch, *bounded_out, M, K). Sum over N (dim -1).
+        new_A_low_a = (A_l_pos * alpha_la + A_l_neg * alpha_ua).sum(dim=-1)
+        new_A_up_a = (A_u_pos * alpha_ua + A_u_neg * alpha_la).sum(dim=-1)
+
+        # Predecessor A for b: (*batch, *bounded_out, K, N). Sum over M
+        # (dim -3 in the joint (*, M, K, N) shape).
+        new_A_low_b = (A_l_pos * alpha_lb + A_l_neg * alpha_ub).sum(dim=-3)
+        new_A_up_b = (A_u_pos * alpha_ub + A_u_neg * alpha_lb).sum(dim=-3)
+
+        # Bias delta: sum over M, K, N.
+        sum_dims = tuple(range(-params_feature_ndim, 0))
+        delta_bias_lower = (A_l_pos * gamma_l + A_l_neg * gamma_u).sum(dim=sum_dims)
+        delta_bias_upper = (A_u_pos * gamma_u + A_u_neg * gamma_l).sum(dim=sum_dims)
+
+        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
+        accumulate_a_terms(a_terms, self.left_node, new_A_low_a, new_A_up_a)
+        accumulate_a_terms(a_terms, self.right_node, new_A_low_b, new_A_up_b)
+
+        return BackwardContributions(
+            a_terms=a_terms,
+            bias_lower=delta_bias_lower,
+            bias_upper=delta_bias_upper,
         )
 
 

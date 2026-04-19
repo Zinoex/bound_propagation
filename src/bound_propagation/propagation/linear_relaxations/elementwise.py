@@ -131,6 +131,9 @@ def compute_clamp_relaxation(
     min_val: float | None,
     max_val: float | None,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_clamp_crosses_min_lower: torch.Tensor | None = None,
+    alpha_clamp_crosses_max_upper: torch.Tensor | None = None,
 ) -> ElementwiseParams: ...
 
 
@@ -140,6 +143,9 @@ def compute_clamp_relaxation(
     min_val: torch.Tensor | None,
     max_val: torch.Tensor | None,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_clamp_crosses_min_lower: torch.Tensor | None = None,
+    alpha_clamp_crosses_max_upper: torch.Tensor | None = None,
 ) -> ElementwiseParams: ...
 
 
@@ -188,8 +194,6 @@ def compute_clamp_relaxation(
     ElementwiseParams
         The relaxation parameters.
     """
-
-    # TODO: assert the overload inputs
 
     if max_val is None:
         lower_clamped = torch.clamp(bounds.lower, min=min_val)

@@ -51,7 +51,7 @@ def resolve_relu_alpha(
     upper = input_bounds.upper
     crossing = (lower < 0) & (upper > 0)
     z = _safe_z(lower, upper)
-    init = torch.where(crossing, z, torch.full_like(z, 0.5))
+    init = torch.where(crossing, z, 0.5)
     return provider.get(
         node=node,
         knob_name="relu_lower_slope",
@@ -78,7 +78,7 @@ def resolve_abs_alpha(
     upper = input_bounds.upper
     crossing = (lower < 0) & (upper > 0)
     z = _safe_z(lower, upper)
-    init = torch.where(crossing, z, torch.full_like(z, 0.5))
+    init = torch.where(crossing, z, 0.5)
     return provider.get(
         node=node,
         knob_name="abs_lower_slope",
@@ -159,6 +159,21 @@ def resolve_mul_etas(
 ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
     """Resolve McCormick eta fractions for multiplication (default 0.5)."""
     return _resolve_eta_pair(provider, node, reference, "mul_eta_lower", "mul_eta_upper")
+
+
+def resolve_matmul_etas(
+    provider: AlphaProvider,
+    node: fx.Node,
+    reference: IntervalBounds,
+) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    """Resolve McCormick eta fractions for matmul (default 0.5).
+
+    The ``reference`` bounds have shape ``(*batch, M, K, N)``: one bilinear
+    term ``a_ik * b_kj`` per entry. One optimizable knob is allocated per
+    term, mirroring the per-element knob layout used for element-wise
+    multiplication.
+    """
+    return _resolve_eta_pair(provider, node, reference, "matmul_eta_lower", "matmul_eta_upper")
 
 
 def resolve_div_etas(
