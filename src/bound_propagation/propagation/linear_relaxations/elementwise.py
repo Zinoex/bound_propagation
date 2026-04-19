@@ -39,6 +39,8 @@ class ElementwiseParams:
 def compute_abs_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_abs_lower: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for abs linear relaxation.
@@ -47,12 +49,29 @@ def compute_abs_relaxation(
     - For x >= 0: abs(x) = x
     - For x < 0: abs(x) = -x
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_abs_lower : torch.Tensor | None
+        Optional alpha-CROWN override for the lower-bound slope in the
+        crossing (``l < 0 < u``) regime. Must be unit-interval fractions
+        broadcastable to the shape of ``bounds.lower``. Each fraction
+        ``alpha`` maps to a through-origin lower-bound slope
+        ``m = 2 * alpha - 1 in [-1, 1]``. Values outside the crossing
+        regime are ignored. Soundness: for ``l < 0 < u`` and any
+        ``m in [-1, 1]``, the line ``y = m * x`` satisfies ``m*x <= |x|``
+        pointwise (``m <= 1`` ensures soundness on ``x > 0``; ``m >= -1``
+        ensures soundness on ``x < 0``). Note that the upper bound (secant)
+        is already the tightest linear upper bound of a convex function
+        and therefore has no optimization degree of freedom.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -91,8 +110,12 @@ def compute_abs_relaxation(
     alpha_upper[crosses_zero] = slope
     beta_upper[crosses_zero] = upper_act - slope * upper
 
-    # For lower bound, use upper bound slope but zero intercept (line through the origin)
-    alpha_lower[crosses_zero] = slope
+    # Lower bound: through-origin line with slope in [-1, 1].
+    if alpha_abs_lower is not None:
+        # Map the [0, 1] fraction to a slope in [-1, 1].
+        alpha_lower[crosses_zero] = 2.0 * alpha_abs_lower[crosses_zero] - 1.0
+    else:
+        alpha_lower[crosses_zero] = slope
 
     return ElementwiseParams(
         alpha_lower=alpha_lower,
@@ -125,20 +148,45 @@ def compute_clamp_relaxation(
     min_val: float | torch.Tensor | None = None,
     max_val: float | torch.Tensor | None = None,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_clamp_crosses_min_lower: torch.Tensor | None = None,
+    alpha_clamp_crosses_max_upper: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for clamp linear relaxation.
 
     clamp(x, min, max) = min(max(x, min), max)
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds
-        min_val: Minimum clamp value (default: -inf)
-        max_val: Maximum clamp value (default: +inf)
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds of the pre-activation.
+    min_val : float | torch.Tensor | None
+        Minimum clamp value (``-inf`` if ``None``).
+    max_val : float | torch.Tensor | None
+        Maximum clamp value (``+inf`` if ``None``).
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_clamp_crosses_min_lower : torch.Tensor | None
+        Optional alpha-CROWN override for the lower-bound slope on elements
+        where the interval crosses ``min_val`` (but not ``max_val``). The
+        fraction ``alpha in [0, 1]`` maps to slope ``a = alpha``, with the
+        line written as ``y = a * (x - min_val) + min_val``. Default
+        fraction ``0`` reproduces the current horizontal lower bound.
+        Soundness: for ``l < min_val < u <= max_val`` and any
+        ``a in [0, 1]``, ``y <= clamp(x)`` pointwise on ``[l, u]``.
+    alpha_clamp_crosses_max_upper : torch.Tensor | None
+        Optional alpha-CROWN override for the upper-bound slope on elements
+        where the interval crosses ``max_val`` (but not ``min_val``). The
+        fraction ``alpha in [0, 1]`` maps to slope ``a = alpha``, with the
+        line written as ``y = a * (x - max_val) + max_val``. Default
+        fraction ``0`` reproduces the current horizontal upper bound.
+        Soundness: symmetric to the crosses_min lower-bound case.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
 
     # TODO: assert the overload inputs
@@ -193,26 +241,42 @@ def compute_clamp_relaxation(
     alpha_upper[in_range] = 1
 
     # Crosses min:
-    # Function has corner at (min_val, min_val), can't be tightly bounded by single line
-    # Lower bound: horizontal at min_val (sound, conservative)
-    # Upper bound: horizontal at max(clamp(lower), clamp(upper)) (sound, conservative)
+    # Function has corner at (min_val, min_val), can't be tightly bounded by single line.
+    # Lower bound: sound family y = a*(x - min_val) + min_val with slope a in [0, 1];
+    # default a = 0 (horizontal at min_val). The upper bound stays at the current
+    # horizontal default, which has no meaningful [0, 1] slope knob.
     lower_clamped_min, upper_clamped_min = lower_clamped[crosses_min], upper_clamped[crosses_min]
 
-    alpha_lower[crosses_min] = 0
-    beta_lower[crosses_min] = min_val[crosses_min] if isinstance(min_val, torch.Tensor) else min_val
+    min_val_crosses_min = min_val[crosses_min] if isinstance(min_val, torch.Tensor) else min_val
+    if alpha_clamp_crosses_min_lower is not None:
+        slope_lower_cm = alpha_clamp_crosses_min_lower[crosses_min]
+        alpha_lower[crosses_min] = slope_lower_cm
+        # y = a*(x - min_val) + min_val  =>  alpha = a, beta = (1 - a) * min_val.
+        beta_lower[crosses_min] = (1.0 - slope_lower_cm) * min_val_crosses_min
+    else:
+        alpha_lower[crosses_min] = 0
+        beta_lower[crosses_min] = min_val_crosses_min
     alpha_upper[crosses_min] = 0
     beta_upper[crosses_min] = torch.maximum(lower_clamped_min, upper_clamped_min)
 
     # Crosses max:
-    # Function has corner at (max_val, max_val), can't be tightly bounded by single line
-    # Lower bound: horizontal at min(clamp(lower), clamp(upper)) (sound, conservative)
-    # Upper bound: horizontal at max_val (sound, conservative)
+    # Function has corner at (max_val, max_val), can't be tightly bounded by single line.
+    # Upper bound: sound family y = a*(x - max_val) + max_val with slope a in [0, 1];
+    # default a = 0 (horizontal at max_val). The lower bound stays at its current default.
     lower_clamped_max, upper_clamped_max = lower_clamped[crosses_max], upper_clamped[crosses_max]
 
     alpha_lower[crosses_max] = 0
     beta_lower[crosses_max] = torch.minimum(lower_clamped_max, upper_clamped_max)
-    alpha_upper[crosses_max] = 0
-    beta_upper[crosses_max] = max_val[crosses_max] if isinstance(max_val, torch.Tensor) else max_val
+
+    max_val_crosses_max = max_val[crosses_max] if isinstance(max_val, torch.Tensor) else max_val
+    if alpha_clamp_crosses_max_upper is not None:
+        slope_upper_cmx = alpha_clamp_crosses_max_upper[crosses_max]
+        alpha_upper[crosses_max] = slope_upper_cmx
+        # y = a*(x - max_val) + max_val  =>  alpha = a, beta = (1 - a) * max_val.
+        beta_upper[crosses_max] = (1.0 - slope_upper_cmx) * max_val_crosses_max
+    else:
+        alpha_upper[crosses_max] = 0
+        beta_upper[crosses_max] = max_val_crosses_max
 
     # Crosses both:
     # Function has corners at both (min_val, min_val) and (max_val, max_val)
@@ -234,6 +298,8 @@ def compute_clamp_relaxation(
 def compute_cos_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_cos_tangent_frac: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for cos linear relaxation.
@@ -246,12 +312,22 @@ def compute_cos_relaxation(
     For convex regions: tangent is lower bound, secant is upper bound
     For concave regions: secant is lower bound, tangent is upper bound
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds
-        zero_threshold: Threshold for considering an interval as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_cos_tangent_frac : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction, only
+        active on the safe subregime (no extremum, no inflection). See
+        :func:`compute_sin_relaxation` for the soundness argument. Ignored
+        everywhere else.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -435,6 +511,20 @@ def compute_cos_relaxation(
     alpha_nz_upper = torch.where(crosses_inflection_only, 0, alpha_nz_upper)
     beta_nz_upper = torch.where(crosses_inflection_only, torch.maximum(cos_lower, cos_upper), beta_nz_upper)
 
+    # Alpha-CROWN override on the safe (no-extremum, no-inflection) subregime.
+    if alpha_cos_tangent_frac is not None:
+        alpha_nz = alpha_cos_tangent_frac[non_zero]
+        d_opt = lower_nz + alpha_nz * (upper_nz - lower_nz)
+        tangent_opt_slope = -torch.sin(d_opt)
+        tangent_opt_beta = torch.cos(d_opt) - tangent_opt_slope * d_opt
+        safe = ~has_maximum & ~has_minimum & ~has_inflection & ~has_both_extrema
+        use_opt_upper = safe & when_secant_is_lower
+        alpha_nz_upper = torch.where(use_opt_upper, tangent_opt_slope, alpha_nz_upper)
+        beta_nz_upper = torch.where(use_opt_upper, tangent_opt_beta, beta_nz_upper)
+        use_opt_lower = safe & ~when_secant_is_lower
+        alpha_nz_lower = torch.where(use_opt_lower, tangent_opt_slope, alpha_nz_lower)
+        beta_nz_lower = torch.where(use_opt_lower, tangent_opt_beta, beta_nz_lower)
+
     # Assign back to output tensors
     alpha_lower[non_zero] = alpha_nz_lower
     beta_lower[non_zero] = beta_nz_lower
@@ -449,29 +539,51 @@ def compute_cos_relaxation(
     )
 
 
-def compute_exp_relaxation(bounds: IntervalBounds, zero_threshold: float = 1e-8) -> ElementwiseParams:
+def compute_exp_relaxation(
+    bounds: IntervalBounds,
+    zero_threshold: float = 1e-8,
+    *,
+    alpha_exp_tangent_lower: torch.Tensor | None = None,
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for exp linear relaxation.
 
-    exp(x) is convex, so we can use the tangent line at the midpoint for the lower bound relaxation,
-    and the secant line between (lower, exp(lower)) and (upper, exp(upper)) for the upper bound relaxation.
+    exp(x) is globally convex, so the lower bound is a tangent at a free
+    point ``d`` and the upper bound is the secant (already tightest).
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds of the pre-activation.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_exp_tangent_lower : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction used
+        as the lower bound. Maps ``alpha in [0, 1]`` to
+        ``d = l + alpha * (u - l)``. Default ``0.5`` reproduces the current
+        midpoint tangent. Soundness: ``exp`` is strictly convex everywhere,
+        so the tangent at any ``d`` lies on or below the function
+        pointwise. Thus every ``alpha in [0, 1]`` produces a sound lower
+        bound on ``[l, u]``.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     zero_width = torch.isclose(bounds.lower, bounds.upper, atol=zero_threshold)
-    midpoint = (bounds.lower + bounds.upper) / 2
+    width = bounds.upper - bounds.lower
+    if alpha_exp_tangent_lower is not None:
+        d_tangent = bounds.lower + alpha_exp_tangent_lower * width
+    else:
+        d_tangent = (bounds.lower + bounds.upper) / 2
 
     exp_lower = torch.exp(bounds.lower)
     exp_upper = torch.exp(bounds.upper)
-    exp_mid = torch.exp(midpoint)
+    exp_d = torch.exp(d_tangent)
 
-    alpha_lower = torch.where(zero_width, 0, exp_mid)
-    beta_lower = torch.where(zero_width, exp_lower, exp_mid - alpha_lower * midpoint)
+    alpha_lower = torch.where(zero_width, 0, exp_d)
+    beta_lower = torch.where(zero_width, exp_lower, exp_d - alpha_lower * d_tangent)
 
     slope = (exp_upper - exp_lower) / (bounds.upper - bounds.lower)
 
@@ -489,19 +601,34 @@ def compute_exp_relaxation(bounds: IntervalBounds, zero_threshold: float = 1e-8)
 def compute_log_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_log_tangent_upper: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for log linear relaxation.
 
-    log(x) is concave, so the upper bound is the tangent line at the lower bound,
-    and the lower bound is the secant line connecting (lower, log(lower)) and (upper, log(upper)).
+    log(x) is strictly concave on its domain (``x > 0``), so the upper bound
+    is a tangent at a free point ``d`` and the lower bound is the secant.
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds of the pre-activation (must satisfy
+        ``lower > 0`` for a valid relaxation).
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_log_tangent_upper : torch.Tensor | None
+        Optional alpha-CROWN override for the upper-bound tangent-point
+        fraction. Maps ``alpha in [0, 1]`` to ``d = l + alpha * (u - l)``.
+        Default ``0.5`` reproduces the current midpoint tangent. Soundness:
+        ``log`` is strictly concave, so the tangent at any ``d`` lies on
+        or above the function pointwise. Every ``alpha in [0, 1]`` is
+        sound on the valid domain.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     log_lower = torch.log(bounds.lower)
     log_upper = torch.log(bounds.upper)
@@ -512,10 +639,14 @@ def compute_log_relaxation(
     alpha_lower = torch.where(zero_width, 0, slope)
     beta_lower = torch.where(zero_width, log_lower, log_lower - slope * bounds.lower)
 
-    midpoint = (bounds.lower + bounds.upper) / 2
+    width = bounds.upper - bounds.lower
+    if alpha_log_tangent_upper is not None:
+        d_tangent = bounds.lower + alpha_log_tangent_upper * width
+    else:
+        d_tangent = (bounds.lower + bounds.upper) / 2
 
-    alpha_upper = torch.where(zero_width, 0, 1 / midpoint)
-    beta_upper = torch.where(zero_width, log_upper, torch.log(midpoint) - alpha_upper * midpoint)
+    alpha_upper = torch.where(zero_width, 0, 1 / d_tangent)
+    beta_upper = torch.where(zero_width, log_upper, torch.log(d_tangent) - alpha_upper * d_tangent)
 
     # Invalid regime: log is undefined for non-positive inputs, so we can set those bounds to nan
     invalid = bounds.lower <= 0
@@ -532,20 +663,43 @@ def compute_log_relaxation(
     )
 
 
-def compute_reciprocal_relaxation(bounds: IntervalBounds, zero_threshold: float = 1e-8) -> ElementwiseParams:
+def compute_reciprocal_relaxation(
+    bounds: IntervalBounds,
+    zero_threshold: float = 1e-8,
+    *,
+    alpha_reciprocal_tangent_lower: torch.Tensor | None = None,
+    alpha_reciprocal_tangent_upper: torch.Tensor | None = None,
+) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for reciprocal (1/x) linear relaxation.
 
-    reciprocal is convex for x > 0 and convex for x < 0, so:
-    - When interval is all positive or all negative: use secant for lower, tangent for upper
-    - When interval crosses zero: handle specially (may need to use safe bounds)
+    reciprocal is strictly convex on ``x > 0`` and strictly concave on
+    ``x < 0``. On each sign-homogeneous branch the tangent at a free
+    point ``d`` provides a sound one-sided bound.
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_reciprocal_tangent_lower : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction used
+        as the lower bound on the all-positive branch (``l > 0``). Maps
+        ``alpha in [0, 1]`` to ``d = l + alpha * (u - l)``. Default
+        ``0.5`` reproduces the midpoint tangent. Soundness: tangents of a
+        strictly convex function lie below it pointwise. Ignored in the
+        all-negative, crossing, or zero-width regimes.
+    alpha_reciprocal_tangent_upper : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction used
+        as the upper bound on the all-negative branch (``u < 0``). Default
+        ``0.5``. Soundness is symmetric (tangents of a concave function
+        lie above it). Ignored in other regimes.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -571,14 +725,25 @@ def compute_reciprocal_relaxation(bounds: IntervalBounds, zero_threshold: float 
         x_safe = torch.where(torch.abs(x) < eps, eps * torch.sign(x + eps), x)
         return -1.0 / (x_safe * x_safe)
 
-    reciprocal_derivative(lower_safe)
-    reciprocal_derivative(upper_safe)
+    # Separate tangent points for the all-positive (lower bound) and
+    # all-negative (upper bound) branches so each can be optimized
+    # independently. Midpoint default reproduces the prior behavior.
+    width = bounds.upper - bounds.lower
+    if alpha_reciprocal_tangent_lower is not None:
+        d_lower = bounds.lower + alpha_reciprocal_tangent_lower * width
+    else:
+        d_lower = (bounds.lower + bounds.upper) * 0.5
+    if alpha_reciprocal_tangent_upper is not None:
+        d_upper = bounds.lower + alpha_reciprocal_tangent_upper * width
+    else:
+        d_upper = (bounds.lower + bounds.upper) * 0.5
 
-    # Midpoint for tangent line
-    d = (bounds.lower + bounds.upper) * 0.5
-    d_safe = torch.where(torch.abs(d) < eps, eps * torch.sign(d + eps), d)
-    d_act = 1.0 / d_safe
-    d_prime = reciprocal_derivative(d_safe)
+    d_lower_safe = torch.where(torch.abs(d_lower) < eps, eps * torch.sign(d_lower + eps), d_lower)
+    d_upper_safe = torch.where(torch.abs(d_upper) < eps, eps * torch.sign(d_upper + eps), d_upper)
+    d_lower_act = 1.0 / d_lower_safe
+    d_upper_act = 1.0 / d_upper_safe
+    d_lower_prime = reciprocal_derivative(d_lower_safe)
+    d_upper_prime = reciprocal_derivative(d_upper_safe)
 
     # Slope of secant line
     slope = torch.where(
@@ -601,19 +766,17 @@ def compute_reciprocal_relaxation(bounds: IntervalBounds, zero_threshold: float 
     beta_lower[crosses_zero] = float("-inf")
     beta_upper[crosses_zero] = float("inf")
 
-    # Case 2: All positive (x > 0)
-    # Upper bound: secant line
-    # Lower bound: tangent at midpoint
+    # Case 2: All positive (x > 0): convex branch.
+    # Upper bound: secant line. Lower bound: tangent at optimizable point.
     alpha_upper[all_positive] = slope[all_positive]
     beta_upper[all_positive] = upper_act[all_positive] - slope[all_positive] * upper_safe[all_positive]
-    alpha_lower[all_positive] = d_prime[all_positive]
-    beta_lower[all_positive] = d_act[all_positive] - d_prime[all_positive] * d_safe[all_positive]
+    alpha_lower[all_positive] = d_lower_prime[all_positive]
+    beta_lower[all_positive] = d_lower_act[all_positive] - d_lower_prime[all_positive] * d_lower_safe[all_positive]
 
-    # Case 3: All negative (x < 0)
-    # Upper bound: tangent at midpoint
-    # Lower bound: secant line
-    alpha_upper[all_negative] = d_prime[all_negative]
-    beta_upper[all_negative] = d_act[all_negative] - d_prime[all_negative] * d_safe[all_negative]
+    # Case 3: All negative (x < 0): concave branch.
+    # Upper bound: tangent at optimizable point. Lower bound: secant line.
+    alpha_upper[all_negative] = d_upper_prime[all_negative]
+    beta_upper[all_negative] = d_upper_act[all_negative] - d_upper_prime[all_negative] * d_upper_safe[all_negative]
     alpha_lower[all_negative] = slope[all_negative]
     beta_lower[all_negative] = upper_act[all_negative] - slope[all_negative] * upper_safe[all_negative]
 
@@ -696,17 +859,36 @@ def compute_relu_relaxation(
     bounds: IntervalBounds,
     adaptive: bool = False,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_relu_lower: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for ReLU linear relaxation.
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
-        adaptive: Whether to use adaptive ReLU relaxation
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds of the pre-activation.
+    adaptive : bool
+        When ``True`` and ``alpha_relu_lower`` is ``None``, pick the crossing
+        slope adaptively (``1`` if ``|u| >= |l|`` else ``0``); otherwise the
+        crossing slope defaults to ``z = u / (u - l)``.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_relu_lower : torch.Tensor | None
+        Optional alpha-CROWN override for the lower-bound slope in the
+        crossing regime. Must be a tensor of unit-interval fractions
+        broadcastable to the shape of ``bounds.lower``. Each fraction
+        ``alpha`` maps to crossing-regime lower slope ``a = alpha`` directly
+        (since the valid slope range is ``[0, 1]``). Values in non-crossing
+        elements are ignored. Soundness: for any ``l < 0 < u`` and any
+        ``a in [0, 1]``, the line ``y = a * x`` satisfies ``a*x <= ReLU(x)``
+        pointwise on ``[l, u]``.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -735,8 +917,11 @@ def compute_relu_relaxation(
 
     z = u_cross / (u_cross - l_cross)
 
-    if adaptive:
-        # Adaptive: choose slope based on which bound is tighter
+    if alpha_relu_lower is not None:
+        # Alpha-CROWN override: the lower slope is simply the fraction in [0, 1].
+        a = alpha_relu_lower[crossing]
+    elif adaptive:
+        # Adaptive: choose slope based on which bound is tighter.
         a = (u_cross >= torch.abs(l_cross)).to(bounds.lower.dtype)
     else:
         a = z
@@ -757,6 +942,9 @@ def compute_relu_relaxation(
 def compute_sigmoid_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_sigmoid_tangent_lower: torch.Tensor | None = None,
+    alpha_sigmoid_tangent_upper: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for sigmoid linear relaxation.
@@ -769,12 +957,34 @@ def compute_sigmoid_relaxation(
 
     This ensures sound bounds while preferring simpler secant when valid.
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds of the pre-activation.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_sigmoid_tangent_lower : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point *fraction* used
+        when sigmoid is convex (``u <= 0``, "negative-only" regime) and the
+        tangent forms the lower bound. Maps ``alpha in [0, 1]`` to tangent
+        abscissa ``d = l + alpha * (u - l) in [l, u]``. Default fraction
+        ``0.5`` reproduces the current midpoint tangent. Soundness: on any
+        strictly-convex subinterval, the tangent at any ``d in [l, u]``
+        satisfies ``tangent(x) <= sigmoid(x)`` pointwise on ``[l, u]``.
+        This override is ignored in non-negative-only regimes.
+    alpha_sigmoid_tangent_upper : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction used
+        when sigmoid is concave (``l >= 0``, "positive-only" regime) and the
+        tangent forms the upper bound. Same mapping and default as above.
+        Soundness is symmetric: on concave subintervals, every tangent lies
+        on or above the function. This override is ignored outside the
+        positive-only regime (including crossing intervals, where the
+        tangent logic is regime-dependent and not every ``d`` is safe).
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -792,10 +1002,21 @@ def compute_sigmoid_relaxation(
         s = torch.sigmoid(x)
         return s * (1 - s)
 
-    # Midpoint for tangent line
-    d = (bounds.lower + bounds.upper) * 0.5
-    d_act = torch.sigmoid(d)
-    d_prime = sigmoid_derivative(d)
+    # Optimizable tangent points (default: midpoint, reproducing prior behavior).
+    width = bounds.upper - bounds.lower
+    if alpha_sigmoid_tangent_lower is not None:
+        d_lower = bounds.lower + alpha_sigmoid_tangent_lower * width
+    else:
+        d_lower = (bounds.lower + bounds.upper) * 0.5
+    if alpha_sigmoid_tangent_upper is not None:
+        d_upper = bounds.lower + alpha_sigmoid_tangent_upper * width
+    else:
+        d_upper = (bounds.lower + bounds.upper) * 0.5
+
+    d_lower_act = torch.sigmoid(d_lower)
+    d_lower_prime = sigmoid_derivative(d_lower)
+    d_upper_act = torch.sigmoid(d_upper)
+    d_upper_prime = sigmoid_derivative(d_upper)
 
     # Slope of secant line
     slope = torch.where(zero_width, 0, (upper_act - lower_act) / (bounds.upper - bounds.lower))
@@ -817,14 +1038,14 @@ def compute_sigmoid_relaxation(
     alpha_upper[negative] = slope[negative]
     beta_upper[negative] = upper_act[negative] - slope[negative] * bounds.upper[negative]
 
-    # Lower: tangent line at midpoint
-    alpha_lower[negative] = d_prime[negative]
-    beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
+    # Lower: tangent line at (optimizable) tangent point.
+    alpha_lower[negative] = d_lower_prime[negative]
+    beta_lower[negative] = d_lower_act[negative] - d_lower_prime[negative] * d_lower[negative]
 
     # Positive regime
-    # Upper: tangent at midpoint
-    alpha_upper[positive] = d_prime[positive]
-    beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
+    # Upper: tangent at (optimizable) tangent point.
+    alpha_upper[positive] = d_upper_prime[positive]
+    beta_upper[positive] = d_upper_act[positive] - d_upper_prime[positive] * d_upper[positive]
 
     # Lower: secant line
     alpha_lower[positive] = slope[positive]
@@ -872,6 +1093,8 @@ def compute_sigmoid_relaxation(
 def compute_sin_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_sin_tangent_frac: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for sin linear relaxation.
@@ -884,12 +1107,27 @@ def compute_sin_relaxation(
     For convex regions: tangent is lower bound, secant is upper bound
     For concave regions: secant is lower bound, tangent is upper bound
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds
-        zero_threshold: Threshold for considering an interval as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_sin_tangent_frac : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction.
+        Active only in the "safe" subregime where the interval contains
+        neither a maximum, a minimum, nor an inflection point — i.e. a
+        subinterval on which sin is strictly monotone and either strictly
+        convex or strictly concave. In that regime, the tangent at any
+        ``d = l + alpha * (u - l)`` is globally sound (below sin on convex
+        subintervals, above sin on concave subintervals). Outside the safe
+        regime the override is silently ignored and the analytical defaults
+        (extrema-aware constant/secant fallbacks) are used.
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -1073,6 +1311,23 @@ def compute_sin_relaxation(
     alpha_nz_upper = torch.where(crosses_inflection_only, 0, alpha_nz_upper)
     beta_nz_upper = torch.where(crosses_inflection_only, torch.maximum(sin_lower, sin_upper), beta_nz_upper)
 
+    # Alpha-CROWN override: in the safe subregime (strictly monotone + single-convex/concave),
+    # replace the endpoint-tangent heuristic with a tangent at an optimizable point.
+    if alpha_sin_tangent_frac is not None:
+        alpha_nz = alpha_sin_tangent_frac[non_zero]
+        d_opt = lower_nz + alpha_nz * (upper_nz - lower_nz)
+        tangent_opt_slope = torch.cos(d_opt)
+        tangent_opt_beta = torch.sin(d_opt) - tangent_opt_slope * d_opt
+        safe = ~has_maximum & ~has_minimum & ~has_inflection & ~has_both_extrema
+        # Concave subinterval: secant is lower, tangent is upper.
+        use_opt_upper = safe & when_secant_is_lower
+        alpha_nz_upper = torch.where(use_opt_upper, tangent_opt_slope, alpha_nz_upper)
+        beta_nz_upper = torch.where(use_opt_upper, tangent_opt_beta, beta_nz_upper)
+        # Convex subinterval: secant is upper, tangent is lower.
+        use_opt_lower = safe & ~when_secant_is_lower
+        alpha_nz_lower = torch.where(use_opt_lower, tangent_opt_slope, alpha_nz_lower)
+        beta_nz_lower = torch.where(use_opt_lower, tangent_opt_beta, beta_nz_lower)
+
     # Assign back to output tensors
     alpha_lower[non_zero] = alpha_nz_lower
     beta_lower[non_zero] = beta_nz_lower
@@ -1090,20 +1345,34 @@ def compute_sin_relaxation(
 def compute_sqrt_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_sqrt_tangent_upper: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for sqrt linear relaxation.
 
-    sqrt is concave, so:
-    - Lower bound: secant line connecting (lower, sqrt(lower)) and (upper, sqrt(upper))
-    - Upper bound: tangent line at midpoint
+    sqrt is strictly concave on ``x > 0``, so the upper bound is a tangent
+    at a free point ``d`` and the lower bound is the secant.
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds (requires ``lower >= 0`` for validity).
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_sqrt_tangent_upper : torch.Tensor | None
+        Optional alpha-CROWN override for the upper-bound tangent-point
+        fraction. Maps ``alpha in [0, 1]`` to ``d = l + alpha * (u - l)``.
+        Default ``0.5`` reproduces the current midpoint tangent. Soundness:
+        tangents of a strictly concave function lie on or above the
+        function pointwise; every ``alpha in [0, 1]`` is sound on the
+        strictly-positive part of the interval. Elements where
+        ``bounds.lower < 0`` remain NaN (undefined domain).
 
-    Returns:
-        ElementwiseParams encapsulating the relaxation parameters
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -1122,10 +1391,13 @@ def compute_sqrt_relaxation(
         # Handle zero case
         return torch.where(x > 0, 1.0 / (2.0 * torch.sqrt(x)), 0)
 
-    # Midpoint for tangent line
-    midpoint = (bounds.lower + bounds.upper) * 0.5
-    midpoint_act = torch.sqrt(midpoint)
-    midpoint_prime = sqrt_derivative(midpoint)
+    width = bounds.upper - bounds.lower
+    if alpha_sqrt_tangent_upper is not None:
+        d_tangent = bounds.lower + alpha_sqrt_tangent_upper * width
+    else:
+        d_tangent = (bounds.lower + bounds.upper) * 0.5
+    d_act = torch.sqrt(d_tangent)
+    d_prime = sqrt_derivative(d_tangent)
 
     # Slope of secant line
     slope = (upper_act - lower_act) / (bounds.upper - bounds.lower)
@@ -1139,15 +1411,15 @@ def compute_sqrt_relaxation(
 
     # sqrt is concave everywhere (for x > 0):
     # - Lower bound: secant line
-    # - Upper bound: tangent line at midpoint
+    # - Upper bound: tangent line at optimizable point
 
     # Lower bound: secant line
     alpha_lower[non_zero] = slope[non_zero]
     beta_lower[non_zero] = lower_act[non_zero] - slope[non_zero] * bounds.lower[non_zero]
 
-    # Upper bound: tangent at midpoint
-    alpha_upper[non_zero] = midpoint_prime[non_zero]
-    beta_upper[non_zero] = midpoint_act[non_zero] - midpoint_prime[non_zero] * midpoint[non_zero]
+    # Upper bound: tangent at optimizable point
+    alpha_upper[non_zero] = d_prime[non_zero]
+    beta_upper[non_zero] = d_act[non_zero] - d_prime[non_zero] * d_tangent[non_zero]
 
     # Invalid regime: sqrt is undefined for negative inputs
     invalid = bounds.lower < 0
@@ -1167,6 +1439,8 @@ def compute_sqrt_relaxation(
 def compute_tan_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_tan_tangent_frac: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for tan linear relaxation.
@@ -1175,12 +1449,25 @@ def compute_tan_relaxation(
     - In (-π/2, 0): tan is concave (tan'' < 0)
     - In (0, π/2): tan is convex (tan'' > 0)
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
-        zero_threshold: Threshold for zero-width intervals
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_tan_tangent_frac : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction. Only
+        active in the safe subregimes: a strictly-convex half-branch
+        (``[kπ, kπ + π/2)``) contributes the lower-bound tangent, and a
+        strictly-concave half-branch (``(kπ - π/2, kπ]``) contributes the
+        upper-bound tangent. Each is optimized independently per element.
+        Ignored on asymptote-crossing, inflection-crossing (``crosses_zero``
+        within a branch), and zero-width elements.
 
-    Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -1244,22 +1531,41 @@ def compute_tan_relaxation(
     # But we need to handle crossing zero (inflection point) specially
     crosses_zero = (bounds.lower < 0) & (bounds.upper > 0) & valid
 
+    # Optimizable tangent point (default: lower endpoint for convex, upper endpoint for concave).
+    width = bounds.upper - bounds.lower
+    if alpha_tan_tangent_frac is not None:
+        d_opt = bounds.lower + alpha_tan_tangent_frac * width
+        d_opt_act = torch.tan(d_opt)
+        d_opt_prime = tan_derivative(d_opt)
+    else:
+        d_opt = bounds.lower  # unused; defaults kept in branches below
+        d_opt_act = lower_act
+        d_opt_prime = lower_prime
+
     # Convex regime: tan > 0 (e.g., x ∈ (0, π/2))
-    # Use secant for upper bound, tangent for lower bound
+    # Use secant for upper bound, tangent for lower bound (at any d in [l, u]).
     convex = (midpoint_tan > zero_threshold) & valid & ~crosses_zero
 
     alpha_upper[convex] = slope[convex]
     beta_upper[convex] = upper_act[convex] - slope[convex] * bounds.upper[convex]
 
-    alpha_lower[convex] = lower_prime[convex]
-    beta_lower[convex] = lower_act[convex] - lower_prime[convex] * bounds.lower[convex]
+    if alpha_tan_tangent_frac is not None:
+        alpha_lower[convex] = d_opt_prime[convex]
+        beta_lower[convex] = d_opt_act[convex] - d_opt_prime[convex] * d_opt[convex]
+    else:
+        alpha_lower[convex] = lower_prime[convex]
+        beta_lower[convex] = lower_act[convex] - lower_prime[convex] * bounds.lower[convex]
 
     # Concave regime: tan < 0 (e.g., x ∈ (-π/2, 0))
-    # Use tangent for upper bound, secant for lower bound
+    # Use tangent for upper bound (at any d in [l, u]), secant for lower bound.
     concave = (midpoint_tan < -zero_threshold) & valid & ~crosses_zero
 
-    alpha_upper[concave] = upper_prime[concave]
-    beta_upper[concave] = upper_act[concave] - upper_prime[concave] * bounds.upper[concave]
+    if alpha_tan_tangent_frac is not None:
+        alpha_upper[concave] = d_opt_prime[concave]
+        beta_upper[concave] = d_opt_act[concave] - d_opt_prime[concave] * d_opt[concave]
+    else:
+        alpha_upper[concave] = upper_prime[concave]
+        beta_upper[concave] = upper_act[concave] - upper_prime[concave] * bounds.upper[concave]
 
     alpha_lower[concave] = slope[concave]
     beta_lower[concave] = lower_act[concave] - slope[concave] * bounds.lower[concave]
@@ -1304,6 +1610,9 @@ def compute_tan_relaxation(
 def compute_tanh_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,
+    *,
+    alpha_tanh_tangent_lower: torch.Tensor | None = None,
+    alpha_tanh_tangent_upper: torch.Tensor | None = None,
 ) -> ElementwiseParams:
     """
     Compute alpha/beta parameters for tanh linear relaxation.
@@ -1316,12 +1625,29 @@ def compute_tanh_relaxation(
 
     This ensures sound bounds while preferring simpler secant when valid.
 
-    Args:
-        bounds: IntervalBounds object containing lower and upper bounds of pre-activation
-        zero_threshold: Threshold to treat bounds as zero-width
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds of the pre-activation.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_tanh_tangent_lower : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction in the
+        negative-only (``u <= 0``, strictly convex) regime, where the
+        tangent forms the lower bound. Maps ``alpha in [0, 1]`` to
+        ``d = l + alpha * (u - l)``. Default ``0.5`` reproduces midpoint
+        tangent. Soundness: every tangent of a strictly convex function
+        lies on or below it. Ignored outside the negative-only regime.
+    alpha_tanh_tangent_upper : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent-point fraction in
+        the positive-only (``l >= 0``, strictly concave) regime, where the
+        tangent forms the upper bound. Same mapping and soundness argument.
+        Ignored outside the positive-only regime (including crossing).
 
-    Returns:
-        ElementwiseLinearRelaxation encapsulating the relaxation
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
     """
     alpha_lower = torch.zeros_like(bounds.lower)
     beta_lower = torch.zeros_like(bounds.lower)
@@ -1342,10 +1668,21 @@ def compute_tanh_relaxation(
     lower_prime = tanh_derivative(bounds.lower)
     upper_prime = tanh_derivative(bounds.upper)
 
-    # Midpoint for tangent line
-    d = (bounds.lower + bounds.upper) * 0.5
-    d_act = torch.tanh(d)
-    d_prime = tanh_derivative(d)
+    # Optimizable tangent points (default: midpoint reproduces prior behavior).
+    width = bounds.upper - bounds.lower
+    if alpha_tanh_tangent_lower is not None:
+        d_lower = bounds.lower + alpha_tanh_tangent_lower * width
+    else:
+        d_lower = (bounds.lower + bounds.upper) * 0.5
+    if alpha_tanh_tangent_upper is not None:
+        d_upper = bounds.lower + alpha_tanh_tangent_upper * width
+    else:
+        d_upper = (bounds.lower + bounds.upper) * 0.5
+
+    d_lower_act = torch.tanh(d_lower)
+    d_lower_prime = tanh_derivative(d_lower)
+    d_upper_act = torch.tanh(d_upper)
+    d_upper_prime = tanh_derivative(d_upper)
 
     # Slope of secant line
     slope = torch.where(
@@ -1371,15 +1708,15 @@ def compute_tanh_relaxation(
         alpha_upper[negative] = slope[negative]
         beta_upper[negative] = upper_act[negative] - slope[negative] * bounds.upper[negative]
 
-        # Lower: tangent line at midpoint
-        alpha_lower[negative] = d_prime[negative]
-        beta_lower[negative] = d_act[negative] - d_prime[negative] * d[negative]
+        # Lower: tangent line at (optimizable) tangent point.
+        alpha_lower[negative] = d_lower_prime[negative]
+        beta_lower[negative] = d_lower_act[negative] - d_lower_prime[negative] * d_lower[negative]
 
     # Positive regime
     if positive.any():
-        # Upper: tangent at midpoint
-        alpha_upper[positive] = d_prime[positive]
-        beta_upper[positive] = d_act[positive] - d_prime[positive] * d[positive]
+        # Upper: tangent at (optimizable) tangent point.
+        alpha_upper[positive] = d_upper_prime[positive]
+        beta_upper[positive] = d_upper_act[positive] - d_upper_prime[positive] * d_upper[positive]
 
         # Lower: secant line
         alpha_lower[positive] = slope[positive]

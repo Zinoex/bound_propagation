@@ -15,6 +15,7 @@ import torch.fx as fx
 
 from ...bounds import IntervalBounds, LinearBounds
 from ...regions import SimpleRegion
+from ..alpha_optimization import AlphaProvider, NullAlphaProvider
 from .base import BackwardRelaxation
 
 
@@ -52,6 +53,7 @@ class BackwardTape:
         self._relaxations: dict[str, BackwardRelaxation] = {}
         self._input_regions: dict[str, SimpleRegion] = {}
         self._input_ids: dict[str, int] = {}
+        self._alpha_provider: AlphaProvider = NullAlphaProvider()
 
         # Seed placeholders
         placeholders = [n for n in graph_module.graph.nodes if n.op == "placeholder"]
@@ -67,6 +69,22 @@ class BackwardTape:
 
         # Cache for concretized interval bounds
         self._interval_cache: dict[str, IntervalBounds] = {}
+
+    @property
+    def alpha_provider(self) -> AlphaProvider:
+        """Provider for optimizable alpha-CROWN knobs.
+
+        Defaults to a :class:`NullAlphaProvider` that always returns
+        ``None`` (analytical-default behavior). A propagator running an
+        alpha-optimization loop installs an :class:`AutoRegisteringAlphaProvider`
+        here before the forward walk so strategies can opt-in to
+        optimization by consulting ``tape.alpha_provider``.
+        """
+        return self._alpha_provider
+
+    @alpha_provider.setter
+    def alpha_provider(self, provider: AlphaProvider) -> None:
+        self._alpha_provider = provider
 
     # ------------------------------------------------------------------
     # Recording

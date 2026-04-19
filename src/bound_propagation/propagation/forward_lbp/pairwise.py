@@ -8,6 +8,12 @@ import torch.fx as fx
 
 from ...bounds import LinearBounds
 from ...regions import SimpleRegion
+from ..linear_relaxations.alpha_resolvers import (
+    resolve_div_etas,
+    resolve_max_etas,
+    resolve_min_etas,
+    resolve_mul_etas,
+)
 from ..linear_relaxations.elementwise import compute_constant_div_relaxation
 from ..linear_relaxations.pairwise import (
     PairedParams,
@@ -159,7 +165,7 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
-            return self._div_bounds(left, right)
+            return self._div_bounds(left, right, node, ctx)
 
         if isinstance(left, LinearBounds) and not isinstance(right, LinearBounds):
             return self._divide_by_constant(left, right)
@@ -169,7 +175,7 @@ class ForwardLBPDiv(ForwardLBPStrategy):
 
         raise TypeError(f"ForwardLBPDiv requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
-    def _div_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
+    def _div_bounds(self, a: LinearBounds, b: LinearBounds, node: fx.Node, ctx: PropagationContext) -> LinearBounds:
         """Bound z = a / b for abstract numerator and denominator.
 
         Decomposes as z = a * (1/b):
@@ -187,7 +193,13 @@ class ForwardLBPDiv(ForwardLBPStrategy):
         bounds_a = a.concretize()
         bounds_b = b.concretize()
 
-        params = compute_div_relaxation(bounds_a, bounds_b)
+        eta_lo, eta_up = resolve_div_etas(ctx.alpha_provider, node, bounds_a)
+        params = compute_div_relaxation(
+            bounds_a,
+            bounds_b,
+            eta_lower=eta_lo if eta_lo is not None else 0.5,
+            eta_upper=eta_up if eta_up is not None else 0.5,
+        )
         relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)
 
@@ -266,7 +278,7 @@ class ForwardLBPMul(ForwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
-            return self._mul_bounds(left, right)
+            return self._mul_bounds(left, right, node, ctx)
 
         if isinstance(left, LinearBounds):
             return self._multiply_by_constant(left, right)
@@ -276,7 +288,7 @@ class ForwardLBPMul(ForwardLBPStrategy):
 
         raise TypeError(f"ForwardLBPMul requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
-    def _mul_bounds(self, a: LinearBounds, b: LinearBounds) -> LinearBounds:
+    def _mul_bounds(self, a: LinearBounds, b: LinearBounds, node: fx.Node, ctx: PropagationContext) -> LinearBounds:
         """McCormick relaxation for element-wise z = a * b.
 
         Uses PairedForwardRelaxation to preserve linear structure from both inputs.
@@ -294,7 +306,13 @@ class ForwardLBPMul(ForwardLBPStrategy):
         bounds_a = a.concretize()
         bounds_b = b.concretize()
 
-        params = compute_mul_relaxation(bounds_a, bounds_b)
+        eta_lo, eta_up = resolve_mul_etas(ctx.alpha_provider, node, bounds_a)
+        params = compute_mul_relaxation(
+            bounds_a,
+            bounds_b,
+            eta_lower=eta_lo if eta_lo is not None else 0.5,
+            eta_upper=eta_up if eta_up is not None else 0.5,
+        )
         relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)
 
@@ -367,13 +385,13 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
-            return self._max_bounds(left, right)
+            return self._max_bounds(left, right, node, ctx)
 
         if isinstance(left, LinearBounds):
-            return self._max_bounds(left, self._constant_to_bounds(right, left))
+            return self._max_bounds(left, self._constant_to_bounds(right, left), node, ctx)
 
         if isinstance(right, LinearBounds):
-            return self._max_bounds(self._constant_to_bounds(left, right), right)
+            return self._max_bounds(self._constant_to_bounds(left, right), right, node, ctx)
 
         raise TypeError(f"ForwardLBPMaximum requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
@@ -392,10 +410,16 @@ class ForwardLBPMaximum(ForwardLBPStrategy):
         )
 
     @staticmethod
-    def _max_bounds(a: LinearBounds, b: LinearBounds) -> LinearBounds:
+    def _max_bounds(a: LinearBounds, b: LinearBounds, node: fx.Node, ctx: PropagationContext) -> LinearBounds:
         bounds_a = a.concretize()
         bounds_b = b.concretize()
-        params = compute_maximum_relaxation(bounds_a, bounds_b)
+        eta_lo, eta_up = resolve_max_etas(ctx.alpha_provider, node, bounds_a)
+        params = compute_maximum_relaxation(
+            bounds_a,
+            bounds_b,
+            eta_lower=eta_lo if eta_lo is not None else 0.5,
+            eta_upper=eta_up if eta_up is not None else 0.5,
+        )
         relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)
 
@@ -412,13 +436,13 @@ class ForwardLBPMinimum(ForwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, LinearBounds) and isinstance(right, LinearBounds):
-            return self._min_bounds(left, right)
+            return self._min_bounds(left, right, node, ctx)
 
         if isinstance(left, LinearBounds):
-            return self._min_bounds(left, self._constant_to_bounds(right, left))
+            return self._min_bounds(left, self._constant_to_bounds(right, left), node, ctx)
 
         if isinstance(right, LinearBounds):
-            return self._min_bounds(self._constant_to_bounds(left, right), right)
+            return self._min_bounds(self._constant_to_bounds(left, right), right, node, ctx)
 
         raise TypeError(f"ForwardLBPMinimum requires at least one LinearBounds, got {type(left)} and {type(right)}")
 
@@ -437,9 +461,15 @@ class ForwardLBPMinimum(ForwardLBPStrategy):
         )
 
     @staticmethod
-    def _min_bounds(a: LinearBounds, b: LinearBounds) -> LinearBounds:
+    def _min_bounds(a: LinearBounds, b: LinearBounds, node: fx.Node, ctx: PropagationContext) -> LinearBounds:
         bounds_a = a.concretize()
         bounds_b = b.concretize()
-        params = compute_minimum_relaxation(bounds_a, bounds_b)
+        eta_lo, eta_up = resolve_min_etas(ctx.alpha_provider, node, bounds_a)
+        params = compute_minimum_relaxation(
+            bounds_a,
+            bounds_b,
+            eta_lower=eta_lo if eta_lo is not None else 0.5,
+            eta_upper=eta_up if eta_up is not None else 0.5,
+        )
         relaxation = PairedForwardRelaxation(params)
         return relaxation.forward(a, b)

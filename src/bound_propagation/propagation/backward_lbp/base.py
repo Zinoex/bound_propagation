@@ -145,13 +145,31 @@ class IntermediateBoundsProvider(Protocol):
 
 
 class CrownBoundsProvider:
-    """Bounds provider that concretizes via the tape (standard CROWN)."""
+    """Bounds provider that concretizes via the tape (standard CROWN).
 
-    def __init__(self, tape: BackwardTape, batch_ndim: int = 0) -> None:
+    When ``no_grad_concretizations`` is ``True`` the recursive backward
+    concretization runs under :func:`torch.no_grad`, so alpha-CROWN
+    gradients do not flow through intermediate bound computation. This is
+    used by the "final-only" optimization mode, where alphas affect only
+    the last backward pass. The default ``False`` preserves gradients for
+    the "intermediate" mode.
+    """
+
+    def __init__(
+        self,
+        tape: BackwardTape,
+        batch_ndim: int = 0,
+        *,
+        no_grad_concretizations: bool = False,
+    ) -> None:
         self._tape = tape
         self._batch_ndim = batch_ndim
+        self._no_grad = no_grad_concretizations
 
     def __call__(self, node: fx.Node) -> IntervalBounds:
+        if self._no_grad:
+            with torch.no_grad():
+                return self._tape.concretize_at(node, batch_ndim=self._batch_ndim)
         return self._tape.concretize_at(node, batch_ndim=self._batch_ndim)
 
 
@@ -176,8 +194,7 @@ class PrecomputedBoundsProvider:
             return self._bounds[node.name]
         except KeyError as e:
             raise KeyError(
-                f"No precomputed IntervalBounds for node {node.name!r}; "
-                f"known nodes: {sorted(self._bounds)}"
+                f"No precomputed IntervalBounds for node {node.name!r}; known nodes: {sorted(self._bounds)}"
             ) from e
 
 
@@ -190,9 +207,7 @@ class _ContextBoundsProvider(PrecomputedBoundsProvider):
     def __call__(self, node: fx.Node) -> IntervalBounds:
         value = self._ctx.resolve(node)
         if not isinstance(value, IntervalBounds):
-            raise TypeError(
-                f"Expected IntervalBounds for node {node.name!r}, got {type(value).__name__}"
-            )
+            raise TypeError(f"Expected IntervalBounds for node {node.name!r}, got {type(value).__name__}")
         return value
 
 

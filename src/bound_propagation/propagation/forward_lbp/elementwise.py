@@ -4,6 +4,20 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, final
 
 from ...bounds import LinearBounds
+from ..linear_relaxations.alpha_resolvers import (
+    resolve_abs_alpha,
+    resolve_clamp_alphas,
+    resolve_cos_alpha,
+    resolve_exp_alpha,
+    resolve_log_alpha,
+    resolve_reciprocal_alphas,
+    resolve_relu_alpha,
+    resolve_sigmoid_alphas,
+    resolve_sin_alpha,
+    resolve_sqrt_alpha,
+    resolve_tan_alpha,
+    resolve_tanh_alphas,
+)
 from ..linear_relaxations.elementwise import (
     ElementwiseParams,
     compute_abs_relaxation,
@@ -122,7 +136,8 @@ class ForwardLBPAbs(ForwardLBPStrategy):
             raise TypeError("ForwardLBPAbs requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_abs_relaxation(concrete_bounds)
+        alpha = resolve_abs_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_abs_relaxation(concrete_bounds, alpha_abs_lower=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -145,7 +160,14 @@ class ForwardLBPClamp(ForwardLBPStrategy):
         max_val = args[2] if len(args) > 2 else kwargs.get("max")
 
         concrete_bounds = bounds.concretize()
-        params = compute_clamp_relaxation(concrete_bounds, min_val, max_val)
+        alpha_cm_lower, alpha_cmx_upper = resolve_clamp_alphas(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_clamp_relaxation(
+            concrete_bounds,
+            min_val,
+            max_val,
+            alpha_clamp_crosses_min_lower=alpha_cm_lower,
+            alpha_clamp_crosses_max_upper=alpha_cmx_upper,
+        )
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -165,7 +187,8 @@ class ForwardLBPCos(ForwardLBPStrategy):
             raise TypeError("ForwardLBPCos requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_cos_relaxation(concrete_bounds)
+        alpha = resolve_cos_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_cos_relaxation(concrete_bounds, alpha_cos_tangent_frac=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -185,7 +208,8 @@ class ForwardLBPExp(ForwardLBPStrategy):
             raise TypeError("ForwardLBPExp requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_exp_relaxation(concrete_bounds)
+        alpha = resolve_exp_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_exp_relaxation(concrete_bounds, alpha_exp_tangent_lower=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -205,7 +229,8 @@ class ForwardLBPLog(ForwardLBPStrategy):
             raise TypeError("ForwardLBPLog requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_log_relaxation(concrete_bounds)
+        alpha = resolve_log_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_log_relaxation(concrete_bounds, alpha_log_tangent_upper=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -225,7 +250,12 @@ class ForwardLBPReciprocal(ForwardLBPStrategy):
             raise TypeError("ForwardLBPReciprocal requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_reciprocal_relaxation(concrete_bounds)
+        alpha_lo, alpha_up = resolve_reciprocal_alphas(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_reciprocal_relaxation(
+            concrete_bounds,
+            alpha_reciprocal_tangent_lower=alpha_lo,
+            alpha_reciprocal_tangent_upper=alpha_up,
+        )
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -245,7 +275,8 @@ class ForwardLBPRelu(ForwardLBPStrategy):
             raise TypeError("ForwardLBPRelu requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_relu_relaxation(concrete_bounds, adaptive=False)
+        alpha = resolve_relu_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_relu_relaxation(concrete_bounds, adaptive=False, alpha_relu_lower=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -265,7 +296,12 @@ class ForwardLBPSigmoid(ForwardLBPStrategy):
             raise TypeError("ForwardLBPSigmoid requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_sigmoid_relaxation(concrete_bounds)
+        alpha_lo, alpha_up = resolve_sigmoid_alphas(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_sigmoid_relaxation(
+            concrete_bounds,
+            alpha_sigmoid_tangent_lower=alpha_lo,
+            alpha_sigmoid_tangent_upper=alpha_up,
+        )
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -285,7 +321,8 @@ class ForwardLBPSin(ForwardLBPStrategy):
             raise TypeError("ForwardLBPSin requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_sin_relaxation(concrete_bounds)
+        alpha = resolve_sin_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_sin_relaxation(concrete_bounds, alpha_sin_tangent_frac=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -305,7 +342,8 @@ class ForwardLBPSqrt(ForwardLBPStrategy):
             raise TypeError("ForwardLBPSqrt requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_sqrt_relaxation(concrete_bounds)
+        alpha = resolve_sqrt_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_sqrt_relaxation(concrete_bounds, alpha_sqrt_tangent_upper=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -325,7 +363,8 @@ class ForwardLBPTan(ForwardLBPStrategy):
             raise TypeError("ForwardLBPTan requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_tan_relaxation(concrete_bounds)
+        alpha = resolve_tan_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_tan_relaxation(concrete_bounds, alpha_tan_tangent_frac=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)
 
@@ -345,6 +384,11 @@ class ForwardLBPTanh(ForwardLBPStrategy):
             raise TypeError("ForwardLBPTanh requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        params = compute_tanh_relaxation(concrete_bounds)
+        alpha_lo, alpha_up = resolve_tanh_alphas(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_tanh_relaxation(
+            concrete_bounds,
+            alpha_tanh_tangent_lower=alpha_lo,
+            alpha_tanh_tangent_upper=alpha_up,
+        )
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)

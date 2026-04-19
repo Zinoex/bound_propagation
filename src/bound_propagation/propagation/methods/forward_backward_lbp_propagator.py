@@ -21,6 +21,12 @@ import torch.fx as fx
 
 from ...bounds import IntervalBounds, LinearBounds
 from ...regions import SimpleRegion
+from ..alpha_optimization import (
+    AlphaOptimizationConfig,
+    AlphaProvider,
+    NullAlphaProvider,
+    run_alpha_optimization,
+)
 from ..backward_lbp import create_default_backward_lbp_registry
 from ..backward_lbp.base import BackwardLBPStrategy, IntermediateBoundsProvider
 from ..backward_lbp.tape import BackwardTape
@@ -85,10 +91,18 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
         graph_module: fx.GraphModule,
         forward_registry: TargetRegistry[ForwardLBPStrategy] | None = None,
         backward_registry: TargetRegistry[BackwardLBPStrategy] | None = None,
+        alpha_config: AlphaOptimizationConfig | None = None,
     ) -> None:
         super().__init__(graph_module)
         self._forward_registry = forward_registry or create_default_forward_lbp_registry()
         self._backward_registry = backward_registry or create_default_backward_lbp_registry()
+        self._alpha_config = alpha_config or AlphaOptimizationConfig()
+        if self._alpha_config.optimize_intermediate:
+            raise ValueError(
+                "ForwardBackwardLBPPropagator does not support optimize_intermediate=True: "
+                "intermediate bounds come from a single forward LBP sweep, not a recursive CROWN pass. "
+                "All forward and backward alphas are already co-optimized when enabled=True."
+            )
 
     @property
     def method_name(self) -> str:
@@ -102,6 +116,10 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
     def backward_registry(self) -> TargetRegistry[BackwardLBPStrategy]:
         return self._backward_registry
 
+    @property
+    def alpha_config(self) -> AlphaOptimizationConfig:
+        return self._alpha_config
+
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
@@ -110,8 +128,24 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
 
+        regions_list = list(input_regions)
+        if not self._alpha_config.enabled:
+            return self._propagate_once(regions_list, NullAlphaProvider())
+        return run_alpha_optimization(
+            propagate_once=lambda provider: self._propagate_once(regions_list, provider),
+            config=self._alpha_config,
+        )
+
+    def _propagate_once(
+        self,
+        input_regions: list[SimpleRegion],
+        alpha_provider: AlphaProvider,
+    ) -> Sequence[LinearBounds]:
+        placeholders = self._placeholder_nodes()
         ctx = PropagationContext[LinearBounds](self._graph_module)
-        tape = BackwardTape(self._graph_module, list(input_regions))
+        ctx.alpha_provider = alpha_provider
+        tape = BackwardTape(self._graph_module, input_regions)
+        tape.alpha_provider = alpha_provider
         provider = _ForwardLBPBoundsProvider(ctx)
 
         # Seed placeholder forward LBP bounds as identities over each region.

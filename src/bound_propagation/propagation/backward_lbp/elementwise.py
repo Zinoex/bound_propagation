@@ -15,6 +15,20 @@ import torch
 import torch.fx as fx
 from beartype.typing import final
 
+from ..linear_relaxations.alpha_resolvers import (
+    resolve_abs_alpha,
+    resolve_clamp_alphas,
+    resolve_cos_alpha,
+    resolve_exp_alpha,
+    resolve_log_alpha,
+    resolve_reciprocal_alphas,
+    resolve_relu_alpha,
+    resolve_sigmoid_alphas,
+    resolve_sin_alpha,
+    resolve_sqrt_alpha,
+    resolve_tan_alpha,
+    resolve_tanh_alphas,
+)
 from ..linear_relaxations.elementwise import (
     ElementwiseParams,
     compute_abs_relaxation,
@@ -149,7 +163,8 @@ class BackwardLBPRelu(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_relu_relaxation(input_bounds, adaptive=False)
+        alpha = resolve_relu_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_relu_relaxation(input_bounds, adaptive=False, alpha_relu_lower=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -160,7 +175,12 @@ class BackwardLBPSigmoid(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_sigmoid_relaxation(input_bounds)
+        alpha_lo, alpha_up = resolve_sigmoid_alphas(tape.alpha_provider, node, input_bounds)
+        params = compute_sigmoid_relaxation(
+            input_bounds,
+            alpha_sigmoid_tangent_lower=alpha_lo,
+            alpha_sigmoid_tangent_upper=alpha_up,
+        )
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -171,7 +191,12 @@ class BackwardLBPTanh(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_tanh_relaxation(input_bounds)
+        alpha_lo, alpha_up = resolve_tanh_alphas(tape.alpha_provider, node, input_bounds)
+        params = compute_tanh_relaxation(
+            input_bounds,
+            alpha_tanh_tangent_lower=alpha_lo,
+            alpha_tanh_tangent_upper=alpha_up,
+        )
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -182,7 +207,8 @@ class BackwardLBPExp(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_exp_relaxation(input_bounds)
+        alpha = resolve_exp_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_exp_relaxation(input_bounds, alpha_exp_tangent_lower=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -193,7 +219,8 @@ class BackwardLBPLog(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_log_relaxation(input_bounds)
+        alpha = resolve_log_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_log_relaxation(input_bounds, alpha_log_tangent_upper=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -204,7 +231,8 @@ class BackwardLBPSqrt(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_sqrt_relaxation(input_bounds)
+        alpha = resolve_sqrt_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_sqrt_relaxation(input_bounds, alpha_sqrt_tangent_upper=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -215,7 +243,12 @@ class BackwardLBPReciprocal(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_reciprocal_relaxation(input_bounds)
+        alpha_lo, alpha_up = resolve_reciprocal_alphas(tape.alpha_provider, node, input_bounds)
+        params = compute_reciprocal_relaxation(
+            input_bounds,
+            alpha_reciprocal_tangent_lower=alpha_lo,
+            alpha_reciprocal_tangent_upper=alpha_up,
+        )
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -226,7 +259,8 @@ class BackwardLBPAbs(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_abs_relaxation(input_bounds)
+        alpha = resolve_abs_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_abs_relaxation(input_bounds, alpha_abs_lower=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -237,7 +271,8 @@ class BackwardLBPSin(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_sin_relaxation(input_bounds)
+        alpha = resolve_sin_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_sin_relaxation(input_bounds, alpha_sin_tangent_frac=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -248,7 +283,8 @@ class BackwardLBPCos(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_cos_relaxation(input_bounds)
+        alpha = resolve_cos_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_cos_relaxation(input_bounds, alpha_cos_tangent_frac=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -259,7 +295,8 @@ class BackwardLBPTan(_ElementwiseBackwardLBP):
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> ElementwiseBackwardRelaxation:
         input_node, input_bounds = self._get_input_and_bounds(node, bounds)
-        params = compute_tan_relaxation(input_bounds)
+        alpha = resolve_tan_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_tan_relaxation(input_bounds, alpha_tan_tangent_frac=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
 
 
@@ -278,5 +315,12 @@ class BackwardLBPClamp(BackwardLBPStrategy):
         min_val = args[1] if len(args) > 1 else kwargs.get("min")
         max_val = args[2] if len(args) > 2 else kwargs.get("max")
         input_bounds = bounds(input_node)
-        params = compute_clamp_relaxation(input_bounds, min_val, max_val)
+        alpha_cm_lower, alpha_cmx_upper = resolve_clamp_alphas(tape.alpha_provider, node, input_bounds)
+        params = compute_clamp_relaxation(
+            input_bounds,
+            min_val,
+            max_val,
+            alpha_clamp_crosses_min_lower=alpha_cm_lower,
+            alpha_clamp_crosses_max_upper=alpha_cmx_upper,
+        )
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)

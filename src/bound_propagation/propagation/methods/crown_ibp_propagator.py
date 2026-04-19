@@ -19,6 +19,12 @@ import torch.fx as fx
 
 from ...bounds import IntervalBounds, LinearBounds
 from ...regions import SimpleRegion
+from ..alpha_optimization import (
+    AlphaOptimizationConfig,
+    AlphaProvider,
+    NullAlphaProvider,
+    run_alpha_optimization,
+)
 from ..backward_lbp import create_default_backward_lbp_registry
 from ..backward_lbp.base import BackwardLBPStrategy, PrecomputedBoundsProvider
 from ..backward_lbp.tape import BackwardTape
@@ -48,10 +54,17 @@ class CROWNIBPPropagator(BoundPropagator):
         graph_module: fx.GraphModule,
         ibp_registry: TargetRegistry[ForwardIBPStrategy] | None = None,
         backward_registry: TargetRegistry[BackwardLBPStrategy] | None = None,
+        alpha_config: AlphaOptimizationConfig | None = None,
     ) -> None:
         super().__init__(graph_module)
         self._ibp_registry = ibp_registry or create_default_ibp_registry()
         self._backward_registry = backward_registry or create_default_backward_lbp_registry()
+        self._alpha_config = alpha_config or AlphaOptimizationConfig()
+        if self._alpha_config.optimize_intermediate:
+            raise ValueError(
+                "CROWNIBPPropagator does not support optimize_intermediate=True: "
+                "intermediate bounds come from IBP, which has no alpha-CROWN knobs."
+            )
 
     @property
     def method_name(self) -> str:
@@ -65,6 +78,10 @@ class CROWNIBPPropagator(BoundPropagator):
     def backward_registry(self) -> TargetRegistry[BackwardLBPStrategy]:
         return self._backward_registry
 
+    @property
+    def alpha_config(self) -> AlphaOptimizationConfig:
+        return self._alpha_config
+
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
@@ -73,8 +90,24 @@ class CROWNIBPPropagator(BoundPropagator):
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
 
+        regions_list = list(input_regions)
+        if not self._alpha_config.enabled:
+            return self._propagate_once(regions_list, NullAlphaProvider())
+        return run_alpha_optimization(
+            propagate_once=lambda provider: self._propagate_once(regions_list, provider),
+            config=self._alpha_config,
+        )
+
+    def _propagate_once(
+        self,
+        input_regions: list[SimpleRegion],
+        alpha_provider: AlphaProvider,
+    ) -> Sequence[LinearBounds]:
+        placeholders = self._placeholder_nodes()
         ctx = PropagationContext[IntervalBounds](self._graph_module)
-        tape = BackwardTape(self._graph_module, list(input_regions))
+        tape = BackwardTape(self._graph_module, input_regions)
+        # IBP has no alpha knobs — only the backward tape consumes the provider.
+        tape.alpha_provider = alpha_provider
         provider = PrecomputedBoundsProvider.from_context(ctx)
 
         # Seed placeholder IBP bounds.
@@ -114,13 +147,15 @@ class CROWNIBPPropagator(BoundPropagator):
             return
 
         ibp_strategy = self._ibp_registry.get_strategy(node, self._graph_module)
-        ctx.store(node, ibp_strategy.propagate_forward(node, ctx))
+        # IBP has no alpha-CROWN knobs; treat its intermediate bounds as constants
+        # to avoid spending autograd on the un-optimized weight path during the
+        # alpha-optimization loop.
+        with torch.no_grad():
+            ctx.store(node, ibp_strategy.propagate_forward(node, ctx))
 
         bwd_strategy = self._backward_registry.get_strategy(node, self._graph_module)
         if not isinstance(bwd_strategy, BackwardLBPStrategy):
-            raise TypeError(
-                f"Expected BackwardLBPStrategy for node {node.name!r}, got {type(bwd_strategy).__name__}"
-            )
+            raise TypeError(f"Expected BackwardLBPStrategy for node {node.name!r}, got {type(bwd_strategy).__name__}")
         relaxation = bwd_strategy.build_relaxation(node, tape, provider)
         tape.record(node, relaxation)
 

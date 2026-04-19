@@ -10,6 +10,8 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 import torch.fx as fx
 
+from .alpha_optimization import AlphaProvider, NullAlphaProvider
+
 if TYPE_CHECKING:
     import torch
 
@@ -25,6 +27,7 @@ class PropagationContext(Generic[T]):
     - Resolution of fx.Node args/kwargs to stored values or literals
     - Module/attribute lookup on the GraphModule
     - Refcount-based cleanup of intermediate bounds
+    - An :class:`AlphaProvider` for optional alpha-CROWN optimization
 
     Args:
         graph_module: The traced torch.fx.GraphModule being propagated.
@@ -34,7 +37,23 @@ class PropagationContext(Generic[T]):
         self._graph_module = graph_module
         self._store: dict[str, T | torch.Tensor | torch.types.Number] = {}
         self._refcounts: dict[str, int] = {}
+        self._alpha_provider: AlphaProvider = NullAlphaProvider()
         self._init_refcounts()
+
+    @property
+    def alpha_provider(self) -> AlphaProvider:
+        """Provider for optimizable alpha-CROWN knobs.
+
+        Defaults to a :class:`NullAlphaProvider` that always returns
+        ``None`` (analytical-default behavior). Propagators running an
+        alpha-optimization loop install an :class:`AutoRegisteringAlphaProvider`
+        for the duration of the optimization.
+        """
+        return self._alpha_provider
+
+    @alpha_provider.setter
+    def alpha_provider(self, provider: AlphaProvider) -> None:
+        self._alpha_provider = provider
 
     # ------------------------------------------------------------------
     # Refcount initialization

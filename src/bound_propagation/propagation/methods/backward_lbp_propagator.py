@@ -17,6 +17,12 @@ import torch.fx as fx
 
 from ...bounds import LinearBounds
 from ...regions import SimpleRegion
+from ..alpha_optimization import (
+    AlphaOptimizationConfig,
+    AlphaProvider,
+    NullAlphaProvider,
+    run_alpha_optimization,
+)
 from ..backward_lbp import create_default_backward_lbp_registry
 from ..backward_lbp.base import BackwardLBPStrategy, CrownBoundsProvider
 from ..backward_lbp.tape import BackwardTape
@@ -30,22 +36,43 @@ class BackwardLBPPropagator(BoundPropagator):
     Builds a BackwardTape during a forward graph walk, then runs the
     tape's backward algorithm at the output to obtain LinearBounds.
 
+    When ``alpha_config.enabled`` is ``True``, runs an outer
+    projected-gradient-descent loop that optimizes every alpha-capable
+    relaxation's free parameter (ReLU crossing slope, sigmoid tangent
+    point, McCormick eta, etc.) jointly against a loss computed from the
+    final output bounds. Two scopes are supported:
+
+    - ``optimize_intermediate=False``: final-only. Intermediate CROWN
+      concretizations run under ``torch.no_grad``; only the outer backward
+      pass tracks gradients.
+    - ``optimize_intermediate=True``: intermediate. Every recursive
+      ``concretize_at`` call also flows gradients through the alpha
+      parameters it consults, so the knobs at every layer couple.
+
     Args:
         graph_module: The traced fx.GraphModule with metadata annotations.
         registry: Strategy registry. If None, uses the built-in default.
+        alpha_config: Alpha-CROWN optimization config. When ``None`` or
+            ``enabled=False``, runs the plain single-pass CROWN.
     """
 
     def __init__(
         self,
         graph_module: fx.GraphModule,
         registry: TargetRegistry[BackwardLBPStrategy] | None = None,
+        alpha_config: AlphaOptimizationConfig | None = None,
     ) -> None:
         super().__init__(graph_module)
         self._registry = registry or create_default_backward_lbp_registry()
+        self._alpha_config = alpha_config or AlphaOptimizationConfig()
 
     @property
     def method_name(self) -> str:
         return "backward_lbp"
+
+    @property
+    def alpha_config(self) -> AlphaOptimizationConfig:
+        return self._alpha_config
 
     def propagate(
         self,
@@ -55,8 +82,32 @@ class BackwardLBPPropagator(BoundPropagator):
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
 
-        tape = BackwardTape(self._graph_module, list(input_regions))
-        provider = CrownBoundsProvider(tape)
+        regions_list = list(input_regions)
+
+        if not self._alpha_config.enabled:
+            return self._propagate_once(regions_list, NullAlphaProvider())
+
+        return run_alpha_optimization(
+            propagate_once=lambda provider: self._propagate_once(regions_list, provider),
+            config=self._alpha_config,
+        )
+
+    def _propagate_once(
+        self,
+        input_regions: list[SimpleRegion],
+        alpha_provider: AlphaProvider,
+    ) -> Sequence[LinearBounds]:
+        """Single forward walk + backward tape pass with the given provider.
+
+        Separated out so the alpha-optimization loop can call it repeatedly
+        with a learnable :class:`AutoRegisteringAlphaProvider`.
+        """
+        tape = BackwardTape(self._graph_module, input_regions)
+        tape.alpha_provider = alpha_provider
+        # Final-only mode wraps intermediate CROWN concretizations in no_grad
+        # so the outer optimizer only sees the final-layer dependence on alphas.
+        no_grad_concretizations = self._alpha_config.enabled and not self._alpha_config.optimize_intermediate
+        provider = CrownBoundsProvider(tape, no_grad_concretizations=no_grad_concretizations)
 
         # Forward walk: build tape
         for node in self._graph_module.graph.nodes:

@@ -482,7 +482,11 @@ class LinearBounds(AbstractBounds):
         min_gap = bias_upper - bias_lower
 
         for region, lower_linear, upper_linear in zip(regions, linear_lower, linear_upper, strict=True):
-            min_gap = min_gap + self._minimize_affine_term(region, upper_linear - lower_linear, bias_lower.shape)
+            min_gap = min_gap + self._minimize_affine_term(
+                region,  # ty:ignore[invalid-argument-type]
+                linear=upper_linear - lower_linear,
+                output_shape=bias_lower.shape,
+            )
 
         if torch.any(min_gap < -1e-6):
             num_violations = torch.sum(min_gap < -1e-6).item()
@@ -490,12 +494,14 @@ class LinearBounds(AbstractBounds):
 
     @staticmethod
     @dispatch
-    def _minimize_affine_term(region: SimpleRegion, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
+    def _minimize_affine_term(region: SimpleRegion, *, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
         raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
 
     @staticmethod
     @dispatch
-    def _minimize_affine_term(region: HyperRectangle, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:  # noqa: F811
+    def _minimize_affine_term(
+        region: HyperRectangle, *, linear: torch.Tensor, output_shape: torch.Size
+    ) -> torch.Tensor:  # noqa: F811
         input_lower = region.lower
         input_upper = region.upper
 
@@ -520,12 +526,14 @@ class LinearBounds(AbstractBounds):
 
     @staticmethod
     @dispatch
-    def _maximize_affine_term(region: SimpleRegion, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
+    def _maximize_affine_term(region: SimpleRegion, *, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
         raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
 
     @staticmethod
     @dispatch
-    def _maximize_affine_term(region: HyperRectangle, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:  # noqa: F811
+    def _maximize_affine_term(
+        region: HyperRectangle, *, linear: torch.Tensor, output_shape: torch.Size
+    ) -> torch.Tensor:  # noqa: F811
         input_lower = region.lower
         input_upper = region.upper
 
@@ -746,10 +754,18 @@ class LinearBounds(AbstractBounds):
         upper_result = self.bias_upper.clone()
 
         for region, linear_lower in zip(self._regions, self._linear_lower, strict=True):
-            lower_result = lower_result + self._minimize_affine_term(region, linear_lower, self.bias_lower.shape)
+            lower_result = lower_result + self._minimize_affine_term(
+                region,  # ty:ignore[invalid-argument-type]
+                linear=linear_lower,
+                output_shape=self.bias_lower.shape,
+            )
 
         for region, linear_upper in zip(self._regions, self._linear_upper, strict=True):
-            upper_result = upper_result + self._maximize_affine_term(region, linear_upper, self.bias_upper.shape)
+            upper_result = upper_result + self._maximize_affine_term(
+                region,  # ty:ignore[invalid-argument-type]
+                linear=linear_upper,
+                output_shape=self.bias_upper.shape,
+            )
 
         return IntervalBounds(lower=lower_result, upper=upper_result)
 

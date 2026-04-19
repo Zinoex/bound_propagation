@@ -10,6 +10,12 @@ import torch.fx as fx
 from beartype.typing import final
 
 from ...bounds import IntervalBounds
+from ..linear_relaxations.alpha_resolvers import (
+    resolve_div_etas,
+    resolve_max_etas,
+    resolve_min_etas,
+    resolve_mul_etas,
+)
 from ..linear_relaxations.elementwise import ElementwiseParams, compute_constant_div_relaxation
 from ..linear_relaxations.pairwise import (
     PairedParams,
@@ -145,7 +151,13 @@ class BackwardLBPMul(BackwardLBPStrategy):
         if left_is_abstract and right_is_abstract:
             bounds_a = bounds(left_node)
             bounds_b = bounds(right_node)
-            params = compute_mul_relaxation(bounds_a, bounds_b)
+            eta_lo, eta_up = resolve_mul_etas(tape.alpha_provider, node, bounds_a)
+            params = compute_mul_relaxation(
+                bounds_a,
+                bounds_b,
+                eta_lower=eta_lo if eta_lo is not None else 0.5,
+                eta_upper=eta_up if eta_up is not None else 0.5,
+            )
             return PairedBackwardRelaxation(params=params, left_node=left_node, right_node=right_node)
 
         if left_is_abstract:
@@ -198,7 +210,13 @@ class BackwardLBPDiv(BackwardLBPStrategy):
         if left_is_abstract and right_is_abstract:
             bounds_a = bounds(left_node)
             bounds_b = bounds(right_node)
-            params = compute_div_relaxation(bounds_a, bounds_b)
+            eta_lo, eta_up = resolve_div_etas(tape.alpha_provider, node, bounds_a)
+            params = compute_div_relaxation(
+                bounds_a,
+                bounds_b,
+                eta_lower=eta_lo if eta_lo is not None else 0.5,
+                eta_upper=eta_up if eta_up is not None else 0.5,
+            )
             return PairedBackwardRelaxation(params=params, left_node=left_node, right_node=right_node)
 
         if left_is_abstract:
@@ -220,11 +238,23 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
     """Shared base for element-wise maximum/minimum backward LBP strategies.
 
     Subclasses provide the ``_compute_relaxation`` method to select between
-    ``compute_maximum_relaxation`` and ``compute_minimum_relaxation``.
+    ``compute_maximum_relaxation`` and ``compute_minimum_relaxation``, and
+    ``_resolve_etas`` to look up the alpha-CROWN overrides.
     """
 
     @staticmethod
-    def _compute_relaxation(bounds_a: IntervalBounds, bounds_b: IntervalBounds) -> PairedParams:
+    def _compute_relaxation(
+        bounds_a: IntervalBounds,
+        bounds_b: IntervalBounds,
+        eta_lower,
+        eta_upper,
+    ) -> PairedParams:
+        raise NotImplementedError
+
+    @staticmethod
+    def _resolve_etas(
+        provider, node: fx.Node, reference: IntervalBounds
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
         raise NotImplementedError
 
     def build_relaxation(
@@ -261,14 +291,26 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
         if left_is_abstract and right_is_abstract:
             bounds_a = bounds(left_node)
             bounds_b = bounds(right_node)
-            paired = self._compute_relaxation(bounds_a, bounds_b)
+            eta_lo, eta_up = self._resolve_etas(tape.alpha_provider, node, bounds_a)
+            paired = self._compute_relaxation(
+                bounds_a,
+                bounds_b,
+                eta_lower=eta_lo if eta_lo is not None else 0.5,
+                eta_upper=eta_up if eta_up is not None else 0.5,
+            )
             return PairedBackwardRelaxation(params=paired, left_node=left_node, right_node=right_node)
 
         if left_is_abstract:
             bounds_a = bounds(left_node)
             c = torch.as_tensor(right, dtype=bounds_a.lower.dtype, device=bounds_a.lower.device)
             c = c.expand_as(bounds_a.lower)
-            paired = self._compute_relaxation(bounds_a, IntervalBounds(c, c))
+            eta_lo, eta_up = self._resolve_etas(tape.alpha_provider, node, bounds_a)
+            paired = self._compute_relaxation(
+                bounds_a,
+                IntervalBounds(c, c),
+                eta_lower=eta_lo if eta_lo is not None else 0.5,
+                eta_upper=eta_up if eta_up is not None else 0.5,
+            )
             # Fold constant contribution into bias to avoid propagating through constant node
             params = ElementwiseParams(
                 alpha_lower=paired.alpha_lower_a,
@@ -282,7 +324,13 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
             bounds_b = bounds(right_node)
             c = torch.as_tensor(left, dtype=bounds_b.lower.dtype, device=bounds_b.lower.device)
             c = c.expand_as(bounds_b.lower)
-            paired = self._compute_relaxation(IntervalBounds(c, c), bounds_b)
+            eta_lo, eta_up = self._resolve_etas(tape.alpha_provider, node, bounds_b)
+            paired = self._compute_relaxation(
+                IntervalBounds(c, c),
+                bounds_b,
+                eta_lower=eta_lo if eta_lo is not None else 0.5,
+                eta_upper=eta_up if eta_up is not None else 0.5,
+            )
             # Fold constant contribution into bias to avoid propagating through constant node
             params = ElementwiseParams(
                 alpha_lower=paired.alpha_lower_b,
@@ -301,9 +349,11 @@ class BackwardLBPMaximum(_PairwiseComparisonBackwardLBP):
     """Backward LBP strategy for element-wise maximum."""
 
     _compute_relaxation = staticmethod(compute_maximum_relaxation)
+    _resolve_etas = staticmethod(resolve_max_etas)
 
 
 class BackwardLBPMinimum(_PairwiseComparisonBackwardLBP):
     """Backward LBP strategy for element-wise minimum."""
 
     _compute_relaxation = staticmethod(compute_minimum_relaxation)
+    _resolve_etas = staticmethod(resolve_min_etas)
