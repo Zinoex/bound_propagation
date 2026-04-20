@@ -1919,35 +1919,68 @@ class Conv2dPatchOperator(LinearOperator):
     def to_dense(self) -> DenseOperator:
         """Materialize the full ``(*output_shape, *input_shape)`` Jacobian.
 
-        Each patch entry maps to one coefficient in the dense Jacobian; we
-        place it at the corresponding (output-position, input-position) pair
-        via a small Python loop over kernel offsets and output locations.
-        This is ``O(H_out * W_out * k_h * k_w)`` Python iterations, each doing
-        a vectorised copy of shape ``(*batch, C_out, C_in)`` — acceptable for
-        occasional materialisation.
+        Vectorized ``scatter_add_`` implementation. For each output position
+        ``(h_o, w_o)`` and kernel offset ``(m, n)``, the patch entry lands at
+        input position ``(r, c) = (h_o*s - p + m*d, w_o*s - p + n*d)``. We
+        compute all ``(r, c)`` indices in a single broadcast, mask
+        out-of-bounds entries with a boolean ``valid`` mask (so zeroed
+        source contributions become no-ops under ``scatter_add_``), then
+        scatter along a flattened ``H_in * W_in`` axis.
         """
         c_in, h_in, w_in = (int(s) for s in self._input_shape)
         k_h, k_w = self.kernel_size
-        h_out, w_out = int(self._output_shape[-2]), int(self._output_shape[-1])
+        h_out = int(self._output_shape[-2])
+        w_out = int(self._output_shape[-1])
         p_h, p_w = self._padding
         s_h, s_w = self._stride
         d_h, d_w = self._dilation
         batch_shape = tuple(self._output_shape[:-3])
         c_out = int(self._output_shape[-3])
+        device = self.device
+        dtype = self.dtype
 
-        dense = torch.zeros(*batch_shape, c_out, h_out, w_out, c_in, h_in, w_in, dtype=self.dtype, device=self.device)
-        # TODO: Replace with advanced indexing instead of Python loops.
-        for h_o in range(h_out):
-            for w_o in range(w_out):
-                for m in range(k_h):
-                    r = h_o * s_h - p_h + m * d_h
-                    if r < 0 or r >= h_in:
-                        continue
-                    for n in range(k_w):
-                        c = w_o * s_w - p_w + n * d_w
-                        if c < 0 or c >= w_in:
-                            continue
-                        dense[..., :, h_o, w_o, :, r, c] = self._patches[..., :, h_o, w_o, :, m, n]
+        # Per-position row / col indices into the input grid.
+        # rows[h_o, m] = h_o * s_h - p_h + m * d_h.
+        h_o_arange = torch.arange(h_out, device=device)
+        w_o_arange = torch.arange(w_out, device=device)
+        m_arange = torch.arange(k_h, device=device)
+        n_arange = torch.arange(k_w, device=device)
+        rows = h_o_arange.unsqueeze(1) * s_h - p_h + m_arange.unsqueeze(0) * d_h  # (H_o, k_h)
+        cols = w_o_arange.unsqueeze(1) * s_w - p_w + n_arange.unsqueeze(0) * d_w  # (W_o, k_w)
+
+        rows_valid = (rows >= 0) & (rows < h_in)  # (H_o, k_h)
+        cols_valid = (cols >= 0) & (cols < w_in)  # (W_o, k_w)
+        # valid[h_o, w_o, m, n] = rows_valid[h_o, m] & cols_valid[w_o, n]
+        valid = rows_valid.unsqueeze(1).unsqueeze(3) & cols_valid.unsqueeze(0).unsqueeze(2)
+        # shape: (H_o, W_o, k_h, k_w)
+
+        # Clamp to valid range so indices can always be used with scatter; invalid
+        # entries are zeroed in the source tensor so their scatters are no-ops.
+        rows_safe = rows.clamp(0, h_in - 1)
+        cols_safe = cols.clamp(0, w_in - 1)
+        flat_idx = rows_safe.unsqueeze(1).unsqueeze(3) * w_in + cols_safe.unsqueeze(0).unsqueeze(2)
+        # shape: (H_o, W_o, k_h, k_w), values in [0, H_in * W_in).
+
+        # Broadcast valid / flat_idx to match ``patches``' shape. Patches:
+        # (*batch, C_z, H_o, W_o, C_x, k_h, k_w) — insert singletons for batch,
+        # C_z, C_x dimensions.
+        bc_shape = (1,) * len(batch_shape) + (1, h_out, w_out, 1, k_h, k_w)
+        valid_bc = valid.reshape(bc_shape)
+        flat_idx_bc = flat_idx.reshape(bc_shape)
+
+        # Mask source; the clamped flat_idx for invalid entries would otherwise
+        # alias a valid entry's destination.
+        src = self._patches * valid_bc
+
+        # Flatten kernel dims for a single scatter along the input-spatial axis.
+        src_flat = src.reshape(*src.shape[:-2], k_h * k_w)
+        idx_flat = flat_idx_bc.reshape(*bc_shape[:-2], k_h * k_w).expand_as(src_flat).contiguous()
+
+        dense_flat = torch.zeros(*src_flat.shape[:-1], h_in * w_in, dtype=dtype, device=device)
+        dense_flat.scatter_add_(dim=-1, index=idx_flat, src=src_flat)
+
+        dense = dense_flat.reshape(*dense_flat.shape[:-1], h_in, w_in)
+        assert dense.shape == (*batch_shape, c_out, h_out, w_out, c_in, h_in, w_in)
         return DenseOperator(dense, output_shape=self._output_shape)
 
     def to(self, device: str | torch.device) -> Conv2dPatchOperator:
