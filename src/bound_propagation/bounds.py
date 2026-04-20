@@ -13,7 +13,8 @@ from typing import Literal
 import torch
 from plum import dispatch
 
-from .regions import AbstractRegion, HyperRectangle, SimpleRegion
+from .linear_operators import DenseOperator, LinearOperator
+from .regions import AbstractRegion, SimpleRegion
 
 
 class AbstractBounds(ABC):
@@ -307,16 +308,19 @@ class LinearBounds(AbstractBounds):
         self,
         bias_lower: torch.Tensor,
         bias_upper: torch.Tensor,
-        linear_lower: torch.Tensor | Sequence[torch.Tensor] | None = None,
-        linear_upper: torch.Tensor | Sequence[torch.Tensor] | None = None,
+        linear_lower: torch.Tensor | LinearOperator | Sequence[torch.Tensor | LinearOperator] | None = None,
+        linear_upper: torch.Tensor | LinearOperator | Sequence[torch.Tensor | LinearOperator] | None = None,
         regions: SimpleRegion | Sequence[SimpleRegion] | None = None,
         input_ids: int | Sequence[int] | None = None,
     ) -> None:
         """
         Initialize linear bounds.
 
+        Linear coefficients may be provided as raw tensors (auto-wrapped into
+        ``DenseOperator``) or as ``LinearOperator`` instances directly.
+
         Args:
-            regions: Input regions, one for each affine coefficient tensor
+            regions: Input regions, one for each affine coefficient term
             linear_lower: Linear coefficients for lower bound (can be empty for constant bounds)
             bias_lower: Bias for lower bound
             linear_upper: Linear coefficients for upper bound (can be empty for constant bounds)
@@ -324,8 +328,8 @@ class LinearBounds(AbstractBounds):
             input_ids: Optional list of input node IDs
         """
         normalized_regions = self._normalize_regions(regions)
-        normalized_linear_lower = self._normalize_linear_terms(linear_lower, "linear_lower")
-        normalized_linear_upper = self._normalize_linear_terms(linear_upper, "linear_upper")
+        normalized_linear_lower = self._normalize_linear_terms(linear_lower, bias_lower.shape, "linear_lower")
+        normalized_linear_upper = self._normalize_linear_terms(linear_upper, bias_upper.shape, "linear_upper")
         normalized_input_ids = self._normalize_input_ids(input_ids)
 
         self._check_uniformity(
@@ -361,20 +365,28 @@ class LinearBounds(AbstractBounds):
 
     @staticmethod
     def _normalize_linear_terms(
-        linear_terms: torch.Tensor | Sequence[torch.Tensor] | None,
+        linear_terms: torch.Tensor | LinearOperator | Sequence[torch.Tensor | LinearOperator] | None,
+        bias_shape: torch.Size,
         name: str,
-    ) -> list[torch.Tensor]:
+    ) -> list[LinearOperator]:
         if linear_terms is None:
             return []
 
-        if isinstance(linear_terms, torch.Tensor):
-            return [linear_terms]
+        if isinstance(linear_terms, (torch.Tensor, LinearOperator)):
+            return [LinearBounds._wrap_linear_term(linear_terms, bias_shape, name)]
 
-        normalized_terms = list(linear_terms)
-        if any(not isinstance(linear, torch.Tensor) for linear in normalized_terms):
-            raise TypeError(f"{name} must contain only torch.Tensor entries")
-
+        normalized_terms: list[LinearOperator] = []
+        for entry in linear_terms:
+            normalized_terms.append(LinearBounds._wrap_linear_term(entry, bias_shape, name))
         return normalized_terms
+
+    @staticmethod
+    def _wrap_linear_term(entry: torch.Tensor | LinearOperator, bias_shape: torch.Size, name: str) -> LinearOperator:
+        if isinstance(entry, LinearOperator):
+            return entry
+        if isinstance(entry, torch.Tensor):
+            return DenseOperator(entry, output_shape=bias_shape)
+        raise TypeError(f"{name} entries must be torch.Tensor or LinearOperator, got {type(entry).__name__}")
 
     @staticmethod
     def _normalize_input_ids(input_ids: int | Sequence[int] | None) -> list[int]:
@@ -417,9 +429,9 @@ class LinearBounds(AbstractBounds):
     def _check_shapes(
         self,
         regions: list[SimpleRegion],
-        linear_lower: list[torch.Tensor],
+        linear_lower: list[LinearOperator],
         bias_lower: torch.Tensor,
-        linear_upper: list[torch.Tensor],
+        linear_upper: list[LinearOperator],
         bias_upper: torch.Tensor,
     ) -> None:
         if bias_lower.shape != bias_upper.shape:
@@ -427,32 +439,28 @@ class LinearBounds(AbstractBounds):
                 f"bias_lower and bias_upper must have the same shape: {bias_lower.shape} vs {bias_upper.shape}"
             )
 
-        for name, linears in (("linear_lower", linear_lower), ("linear_upper", linear_upper)):
-            for linear, region in zip(linears, regions, strict=True):
-                if len(linear.shape) < len(bias_lower.shape):
+        for name, ops in (("linear_lower", linear_lower), ("linear_upper", linear_upper)):
+            for op, region in zip(ops, regions, strict=True):
+                if op.output_shape != bias_lower.shape:
                     raise ValueError(
-                        f"{name} must include output axes matching bias shape {bias_lower.shape}, got {linear.shape}"
+                        f"{name} output shape must match bias shape: {tuple(op.output_shape)} vs "
+                        f"{tuple(bias_lower.shape)}"
                     )
 
-                output_shape = linear.shape[: len(bias_lower.shape)]
-                if output_shape != bias_lower.shape:
-                    raise ValueError(f"{name} output shape must match bias shape: {output_shape} vs {bias_lower.shape}")
-
-                input_axes = linear.shape[len(bias_lower.shape) :]
                 region_shape = torch.Size(region.shape)
-                _, input_shape = self._split_region_shape(region_shape, bias_lower.shape, input_axes)
-                if input_axes != input_shape:
+                _, input_shape = self._split_region_shape(region_shape, bias_lower.shape, op.input_shape)
+                if op.input_shape != input_shape:
                     raise ValueError(
                         f"{name} input axes must match input shape {tuple(input_shape)} "
                         f"(derived from region shape {tuple(region_shape)} and bias shape {tuple(bias_lower.shape)}), "
-                        f"got {tuple(input_axes)}"
+                        f"got {tuple(op.input_shape)}"
                     )
 
     @staticmethod
     def _check_uniformity(
         regions: list[SimpleRegion],
-        linear_lower: list[torch.Tensor],
-        linear_upper: list[torch.Tensor],
+        linear_lower: list[LinearOperator],
+        linear_upper: list[LinearOperator],
         input_ids: list[int],
     ) -> None:
         if bool(linear_lower) != bool(linear_upper):
@@ -474,108 +482,54 @@ class LinearBounds(AbstractBounds):
     def _check_gap(
         self,
         regions: list[SimpleRegion],
-        linear_lower: list[torch.Tensor],
+        linear_lower: list[LinearOperator],
         bias_lower: torch.Tensor,
-        linear_upper: list[torch.Tensor],
+        linear_upper: list[LinearOperator],
         bias_upper: torch.Tensor,
     ) -> None:
         min_gap = bias_upper - bias_lower
 
-        for region, lower_linear, upper_linear in zip(regions, linear_lower, linear_upper, strict=True):
-            min_gap = min_gap + self._minimize_affine_term(
-                region,  # ty:ignore[invalid-argument-type]
-                linear=upper_linear - lower_linear,
-                output_shape=bias_lower.shape,
-            )
+        for region, lower_op, upper_op in zip(regions, linear_lower, linear_upper, strict=True):
+            diff_op = upper_op.sub(lower_op)
+            min_gap = min_gap + diff_op.concretize_min(region)
 
         if torch.any(min_gap < -1e-6):
             num_violations = torch.sum(min_gap < -1e-6).item()
             raise ValueError(f"Invalid bounds: upper bound is less than lower bound for {num_violations} outputs")
 
     @staticmethod
-    @dispatch
-    def _minimize_affine_term(region: SimpleRegion, *, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
-        raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
-
-    @staticmethod
-    @dispatch
-    def _minimize_affine_term(
-        region: HyperRectangle, *, linear: torch.Tensor, output_shape: torch.Size
-    ) -> torch.Tensor:  # noqa: F811
-        input_lower = region.lower
-        input_upper = region.upper
-
-        region_shape = torch.Size(region.shape)
-        linear_input_axes = torch.Size(linear.shape[len(output_shape) :])
-        batch_shape, input_shape = LinearBounds._split_region_shape(region_shape, output_shape, linear_input_axes)
-        input_ndim = len(input_shape)
-        output_ndim = len(output_shape)
-
-        if linear_input_axes == input_shape:
-            expanded_shape = (*batch_shape, *([1] * (output_ndim - len(batch_shape))), *input_shape)
-            expanded_lower = input_lower.reshape(expanded_shape)
-            expanded_upper = input_upper.reshape(expanded_shape)
-            contributions = torch.where(linear > 0, linear * expanded_lower, linear * expanded_upper)
-            sum_dims = tuple(range(-input_ndim, 0))
-            return contributions.sum(dim=sum_dims) if sum_dims else contributions
-
-        raise ValueError(
-            f"linear input axes {tuple(linear_input_axes)} are incompatible with input shape {tuple(input_shape)} "
-            f"derived from region shape {tuple(region_shape)}"
-        )
-
-    @staticmethod
-    @dispatch
-    def _maximize_affine_term(region: SimpleRegion, *, linear: torch.Tensor, output_shape: torch.Size) -> torch.Tensor:
-        raise NotImplementedError(f"Concretization is not implemented for region type {type(region).__name__}")
-
-    @staticmethod
-    @dispatch
-    def _maximize_affine_term(
-        region: HyperRectangle, *, linear: torch.Tensor, output_shape: torch.Size
-    ) -> torch.Tensor:  # noqa: F811
-        input_lower = region.lower
-        input_upper = region.upper
-
-        region_shape = torch.Size(region.shape)
-        linear_input_axes = torch.Size(linear.shape[len(output_shape) :])
-        batch_shape, input_shape = LinearBounds._split_region_shape(region_shape, output_shape, linear_input_axes)
-        input_ndim = len(input_shape)
-        output_ndim = len(output_shape)
-
-        if linear_input_axes == input_shape:
-            expanded_shape = (*batch_shape, *([1] * (output_ndim - len(batch_shape))), *input_shape)
-            expanded_lower = input_lower.reshape(expanded_shape)
-            expanded_upper = input_upper.reshape(expanded_shape)
-            contributions = torch.where(linear > 0, linear * expanded_upper, linear * expanded_lower)
-            sum_dims = tuple(range(-input_ndim, 0))
-            return contributions.sum(dim=sum_dims) if sum_dims else contributions
-
-        raise ValueError(
-            f"linear input axes {tuple(linear_input_axes)} are incompatible with input shape {tuple(input_shape)} "
-            f"derived from region shape {tuple(region_shape)}"
-        )
-
-    @staticmethod
     def combine_linear_terms(
         components: list[tuple[LinearBounds, Literal["lower", "upper"], float]],
-    ) -> tuple[list[SimpleRegion], list[torch.Tensor], list[int]]:
-        merged: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
+    ) -> tuple[list[SimpleRegion], list[LinearOperator], list[int]]:
+        """
+        Merge affine contributions from multiple ``LinearBounds`` keyed by ``input_id``.
+
+        Returns a triple of ``(regions, operators, input_ids)``. The operators
+        carry the accumulated coefficient structure (dense by default).
+        """
+        merged: dict[int, tuple[SimpleRegion, LinearOperator]] = {}
         ordered_input_ids: list[int] = []
 
         for bounds, bound_side, scale in components:
-            linears = bounds.linear_lowers if bound_side == "lower" else bounds.linear_uppers
-            for input_id, region, linear in zip(bounds.input_ids, bounds.regions, linears, strict=True):
-                contribution = linear if scale == 1 else scale * linear
+            ops = bounds.linear_lowers_op if bound_side == "lower" else bounds.linear_uppers_op
+            for input_id, region, op in zip(bounds.input_ids, bounds.regions, ops, strict=True):
+                if scale == 1:
+                    contribution = op
+                elif scale == -1:
+                    contribution = op.neg()
+                else:
+                    scale_tensor = torch.tensor(scale, dtype=op.dtype, device=op.device)
+                    contribution = op.scale(scale_tensor)
+
                 if input_id in merged:
-                    existing_region, existing_linear = merged[input_id]
+                    existing_region, existing_op = merged[input_id]
                     if existing_region.shape != region.shape:
                         raise ValueError(
                             "Cannot merge input_id "
                             f"{input_id}: region shapes differ "
                             f"{existing_region.shape} vs {region.shape}"
                         )
-                    merged[input_id] = (existing_region, existing_linear + contribution)
+                    merged[input_id] = (existing_region, existing_op.add(contribution))
                 else:
                     ordered_input_ids.append(input_id)
                     merged[input_id] = (region, contribution)
@@ -610,17 +564,38 @@ class LinearBounds(AbstractBounds):
 
     @property
     def linear_lowers(self) -> list[torch.Tensor]:
-        """Get linear coefficients for the lower bound, one tensor per input region."""
-        return self._linear_lower.copy()
+        """Get linear coefficients for the lower bound as dense tensors.
+
+        Each operator is materialized via :meth:`LinearOperator.to_dense`. Use
+        :attr:`linear_lowers_op` to access the underlying ``LinearOperator``
+        instances directly (avoids materializing structured operators).
+        """
+        return [op.to_dense().tensor for op in self._linear_lower]
 
     @property
     def linear_lower(self) -> torch.Tensor | None:
-        """Get linear coefficients for the lower bound in the single-input case."""
+        """Get linear coefficients for the lower bound (dense) in the single-input case."""
         if not self._linear_lower:
             return None
         if len(self._linear_lower) != 1:
             raise ValueError(
-                f"LinearBounds has {len(self._linear_lower)} lower coefficient tensors; use linear_lowers instead"
+                f"LinearBounds has {len(self._linear_lower)} lower coefficient terms; use linear_lowers instead"
+            )
+        return self._linear_lower[0].to_dense().tensor
+
+    @property
+    def linear_lowers_op(self) -> list[LinearOperator]:
+        """Get lower-bound coefficients as ``LinearOperator`` instances."""
+        return self._linear_lower.copy()
+
+    @property
+    def linear_lower_op(self) -> LinearOperator | None:
+        """Get lower-bound coefficient ``LinearOperator`` in the single-input case."""
+        if not self._linear_lower:
+            return None
+        if len(self._linear_lower) != 1:
+            raise ValueError(
+                f"LinearBounds has {len(self._linear_lower)} lower coefficient terms; use linear_lowers_op instead"
             )
         return self._linear_lower[0]
 
@@ -631,17 +606,38 @@ class LinearBounds(AbstractBounds):
 
     @property
     def linear_uppers(self) -> list[torch.Tensor]:
-        """Get linear coefficients for the upper bound, one tensor per input region."""
-        return self._linear_upper.copy()
+        """Get linear coefficients for the upper bound as dense tensors.
+
+        Each operator is materialized via :meth:`LinearOperator.to_dense`. Use
+        :attr:`linear_uppers_op` to access the underlying ``LinearOperator``
+        instances directly.
+        """
+        return [op.to_dense().tensor for op in self._linear_upper]
 
     @property
     def linear_upper(self) -> torch.Tensor | None:
-        """Get linear coefficients for the upper bound in the single-input case."""
+        """Get linear coefficients for the upper bound (dense) in the single-input case."""
         if not self._linear_upper:
             return None
         if len(self._linear_upper) != 1:
             raise ValueError(
-                f"LinearBounds has {len(self._linear_upper)} upper coefficient tensors; use linear_uppers instead"
+                f"LinearBounds has {len(self._linear_upper)} upper coefficient terms; use linear_uppers instead"
+            )
+        return self._linear_upper[0].to_dense().tensor
+
+    @property
+    def linear_uppers_op(self) -> list[LinearOperator]:
+        """Get upper-bound coefficients as ``LinearOperator`` instances."""
+        return self._linear_upper.copy()
+
+    @property
+    def linear_upper_op(self) -> LinearOperator | None:
+        """Get upper-bound coefficient ``LinearOperator`` in the single-input case."""
+        if not self._linear_upper:
+            return None
+        if len(self._linear_upper) != 1:
+            raise ValueError(
+                f"LinearBounds has {len(self._linear_upper)} upper coefficient terms; use linear_uppers_op instead"
             )
         return self._linear_upper[0]
 
@@ -658,16 +654,7 @@ class LinearBounds(AbstractBounds):
     @property
     def input_shapes(self) -> list[tuple[int, ...]]:
         """Get shapes of input tensors corresponding to each region."""
-        shape = self.shape
-        batch_output_ndim = len(shape)
-
-        input_shapes: list[tuple[int, ...]] = []
-        for linear_lower in self._linear_lower:
-            term_shape: torch.Size = linear_lower.shape
-            input_shape: torch.Size = term_shape[batch_output_ndim:]
-            input_shapes.append(tuple(input_shape))
-
-        return input_shapes
+        return [tuple(op.input_shape) for op in self._linear_lower]
 
     @property
     def input_dim(self) -> int:
@@ -680,10 +667,10 @@ class LinearBounds(AbstractBounds):
                 self._split_region_shape(
                     torch.Size(region.shape),
                     self.bias_lower.shape,
-                    torch.Size(linear.shape[len(self.bias_lower.shape) :]),
+                    op.input_shape,
                 )[1]
             ).numel()
-            for region, linear in zip(self._regions, self._linear_lower, strict=True)
+            for region, op in zip(self._regions, self._linear_lower, strict=True)
         )
 
     @staticmethod
@@ -702,36 +689,20 @@ class LinearBounds(AbstractBounds):
         """Move bounds to a device."""
         return LinearBounds(
             regions=[self._move_region(region, device) for region in self._regions],
-            linear_lower=[linear.to(device) for linear in self._linear_lower],
+            linear_lower=[op.to(device) for op in self._linear_lower],
             bias_lower=self.bias_lower.to(device),
-            linear_upper=[linear.to(device) for linear in self._linear_upper],
+            linear_upper=[op.to(device) for op in self._linear_upper],
             bias_upper=self.bias_upper.to(device),
             input_ids=self._input_ids.copy() if self._input_ids else None,
         )
 
     def __getitem__(self, item) -> LinearBounds:
-        """Slice/index the bounds."""
-
-        def _index_linear(linear: torch.Tensor, input_shape: tuple[int, ...]) -> torch.Tensor:
-            input_ndim = len(input_shape)
-            if isinstance(item, tuple) and Ellipsis in item:
-                linear_item = item + (slice(None),) * input_ndim
-            else:
-                linear_item = item
-
-            return linear[linear_item]
-
+        """Slice/index the bounds over the output (batch) axes; input axes are preserved."""
         return LinearBounds(
             regions=self._regions,
-            linear_lower=[
-                _index_linear(linear, input_shape)
-                for linear, input_shape in zip(self._linear_lower, self.input_shapes, strict=True)
-            ],
+            linear_lower=[op.getitem_output(item) for op in self._linear_lower],
             bias_lower=self.bias_lower[item],
-            linear_upper=[
-                _index_linear(linear, input_shape)
-                for linear, input_shape in zip(self._linear_upper, self.input_shapes, strict=True)
-            ],
+            linear_upper=[op.getitem_output(item) for op in self._linear_upper],
             bias_upper=self.bias_upper[item],
             input_ids=self._input_ids.copy() if self._input_ids else None,
         )
@@ -740,12 +711,9 @@ class LinearBounds(AbstractBounds):
         """
         Concretize bounds to interval bounds.
 
-        This method uses the input region to convert symbolic/affine bounds
-        into concrete interval bounds. The default implementation assumes that
-        the bounds are already concrete intervals and simply returns them.
-
-        Subclasses with more complex bound types (e.g., linear bounds) should
-        override this method to perform the necessary concretization logic.
+        Evaluates each affine term against its region using the operator's
+        structured ``concretize_min`` / ``concretize_max`` and accumulates the
+        contributions to the constant bias.
 
         Returns:
             IntervalBounds representing the concretized bounds
@@ -753,19 +721,11 @@ class LinearBounds(AbstractBounds):
         lower_result = self.bias_lower.clone()
         upper_result = self.bias_upper.clone()
 
-        for region, linear_lower in zip(self._regions, self._linear_lower, strict=True):
-            lower_result = lower_result + self._minimize_affine_term(
-                region,  # ty:ignore[invalid-argument-type]
-                linear=linear_lower,
-                output_shape=self.bias_lower.shape,
-            )
+        for region, lower_op in zip(self._regions, self._linear_lower, strict=True):
+            lower_result = lower_result + lower_op.concretize_min(region)
 
-        for region, linear_upper in zip(self._regions, self._linear_upper, strict=True):
-            upper_result = upper_result + self._maximize_affine_term(
-                region,  # ty:ignore[invalid-argument-type]
-                linear=linear_upper,
-                output_shape=self.bias_upper.shape,
-            )
+        for region, upper_op in zip(self._regions, self._linear_upper, strict=True):
+            upper_result = upper_result + upper_op.concretize_max(region)
 
         return IntervalBounds(lower=lower_result, upper=upper_result)
 
@@ -773,9 +733,9 @@ class LinearBounds(AbstractBounds):
         """Create a deep copy."""
         return LinearBounds(
             regions=self._regions,
-            linear_lower=[linear.clone() for linear in self._linear_lower],
+            linear_lower=[op.clone() for op in self._linear_lower],
             bias_lower=self.bias_lower.clone(),
-            linear_upper=[linear.clone() for linear in self._linear_upper],
+            linear_upper=[op.clone() for op in self._linear_upper],
             bias_upper=self.bias_upper.clone(),
             input_ids=self._input_ids,
         )

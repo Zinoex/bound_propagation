@@ -402,7 +402,7 @@ class StackRelaxation(BackwardRelaxation):
 
 
 class BackwardLBPReshape(BackwardLBPStrategy):
-    """Backward LBP strategy for reshape / view / flatten."""
+    """Backward LBP strategy for reshape."""
 
     def build_relaxation(
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
@@ -411,6 +411,57 @@ class BackwardLBPReshape(BackwardLBPStrategy):
         sym_input = args[0]
         if not isinstance(sym_input, BackwardRelaxation):
             raise TypeError(f"BackwardLBPReshape requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+        target_shape = node.meta["tensor_meta"]["shape"]
+
+        return ReshapeRelaxation(
+            source_shape=source_shape,
+            target_shape=target_shape,
+            input_node=node.args[0],
+        )
+
+
+class BackwardLBPFlatten(BackwardLBPStrategy):
+    """Backward LBP strategy for flatten.
+
+    Flatten is a pure dimension rearrangement, so the backward pass reuses
+    :class:`ReshapeRelaxation` — only the source and target shapes (both already
+    stored in ``tensor_meta``) are needed.
+    """
+
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
+        args, _ = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPFlatten requires input to be BackwardRelaxation, got {type(sym_input)}")
+
+        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+        target_shape = node.meta["tensor_meta"]["shape"]
+
+        return ReshapeRelaxation(
+            source_shape=source_shape,
+            target_shape=target_shape,
+            input_node=node.args[0],
+        )
+
+
+class BackwardLBPView(BackwardLBPStrategy):
+    """Backward LBP strategy for view.
+
+    Like reshape and flatten, view is a pure dimension rearrangement and reuses
+    :class:`ReshapeRelaxation`.
+    """
+
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> BackwardRelaxation:
+        args, _ = tape.resolve_args(node)
+        sym_input = args[0]
+        if not isinstance(sym_input, BackwardRelaxation):
+            raise TypeError(f"BackwardLBPView requires input to be BackwardRelaxation, got {type(sym_input)}")
 
         source_shape = node.args[0].meta["tensor_meta"]["shape"]
         target_shape = node.meta["tensor_meta"]["shape"]

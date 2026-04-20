@@ -6,6 +6,7 @@ import torch.nn.functional as F
 
 from ..registry import TargetRegistry
 from .base import BackwardLBPStrategy
+from .conv_pool import BackwardLBPAvgPool2d, BackwardLBPConv2d, BackwardLBPMaxPool2d
 from .elementwise import (
     BackwardLBPAbs,
     BackwardLBPClamp,
@@ -36,6 +37,7 @@ from .pairwise import (
 from .reduction import BackwardLBPMax, BackwardLBPMean, BackwardLBPMin, BackwardLBPSum
 from .shape import (
     BackwardLBPConcat,
+    BackwardLBPFlatten,
     BackwardLBPGetItem,
     BackwardLBPPermute,
     BackwardLBPReshape,
@@ -44,6 +46,7 @@ from .shape import (
     BackwardLBPStack,
     BackwardLBPTranspose,
     BackwardLBPUnsqueeze,
+    BackwardLBPView,
 )
 
 __all__ = [
@@ -87,6 +90,17 @@ def create_default_backward_lbp_registry() -> TargetRegistry[BackwardLBPStrategy
     # -- Linear / affine ------------------------------------------------------
     registry.register_many([F.linear, nn.Linear], BackwardLBPLinear())
 
+    # -- Convolution / pooling ------------------------------------------------
+    registry.register_many([F.conv2d, nn.Conv2d], BackwardLBPConv2d())
+    registry.register_many(
+        [F.avg_pool2d, nn.AvgPool2d, F.adaptive_avg_pool2d, nn.AdaptiveAvgPool2d],
+        BackwardLBPAvgPool2d(),
+    )
+    registry.register_many(
+        [F.max_pool2d, nn.MaxPool2d, F.adaptive_max_pool2d, nn.AdaptiveMaxPool2d],
+        BackwardLBPMaxPool2d(),
+    )
+
     # -- Reductions -----------------------------------------------------------
     registry.register_many([torch.sum, torch.Tensor.sum], BackwardLBPSum())
     registry.register_many([torch.mean, torch.Tensor.mean], BackwardLBPMean())
@@ -95,8 +109,8 @@ def create_default_backward_lbp_registry() -> TargetRegistry[BackwardLBPStrategy
 
     # -- Shape manipulation ---------------------------------------------------
     registry.register_many([torch.reshape, torch.Tensor.reshape], BackwardLBPReshape())
-    # registry.register_many([torch.flatten, torch.Tensor.flatten, nn.Flatten], BackwardLBPFlatten())
-    # registry.register(torch.Tensor.view, BackwardLBPView())
+    registry.register_many([torch.flatten, torch.Tensor.flatten, nn.Flatten], BackwardLBPFlatten())
+    registry.register(torch.Tensor.view, BackwardLBPView())
 
     registry.register_many([torch.unsqueeze, torch.Tensor.unsqueeze], BackwardLBPUnsqueeze())
     registry.register_many([torch.squeeze, torch.Tensor.squeeze], BackwardLBPSqueeze())

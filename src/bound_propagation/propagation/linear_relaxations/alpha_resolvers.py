@@ -359,6 +359,46 @@ def resolve_tanh_alphas(
     )
 
 
+def resolve_maxpool2d_alphas(
+    provider: AlphaProvider,
+    node: fx.Node,
+    output_shape: torch.Size,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+    """Resolve alpha-CROWN overrides for a 2D max-pool node.
+
+    Two knobs per node, both in ``[0, 1]`` with init ``1.0``:
+
+    - ``maxpool2d_lower_alpha``: interpolates the lower relaxation between
+      pure winner-routing (alpha=1: ``y_lower ≥ x[i*]``) and the IBP
+      constant fallback (alpha=0: ``y_lower ≥ max_lower``).
+    - ``maxpool2d_upper_alpha``: interpolates the upper relaxation between
+      winner-routing with slack (alpha=1: ``y_upper ≤ x[i*] + (max_upper −
+      max_lower)``) and the IBP constant fallback (alpha=0: ``y_upper ≤
+      max_upper``).
+
+    The default ``1.0`` reproduces the non-adaptive relaxation.
+    """
+    alpha_lower = provider.get(
+        node=node,
+        knob_name="maxpool2d_lower_alpha",
+        shape=output_shape,
+        init=1.0,
+        device=device,
+        dtype=dtype,
+    )
+    alpha_upper = provider.get(
+        node=node,
+        knob_name="maxpool2d_upper_alpha",
+        shape=output_shape,
+        init=1.0,
+        device=device,
+        dtype=dtype,
+    )
+    return alpha_lower, alpha_upper
+
+
 def resolve_clamp_alphas(
     provider: AlphaProvider,
     node: fx.Node,

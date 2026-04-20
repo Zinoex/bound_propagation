@@ -7,6 +7,7 @@ so bounds must be exact when composed with identity-like inputs.
 from __future__ import annotations
 
 import torch
+import torch.nn as nn
 
 from .conftest import assert_exact, assert_sound, propagate_bound, region
 
@@ -37,6 +38,155 @@ class TestBackwardLBPReshape:
             return x.reshape(2, 2).reshape(4)
 
         assert_exact(roundtrip_fn, r, r.lower, r.upper)
+
+
+# ---------------------------------------------------------------------------
+# Flatten
+# ---------------------------------------------------------------------------
+
+
+class TestBackwardLBPFlatten:
+    def test_flatten_function_full(self):
+        """torch.flatten(x, 0, -1) fully flattens a 2D input."""
+        r = region(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            [[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]],
+        )
+
+        def flatten_fn(x):
+            return torch.flatten(x, 0, -1)
+
+        bounds = propagate_bound(flatten_fn, r)
+        lower, upper = bounds.concretize()
+        assert lower.shape == (6,)
+        assert torch.allclose(lower, r.lower.flatten())
+        assert torch.allclose(upper, r.upper.flatten())
+
+    def test_flatten_method(self):
+        """Tensor.flatten() method form."""
+        r = region(
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[5.0, 6.0], [7.0, 8.0]],
+        )
+
+        def flatten_fn(x):
+            return x.flatten()
+
+        assert_exact(flatten_fn, r, r.lower.flatten(), r.upper.flatten())
+
+    def test_flatten_partial(self):
+        """torch.flatten with explicit start_dim / end_dim on a 3D input."""
+        r = region(
+            [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]],
+            [[[2.0, 3.0], [4.0, 5.0]], [[6.0, 7.0], [8.0, 9.0]]],
+        )
+
+        def flatten_fn(x):
+            return torch.flatten(x, start_dim=1, end_dim=2)
+
+        bounds = propagate_bound(flatten_fn, r)
+        lower, upper = bounds.concretize()
+        assert lower.shape == (2, 4)
+        assert torch.allclose(lower, r.lower.flatten(1, 2))
+        assert torch.allclose(upper, r.upper.flatten(1, 2))
+
+    def test_flatten_module(self):
+        """nn.Flatten as a submodule inside an nn.Module."""
+        r = region(
+            [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]],
+            [[2.0, 3.0, 4.0], [5.0, 6.0, 7.0]],
+        )
+
+        class Model(nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.flat = nn.Flatten(start_dim=0, end_dim=-1)
+
+            def forward(self, x):
+                return self.flat(x)
+
+        assert_exact(Model(), r, r.lower.flatten(), r.upper.flatten())
+
+    def test_flatten_roundtrip_exact(self):
+        """flatten then reshape back is identity."""
+        r = region([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+        def fn(x):
+            return x.reshape(2, 3).flatten().reshape(6)
+
+        assert_exact(fn, r, r.lower, r.upper)
+
+    def test_flatten_then_relu_sound(self):
+        """Composition with a non-linear activation stays sound."""
+        r = region(
+            [[-1.0, -2.0], [0.5, 1.0]],
+            [[1.0, 0.5], [2.0, 3.0]],
+        )
+
+        def fn(x):
+            return torch.relu(x.flatten())
+
+        assert_sound(fn, r)
+
+
+# ---------------------------------------------------------------------------
+# View
+# ---------------------------------------------------------------------------
+
+
+class TestBackwardLBPView:
+    def test_view_exact(self):
+        """x.view(target_shape) is a pure reshape and should be exact."""
+        r = region([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+        def view_fn(x):
+            return x.view(2, 3)
+
+        bounds = propagate_bound(view_fn, r)
+        lower, upper = bounds.concretize()
+        assert lower.shape == (2, 3)
+        assert torch.allclose(lower, r.lower.view(2, 3))
+        assert torch.allclose(upper, r.upper.view(2, 3))
+
+    def test_view_roundtrip_exact(self):
+        """view -> view back recovers the original bounds exactly."""
+        r = region([1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0])
+
+        def fn(x):
+            return x.view(2, 2).view(4)
+
+        assert_exact(fn, r, r.lower, r.upper)
+
+    def test_view_mixed_with_reshape(self):
+        """view composed with reshape transports bounds unchanged."""
+        r = region([1.0, 2.0, 3.0, 4.0, 5.0, 6.0], [7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
+
+        def fn(x):
+            return x.view(2, 3).reshape(6)
+
+        assert_exact(fn, r, r.lower, r.upper)
+
+    def test_view_then_add_exact(self):
+        """view followed by constant addition is exact."""
+        r = region([1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0])
+        c = torch.tensor([[10.0, 20.0], [30.0, 40.0]])
+
+        def fn(x):
+            return x.view(2, 2) + c
+
+        bounds = propagate_bound(fn, r)
+        lower, upper = bounds.concretize()
+        assert torch.allclose(lower, r.lower.view(2, 2) + c)
+        assert torch.allclose(upper, r.upper.view(2, 2) + c)
+
+    def test_view_then_relu_sound(self):
+        """view followed by ReLU stays sound."""
+        r = region([-2.0, -1.0, 0.5, 2.0], [1.0, 2.0, 3.0, 4.0])
+
+        def fn(x):
+            return torch.relu(x.view(2, 2))
+
+        assert_sound(fn, r)
 
 
 # ---------------------------------------------------------------------------

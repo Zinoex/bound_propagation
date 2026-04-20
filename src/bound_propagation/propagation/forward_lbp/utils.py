@@ -13,6 +13,7 @@ from typing import Literal
 import torch
 
 from ...bounds import LinearBounds
+from ...linear_operators import LinearOperator
 from ...regions import SimpleRegion
 
 
@@ -26,8 +27,13 @@ def transform_linear_terms(
 
 def combine_linear_terms(
     components: list[tuple[LinearBounds, Literal["lower", "upper"], float]],
-) -> tuple[list, list[torch.Tensor], list[int]]:
-    """Combine affine terms from multiple bounds, aligned by input IDs."""
+) -> tuple[list[SimpleRegion], list[LinearOperator], list[int]]:
+    """Combine affine terms from multiple bounds, aligned by input IDs.
+
+    Returns operator-backed coefficient terms; callers may pass the list
+    directly back to :class:`LinearBounds` which accepts either tensors or
+    operators.
+    """
     return LinearBounds.combine_linear_terms(components)
 
 

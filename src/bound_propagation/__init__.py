@@ -2,6 +2,7 @@
 
 from .bounds import AbstractBounds
 from .facade import BoundModel, Method, RegistryExtension
+from .linear_operators import DenseOperator, LinearOperator
 from .propagation import (
     AlphaOptimizationConfig,
     BackwardLBPPropagator,
@@ -22,10 +23,12 @@ __all__ = [
     "BoundModel",
     "BoundPropagator",
     "CROWNIBPPropagator",
+    "DenseOperator",
     "ForwardBackwardLBPPropagator",
     "ForwardLBPPropagator",
     "HyperRectangle",
     "IBPPropagator",
+    "LinearOperator",
     "Method",
     "RegistryExtension",
     "SimpleRegion",
