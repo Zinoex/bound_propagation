@@ -1,0 +1,329 @@
+"""User-facing facade for bound propagation.
+
+Wraps the tracer, metadata pass, and propagator construction behind a
+small, ergonomic API. See :class:`BoundModel` for details.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from typing import Any, Literal
+
+import torch
+import torch.fx as fx
+
+from .bounds import AbstractBounds
+from .passes import MetadataPass
+from .propagation import (
+    AlphaOptimizationConfig,
+    BackwardLBPPropagator,
+    BoundPropagator,
+    CROWNIBPPropagator,
+    ForwardBackwardLBPPropagator,
+    ForwardLBPPropagator,
+    IBPPropagator,
+    TargetRegistry,
+)
+from .propagation.backward_lbp import BackwardLBPStrategy, create_default_backward_lbp_registry
+from .propagation.forward_lbp import ForwardLBPStrategy, create_default_forward_lbp_registry
+from .propagation.ibp import ForwardIBPStrategy, create_default_ibp_registry
+from .regions import SimpleRegion
+from .tracer import BoundPropagationTracer
+
+__all__ = ["BoundModel", "Method", "RegistryExtension"]
+
+
+Method = Literal["ibp", "forward_lbp", "backward_lbp", "forward_backward_lbp", "crown_ibp"]
+
+_REGISTRY_KEYS = ("ibp", "forward_lbp", "backward_lbp")
+
+_METHOD_REGISTRY_KEYS: dict[Method, tuple[str, ...]] = {
+    "ibp": ("ibp",),
+    "forward_lbp": ("forward_lbp",),
+    "backward_lbp": ("backward_lbp",),
+    "forward_backward_lbp": ("forward_lbp", "backward_lbp"),
+    "crown_ibp": ("ibp", "backward_lbp"),
+}
+
+
+class _IntersectionRegistry(TargetRegistry):
+    """Registry whose support is the intersection of several registries.
+
+    Used during tracing for hybrid methods (e.g. ``crown_ibp``) so that any
+    op missing from *any* required registry is rejected up front, rather
+    than only at propagation time.
+    """
+
+    def __init__(self, registries: Sequence[TargetRegistry]) -> None:
+        super().__init__()
+        if not registries:
+            raise ValueError("_IntersectionRegistry requires at least one registry")
+        self._registries = tuple(registries)
+
+    def supports_target(self, target: Callable[..., Any] | type) -> bool:
+        return all(r.supports_target(target) for r in self._registries)
+
+    def is_supported(self, node: fx.Node, graph_module: fx.GraphModule) -> bool:
+        return all(r.is_supported(node, graph_module) for r in self._registries)
+
+
+@dataclass
+class RegistryExtension:
+    """Bundle of strategies for one or more fx targets, across methods.
+
+    When a :class:`BoundModel` is built, each extension's strategies are
+    registered into the registries that the chosen method requires. If the
+    method needs a strategy the extension does not provide (e.g. ``method=
+    "crown_ibp"`` but ``ibp=None``), construction fails with a clear error.
+    Strategies for methods the chosen ``method`` doesn't use are ignored.
+
+    Attributes
+    ----------
+    targets : sequence of callable or type
+        The fx targets this extension applies to (e.g. ``[torch.my_op]``,
+        ``[MyModule]``).
+    ibp, forward_lbp, backward_lbp : strategy or None
+        Strategy instance for each bound-propagation flavor. Supply only
+        those needed for the methods you intend to use.
+    """
+
+    targets: Sequence[Callable[..., Any] | type]
+    ibp: ForwardIBPStrategy | None = None
+    forward_lbp: ForwardLBPStrategy | None = None
+    backward_lbp: BackwardLBPStrategy | None = None
+
+    def strategy_for(self, key: str) -> ForwardIBPStrategy | ForwardLBPStrategy | BackwardLBPStrategy | None:
+        if key == "ibp":
+            return self.ibp
+        if key == "forward_lbp":
+            return self.forward_lbp
+        if key == "backward_lbp":
+            return self.backward_lbp
+        raise ValueError(f"Unknown registry key {key!r}; expected one of {_REGISTRY_KEYS}")
+
+
+class BoundModel:
+    """High-level facade for bound propagation.
+
+    Traces ``model`` once at construction time, runs the metadata pass with
+    the supplied ``dummy_inputs``, and builds a propagator for the chosen
+    ``method``. Subsequent :meth:`propagate` calls are cheap — only the
+    per-call propagator context is rebuilt.
+
+    Parameters
+    ----------
+    model : callable or nn.Module
+        The function or module whose bounds will be propagated.
+    method : {"ibp", "forward_lbp", "backward_lbp", "forward_backward_lbp", "crown_ibp"}
+        Propagation algorithm. ``"forward_backward_lbp"`` and ``"crown_ibp"``
+        use two registries internally.
+    dummy_inputs : tuple of tensors
+        Concrete example tensors, one per placeholder of ``model``. Used to
+        run :class:`~bound_propagation.passes.MetadataPass` which annotates
+        the graph with shapes, dtypes, and abstractness.
+    registry : TargetRegistry or mapping, optional
+        Full override of the default registries. For single-registry methods
+        (``ibp``, ``forward_lbp``, ``backward_lbp``), pass a
+        :class:`~bound_propagation.propagation.TargetRegistry` or a
+        single-entry mapping. For dual-registry methods
+        (``forward_backward_lbp``, ``crown_ibp``), pass a mapping with the
+        required keys (see :attr:`BoundModel.required_registry_keys`).
+        Omit to use the built-in defaults.
+    extensions : sequence of RegistryExtension, optional
+        Additional per-target strategies merged into whichever registries
+        are in effect (defaults or user-supplied). Every extension must
+        provide strategies for all of the method's required registry keys.
+    alpha : AlphaOptimizationConfig, optional
+        Alpha-CROWN optimization config. Only meaningful for methods whose
+        propagators accept one (all LBP-based methods).
+
+    Raises
+    ------
+    ValueError
+        If ``method`` is unknown, ``dummy_inputs`` does not match the
+        number of placeholders, a supplied registry is missing a required
+        key, or an extension is missing a strategy required by ``method``.
+    """
+
+    def __init__(
+        self,
+        model: Callable[..., Any] | torch.nn.Module,
+        dummy_inputs: Sequence[torch.Tensor],
+        method: Method,
+        *,
+        registry: TargetRegistry | Mapping[str, TargetRegistry] | None = None,
+        extensions: Sequence[RegistryExtension] = (),
+        alpha: AlphaOptimizationConfig | None = None,
+    ) -> None:
+        if method not in _METHOD_REGISTRY_KEYS:
+            raise ValueError(f"Unknown method {method!r}; expected one of {tuple(_METHOD_REGISTRY_KEYS)}")
+
+        required_keys = _METHOD_REGISTRY_KEYS[method]
+        registries = self._resolve_registries(method, required_keys, registry)
+        self._apply_extensions(method, required_keys, registries, extensions)
+
+        dummy_inputs = tuple(dummy_inputs)
+        tracer_registry: TargetRegistry = (
+            registries[required_keys[0]]
+            if len(required_keys) == 1
+            else _IntersectionRegistry([registries[k] for k in required_keys])
+        )
+        tracer = BoundPropagationTracer(tracer_registry)
+        graph_module = tracer.trace(model)
+
+        num_placeholders = sum(1 for node in graph_module.graph.nodes if node.op == "placeholder")
+        if len(dummy_inputs) != num_placeholders:
+            raise ValueError(
+                f"dummy_inputs has {len(dummy_inputs)} tensor(s) but the traced graph "
+                f"has {num_placeholders} placeholder(s)"
+            )
+
+        MetadataPass(graph_module).run(*dummy_inputs)
+
+        propagator = self._build_propagator(method, graph_module, registries, alpha)
+
+        self._method: Method = method
+        self._registries = registries
+        self._graph_module = graph_module
+        self._propagator = propagator
+        self._num_placeholders = num_placeholders
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def propagate(self, *input_regions: SimpleRegion) -> Sequence[AbstractBounds]:
+        """Propagate bounds for the given input regions.
+
+        Parameters
+        ----------
+        *input_regions : SimpleRegion
+            One region per placeholder, in the same order as the traced
+            model's signature.
+
+        Returns
+        -------
+        sequence of AbstractBounds
+            One bounds object per model output.
+        """
+        if len(input_regions) != self._num_placeholders:
+            raise ValueError(f"Expected {self._num_placeholders} input region(s), got {len(input_regions)}")
+        return self._propagator.propagate(list(input_regions))
+
+    @property
+    def method(self) -> Method:
+        return self._method
+
+    @property
+    def graph_module(self) -> fx.GraphModule:
+        return self._graph_module
+
+    @property
+    def propagator(self) -> BoundPropagator:
+        return self._propagator
+
+    @property
+    def registries(self) -> Mapping[str, TargetRegistry]:
+        return self._registries
+
+    @property
+    def required_registry_keys(self) -> tuple[str, ...]:
+        return _METHOD_REGISTRY_KEYS[self._method]
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_registries(
+        method: Method,
+        required_keys: tuple[str, ...],
+        registry: TargetRegistry | Mapping[str, TargetRegistry] | None,
+    ) -> dict[str, TargetRegistry]:
+        defaults: dict[str, Callable[[], TargetRegistry]] = {
+            "ibp": create_default_ibp_registry,
+            "forward_lbp": create_default_forward_lbp_registry,
+            "backward_lbp": create_default_backward_lbp_registry,
+        }
+
+        if registry is None:
+            return {key: defaults[key]() for key in required_keys}
+
+        if isinstance(registry, TargetRegistry):
+            if len(required_keys) != 1:
+                raise ValueError(
+                    f"method={method!r} needs registries for {required_keys}; pass a mapping "
+                    f"(e.g. {{'forward_lbp': ..., 'backward_lbp': ...}}) instead of a single registry"
+                )
+            resolved = {required_keys[0]: registry}
+            return resolved
+
+        if isinstance(registry, Mapping):
+            missing = [k for k in required_keys if k not in registry]
+            if missing:
+                raise ValueError(f"method={method!r} requires registry keys {required_keys}; missing {missing}")
+            unexpected = [k for k in registry if k not in required_keys]
+            if unexpected:
+                raise ValueError(f"method={method!r} expects only keys {required_keys}; got extra {unexpected}")
+            return {k: registry[k] for k in required_keys}
+
+        raise TypeError(f"registry must be a TargetRegistry, a mapping, or None; got {type(registry).__name__}")
+
+    @staticmethod
+    def _apply_extensions(
+        method: Method,
+        required_keys: tuple[str, ...],
+        registries: dict[str, TargetRegistry],
+        extensions: Sequence[RegistryExtension],
+    ) -> None:
+        for idx, ext in enumerate(extensions):
+            if not ext.targets:
+                raise ValueError(f"extensions[{idx}] has no targets")
+            for key in required_keys:
+                strategy = ext.strategy_for(key)
+                if strategy is None:
+                    raise ValueError(
+                        f"extensions[{idx}] is missing the {key!r} strategy required by "
+                        f"method={method!r} (targets={list(ext.targets)!r})"
+                    )
+                registries[key].register_many(list(ext.targets), strategy)
+
+    @staticmethod
+    def _build_propagator(
+        method: Method,
+        graph_module: fx.GraphModule,
+        registries: dict[str, TargetRegistry],
+        alpha: AlphaOptimizationConfig | None,
+    ) -> BoundPropagator:
+        if method == "ibp":
+            if alpha is not None and alpha.enabled:
+                raise ValueError("IBP does not support alpha-CROWN optimization; pass alpha=None")
+            return IBPPropagator(graph_module, registry=registries["ibp"])
+        if method == "forward_lbp":
+            return ForwardLBPPropagator(
+                graph_module,
+                registry=registries["forward_lbp"],
+                alpha_config=alpha,
+            )
+        if method == "backward_lbp":
+            return BackwardLBPPropagator(
+                graph_module,
+                registry=registries["backward_lbp"],
+                alpha_config=alpha,
+            )
+        if method == "forward_backward_lbp":
+            return ForwardBackwardLBPPropagator(
+                graph_module,
+                forward_registry=registries["forward_lbp"],
+                backward_registry=registries["backward_lbp"],
+                alpha_config=alpha,
+            )
+        if method == "crown_ibp":
+            return CROWNIBPPropagator(
+                graph_module,
+                ibp_registry=registries["ibp"],
+                backward_registry=registries["backward_lbp"],
+                alpha_config=alpha,
+            )
+        raise ValueError(f"Unhandled method {method!r}")

@@ -26,6 +26,7 @@ from ..alpha_optimization import (
 from ..backward_lbp import create_default_backward_lbp_registry
 from ..backward_lbp.base import BackwardLBPStrategy, CrownBoundsProvider
 from ..backward_lbp.tape import BackwardTape
+from ..constants import CONSTANT_PRODUCING_TARGETS, evaluate_constant_producer
 from ..registry import TargetRegistry
 from .base import BoundPropagator
 
@@ -155,8 +156,11 @@ class BackwardLBPPropagator(BoundPropagator):
     @staticmethod
     def _evaluate_concrete(node: fx.Node, tape: BackwardTape) -> torch.Tensor:
         """Concretely evaluate a non-abstract node."""
-        args, kwargs = tape.resolve_args(node)
         target = node.target
+        if node.op == "call_function" and target in CONSTANT_PRODUCING_TARGETS:
+            return evaluate_constant_producer(node)
+
+        args, kwargs = tape.resolve_args(node)
         if node.op == "call_function":
             return target(*args, **kwargs)
         if node.op == "call_method":

@@ -13,6 +13,7 @@ import torch.fx as fx
 
 from ...bounds import IntervalBounds
 from ...regions import SimpleRegion
+from ..constants import CONSTANT_PRODUCING_TARGETS, evaluate_constant_producer
 from ..context import PropagationContext
 from ..ibp import ForwardIBPStrategy, create_default_ibp_registry
 from ..registry import TargetRegistry
@@ -112,8 +113,11 @@ class IBPPropagator(BoundPropagator):
     @staticmethod
     def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[IntervalBounds]) -> torch.Tensor:
         """Concretely evaluate a non-abstract node."""
-        args, kwargs = ctx.resolve_args(node)
         target = node.target
+        if node.op == "call_function" and target in CONSTANT_PRODUCING_TARGETS:
+            return evaluate_constant_producer(node)
+
+        args, kwargs = ctx.resolve_args(node)
         if node.op == "call_function":
             return target(*args, **kwargs)  # ty:ignore[call-non-callable]
         if node.op == "call_method":

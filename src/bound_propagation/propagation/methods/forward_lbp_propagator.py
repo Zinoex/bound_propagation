@@ -19,6 +19,7 @@ from ..alpha_optimization import (
     NullAlphaProvider,
     run_alpha_optimization,
 )
+from ..constants import CONSTANT_PRODUCING_TARGETS, evaluate_constant_producer
 from ..context import PropagationContext
 from ..forward_lbp import ForwardLBPStrategy, create_default_forward_lbp_registry
 from ..forward_lbp.utils import create_identity_bounds
@@ -148,8 +149,11 @@ class ForwardLBPPropagator(BoundPropagator):
     @staticmethod
     def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[LinearBounds]) -> torch.Tensor:
         """Concretely evaluate a non-abstract node."""
-        args, kwargs = ctx.resolve_args(node)
         target = node.target
+        if node.op == "call_function" and target in CONSTANT_PRODUCING_TARGETS:
+            return evaluate_constant_producer(node)
+
+        args, kwargs = ctx.resolve_args(node)
         if node.op == "call_function":
             return target(*args, **kwargs)  # ty:ignore[call-non-callable]
         if node.op == "call_method":

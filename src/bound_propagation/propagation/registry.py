@@ -14,6 +14,7 @@ from typing import Any, Generic, TypeVar
 import torch
 import torch.fx as fx
 
+from .constants import CONSTANT_PRODUCING_TARGETS
 from .strategy import BoundingStrategy
 
 # ---------------------------------------------------------------------------
@@ -156,12 +157,19 @@ class TargetRegistry(Generic[T]):
         return strategy
 
     def is_supported(self, node: fx.Node, graph_module: fx.GraphModule) -> bool:
-        """Return ``True`` if a strategy exists for *node*."""
+        """Return ``True`` if *node* can be handled.
+
+        Includes nodes with a registered strategy as well as
+        :data:`~bound_propagation.propagation.constants.CONSTANT_PRODUCING_TARGETS`,
+        which are evaluated concretely without a strategy.
+        """
         try:
             target = normalize_target(node, graph_module)
         except ValueError:
             return False
-        return target in self._strategies
+        if target in self._strategies:
+            return True
+        return target in CONSTANT_PRODUCING_TARGETS
 
     def supports_target(self, target: Callable[..., Any] | type) -> bool:
         """Return ``True`` if *target* has a registered strategy."""

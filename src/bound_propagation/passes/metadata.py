@@ -12,6 +12,8 @@ from typing import Any
 import torch
 import torch.fx as fx
 
+from ..propagation.constants import CONSTANT_PRODUCING_TARGETS
+
 
 class MetadataPass(fx.Interpreter):
     """Annotate fx graph nodes with tensor metadata and abstractness.
@@ -95,8 +97,14 @@ class MetadataPass(fx.Interpreter):
             node.meta["is_abstract"] = False
 
         elif node.op in ("call_function", "call_method", "call_module"):
-            # Abstract if *any* input is abstract
-            node.meta["is_abstract"] = self._any_input_abstract(node)
+            # Tensor constructors (torch.zeros, zeros_like, ones, full, ...) never
+            # depend on abstract values — only on shape/dtype/device — so they are
+            # always concrete.
+            if node.op == "call_function" and node.target in CONSTANT_PRODUCING_TARGETS:
+                node.meta["is_abstract"] = False
+            else:
+                # Abstract if *any* input is abstract
+                node.meta["is_abstract"] = self._any_input_abstract(node)
 
         elif node.op == "output":
             node.meta["is_abstract"] = self._any_input_abstract(node)
