@@ -35,8 +35,7 @@ class IBPCat(ForwardIBPStrategy):
         lower = torch.cat([b.lower for b in tensors], dim=dim)
         upper = torch.cat([b.upper for b in tensors], dim=dim)
 
-        batch_ndim = max(b.batch_ndim for b in tensors)
-        return IntervalBounds(lower, upper, batch_ndim=min(batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)
 
 
 class IBPFlatten(ForwardIBPStrategy):
@@ -67,11 +66,7 @@ class IBPFlatten(ForwardIBPStrategy):
         lower = torch.flatten(x_bounds.lower, start_dim, end_dim)
         upper = torch.flatten(x_bounds.upper, start_dim, end_dim)
 
-        # Compute output batch_ndim: dims < start_dim (normalized) are untouched.
-        # If start_dim falls inside batch dims, batch shrinks to start_dim; else preserved.
-        normalized_start = start_dim if start_dim >= 0 else start_dim + x_bounds.lower.ndim
-        new_batch_ndim = min(x_bounds.batch_ndim, normalized_start)
-        return IntervalBounds(lower, upper, batch_ndim=new_batch_ndim)
+        return IntervalBounds(lower, upper)
 
 
 class IBPGetItem(ForwardIBPStrategy):
@@ -117,7 +112,7 @@ class IBPPermute(ForwardIBPStrategy):
         lower = x_bounds.lower.permute(dims)
         upper = x_bounds.upper.permute(dims)
 
-        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)
 
 
 class IBPReshape(ForwardIBPStrategy):
@@ -144,7 +139,7 @@ class IBPReshape(ForwardIBPStrategy):
         lower = x_bounds.lower.reshape(shape)
         upper = x_bounds.upper.reshape(shape)
 
-        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)
 
 
 class IBPSelect(ForwardIBPStrategy):
@@ -167,13 +162,9 @@ class IBPSelect(ForwardIBPStrategy):
         if index is None:
             raise ValueError("select requires an index argument")
 
-        sel_lower = x_bounds.lower.select(dim=dim, index=index)
-        normalized_dim = dim if dim >= 0 else dim + x_bounds.lower.ndim
-        new_batch_ndim = x_bounds.batch_ndim - 1 if normalized_dim < x_bounds.batch_ndim else x_bounds.batch_ndim
         return IntervalBounds(
-            sel_lower,
+            x_bounds.lower.select(dim=dim, index=index),
             x_bounds.upper.select(dim=dim, index=index),
-            batch_ndim=min(new_batch_ndim, sel_lower.ndim),
         )
 
 
@@ -196,7 +187,7 @@ class IBPSqueeze(ForwardIBPStrategy):
         lower = x_bounds.lower.squeeze(dim=dim)
         upper = x_bounds.upper.squeeze(dim=dim)
 
-        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)
 
 
 class IBPStack(ForwardIBPStrategy):
@@ -221,10 +212,7 @@ class IBPStack(ForwardIBPStrategy):
         lower = torch.stack([b.lower for b in tensors], dim=dim)
         upper = torch.stack([b.upper for b in tensors], dim=dim)
 
-        input_batch_ndim = max(b.batch_ndim for b in tensors)
-        normalized_dim = dim if dim >= 0 else dim + lower.ndim
-        new_batch_ndim = input_batch_ndim + 1 if normalized_dim <= input_batch_ndim else input_batch_ndim
-        return IntervalBounds(lower, upper, batch_ndim=min(new_batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)
 
 
 class IBPTranspose(ForwardIBPStrategy):
@@ -250,7 +238,7 @@ class IBPTranspose(ForwardIBPStrategy):
         lower = x_bounds.lower.transpose(dim0, dim1)
         upper = x_bounds.upper.transpose(dim0, dim1)
 
-        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)
 
 
 class IBPUnsqueeze(ForwardIBPStrategy):
@@ -274,9 +262,7 @@ class IBPUnsqueeze(ForwardIBPStrategy):
         lower = x_bounds.lower.unsqueeze(dim=dim)
         upper = x_bounds.upper.unsqueeze(dim=dim)
 
-        normalized_dim = dim if dim >= 0 else dim + lower.ndim
-        new_batch_ndim = x_bounds.batch_ndim + 1 if normalized_dim <= x_bounds.batch_ndim else x_bounds.batch_ndim
-        return IntervalBounds(lower, upper, batch_ndim=min(new_batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)
 
 
 class IBPView(ForwardIBPStrategy):
@@ -303,4 +289,4 @@ class IBPView(ForwardIBPStrategy):
         lower = x_bounds.lower.view(size)
         upper = x_bounds.upper.view(size)
 
-        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
+        return IntervalBounds(lower, upper)

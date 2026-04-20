@@ -30,7 +30,7 @@ class IBPMul(ForwardIBPStrategy):
             uu = left.upper * right.upper
             lower = torch.min(torch.min(ll, lu), torch.min(ul, uu))
             upper = torch.max(torch.max(ll, lu), torch.max(ul, uu))
-            return IntervalBounds(lower, upper, batch_ndim=max(left.batch_ndim, right.batch_ndim))
+            return IntervalBounds(lower, upper)
 
         # One side is constant
         if isinstance(left, IntervalBounds):
@@ -43,12 +43,12 @@ class IBPMul(ForwardIBPStrategy):
         if isinstance(c, torch.Tensor):
             lower = torch.where(c >= 0, interval.lower * c, interval.upper * c)
             upper = torch.where(c >= 0, interval.upper * c, interval.lower * c)
-            return IntervalBounds(lower, upper, batch_ndim=interval.batch_ndim)
+            return IntervalBounds(lower, upper)
 
         # Scalar constant
         if c >= 0:
-            return IntervalBounds(interval.lower * c, interval.upper * c, batch_ndim=interval.batch_ndim)
-        return IntervalBounds(interval.upper * c, interval.lower * c, batch_ndim=interval.batch_ndim)
+            return IntervalBounds(interval.lower * c, interval.upper * c)
+        return IntervalBounds(interval.upper * c, interval.lower * c)
 
 
 class IBPDiv(ForwardIBPStrategy):
@@ -85,7 +85,7 @@ class IBPDiv(ForwardIBPStrategy):
 
         lower = torch.min(torch.min(ll, lu), torch.min(ul, uu))
         upper = torch.max(torch.max(ll, lu), torch.max(ul, uu))
-        return IntervalBounds(lower, upper, batch_ndim=max(x.batch_ndim, y.batch_ndim))
+        return IntervalBounds(lower, upper)
 
     @staticmethod
     def _interval_div_constant(interval: IntervalBounds, c: torch.Tensor | torch.types.Number) -> IntervalBounds:
@@ -94,13 +94,13 @@ class IBPDiv(ForwardIBPStrategy):
             lower = torch.where(c == 0, float("-inf"), lower)
             upper = torch.where(c >= 0, interval.upper / c, interval.lower / c)
             upper = torch.where(c == 0, float("inf"), upper)
-            return IntervalBounds(lower, upper, batch_ndim=interval.batch_ndim)
+            return IntervalBounds(lower, upper)
 
         if c == 0:
             return IntervalBounds.unbounded_like(interval)
         if c > 0:
-            return IntervalBounds(interval.lower / c, interval.upper / c, batch_ndim=interval.batch_ndim)
-        return IntervalBounds(interval.upper / c, interval.lower / c, batch_ndim=interval.batch_ndim)
+            return IntervalBounds(interval.lower / c, interval.upper / c)
+        return IntervalBounds(interval.upper / c, interval.lower / c)
 
     @staticmethod
     def _constant_div_interval(c: torch.Tensor | torch.types.Number, interval: IntervalBounds) -> IntervalBounds:
@@ -111,17 +111,17 @@ class IBPDiv(ForwardIBPStrategy):
             lower = torch.where(unbounded_mask, float("-inf"), lower)
             upper = torch.where(c >= 0, c / interval.lower, c / interval.upper)
             upper = torch.where(unbounded_mask, float("inf"), upper)
-            return IntervalBounds(lower, upper, batch_ndim=interval.batch_ndim)
+            return IntervalBounds(lower, upper)
 
         if c == 0:
             zero = torch.zeros_like(interval.lower)
-            return IntervalBounds(zero, zero, batch_ndim=interval.batch_ndim)
+            return IntervalBounds(zero, zero)
 
         lower = c / interval.upper
         lower = torch.where(unbounded_mask, float("-inf"), lower)
         upper = c / interval.lower
         upper = torch.where(unbounded_mask, float("inf"), upper)
-        return IntervalBounds(lower, upper, batch_ndim=interval.batch_ndim)
+        return IntervalBounds(lower, upper)
 
 
 class IBPMaximum(ForwardIBPStrategy):
@@ -136,11 +136,7 @@ class IBPMaximum(ForwardIBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, IntervalBounds) and isinstance(right, IntervalBounds):
-            return IntervalBounds(
-                torch.max(left.lower, right.lower),
-                torch.max(left.upper, right.upper),
-                batch_ndim=max(left.batch_ndim, right.batch_ndim),
-            )
+            return IntervalBounds(torch.max(left.lower, right.lower), torch.max(left.upper, right.upper))
 
         if isinstance(left, IntervalBounds):
             interval, c = left, right
@@ -152,9 +148,7 @@ class IBPMaximum(ForwardIBPStrategy):
         if not isinstance(c, torch.Tensor):
             raise TypeError(f"IBPMaximum requires the constant input to be a torch.Tensor, got {type(c)}")
 
-        return IntervalBounds(
-            torch.max(interval.lower, c), torch.max(interval.upper, c), batch_ndim=interval.batch_ndim
-        )
+        return IntervalBounds(torch.max(interval.lower, c), torch.max(interval.upper, c))
 
 
 class IBPMinimum(ForwardIBPStrategy):
@@ -169,11 +163,7 @@ class IBPMinimum(ForwardIBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, IntervalBounds) and isinstance(right, IntervalBounds):
-            return IntervalBounds(
-                torch.min(left.lower, right.lower),
-                torch.min(left.upper, right.upper),
-                batch_ndim=max(left.batch_ndim, right.batch_ndim),
-            )
+            return IntervalBounds(torch.min(left.lower, right.lower), torch.min(left.upper, right.upper))
 
         if isinstance(left, IntervalBounds):
             interval, c = left, right
@@ -185,6 +175,4 @@ class IBPMinimum(ForwardIBPStrategy):
         if not isinstance(c, torch.Tensor):
             raise TypeError(f"IBPMinimum requires the constant input to be a torch.Tensor, got {type(c)}")
 
-        return IntervalBounds(
-            torch.min(interval.lower, c), torch.min(interval.upper, c), batch_ndim=interval.batch_ndim
-        )
+        return IntervalBounds(torch.min(interval.lower, c), torch.min(interval.upper, c))

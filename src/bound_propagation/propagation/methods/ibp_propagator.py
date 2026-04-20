@@ -50,17 +50,17 @@ class IBPPropagator(BoundPropagator):
         input_regions: Sequence[SimpleRegion],
         batch_ndim: int = 0,
     ) -> IntervalBounds:
+        del batch_ndim  # IBP is shape-transparent; accepted for API uniformity.
+
         placeholders = self._placeholder_nodes()
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
 
         ctx = self._new_context()
 
-        # Seed placeholder bounds with the caller-supplied batch_ndim so
-        # strategies can propagate it forward through the graph.
         for ph, region in zip(placeholders, input_regions, strict=True):
             lower, upper = region.aabb()
-            ctx.store(ph, IntervalBounds(lower, upper, batch_ndim=batch_ndim))
+            ctx.store(ph, IntervalBounds(lower, upper))
 
         # Forward walk (graph.nodes is already in topological order)
         for node in self._graph_module.graph.nodes:

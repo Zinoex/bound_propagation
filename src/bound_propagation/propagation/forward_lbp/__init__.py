@@ -6,7 +6,6 @@ import torch.nn.functional as F
 
 from ..registry import TargetRegistry
 from .base import ForwardLBPStrategy
-from .conv_pool import ForwardLBPAvgPool2d, ForwardLBPConv2d, ForwardLBPMaxPool2d
 from .elementwise import (
     ForwardLBPAbs,
     ForwardLBPClamp,
@@ -80,17 +79,6 @@ def create_default_forward_lbp_registry() -> TargetRegistry[ForwardLBPStrategy]:
     # -- Linear / matmul ---------------------------------------------------
     linear = ForwardLBPLinear()
     registry.register_many([F.linear, nn.Linear], linear)
-
-    # -- Convolution / pooling ---------------------------------------------
-    registry.register_many([F.conv2d, nn.Conv2d], ForwardLBPConv2d())
-    registry.register_many(
-        [F.avg_pool2d, nn.AvgPool2d, F.adaptive_avg_pool2d, nn.AdaptiveAvgPool2d],
-        ForwardLBPAvgPool2d(),
-    )
-    registry.register_many(
-        [F.max_pool2d, nn.MaxPool2d, F.adaptive_max_pool2d, nn.AdaptiveMaxPool2d],
-        ForwardLBPMaxPool2d(),
-    )
 
     # -- Reductions --------------------------------------------------------
     registry.register_many([torch.sum, torch.Tensor.sum], ForwardLBPSum())
