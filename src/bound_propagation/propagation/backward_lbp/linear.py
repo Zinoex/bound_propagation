@@ -166,14 +166,18 @@ class BackwardLBPAdd(BackwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, BackwardRelaxation) and isinstance(right, BackwardRelaxation):
-            return AddRelaxation(left_node=node.args[0], right_node=node.args[1])
+            return AddRelaxation(
+                left_node=node.args[0],
+                right_node=node.args[1],
+                input_ndim=len(tape.shape_of(node.args[0])),
+            )
 
         if isinstance(left, BackwardRelaxation):
-            constant = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
+            constant = torch.as_tensor(right, dtype=tape.dtype_of(node.args[0]))
             return ConstantAddRelaxation(constant=constant, input_node=node.args[0])
 
         if isinstance(right, BackwardRelaxation):
-            constant = torch.as_tensor(left, dtype=node.meta["tensor_meta"]["dtype"])
+            constant = torch.as_tensor(left, dtype=tape.dtype_of(node.args[1]))
             return ConstantAddRelaxation(constant=constant, input_node=node.args[1])
 
         raise TypeError(
@@ -191,16 +195,20 @@ class BackwardLBPSub(BackwardLBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, BackwardRelaxation) and isinstance(right, BackwardRelaxation):
-            return SubRelaxation(left_node=node.args[0], right_node=node.args[1])
+            return SubRelaxation(
+                left_node=node.args[0],
+                right_node=node.args[1],
+                input_ndim=len(tape.shape_of(node.args[0])),
+            )
 
         if isinstance(left, BackwardRelaxation):
             # x - c = x + (-c)
-            constant = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
+            constant = torch.as_tensor(right, dtype=tape.dtype_of(node.args[0]))
             return ConstantAddRelaxation(constant=-constant, input_node=node.args[0])
 
         if isinstance(right, BackwardRelaxation):
             # c - x: bias gets +c contribution, A gets negated for x
-            constant = torch.as_tensor(left, dtype=node.meta["tensor_meta"]["dtype"])
+            constant = torch.as_tensor(left, dtype=tape.dtype_of(node.args[1]))
             return ConstantAddRelaxation(constant=constant, input_node=node.args[1], negate_input=True)
 
         raise TypeError(
@@ -214,7 +222,10 @@ class BackwardLBPNeg(BackwardLBPStrategy):
     def build_relaxation(
         self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
     ) -> BackwardRelaxation:
-        return NegRelaxation(input_node=node.args[0])
+        return NegRelaxation(
+            input_node=node.args[0],
+            input_ndim=len(tape.shape_of(node.args[0])),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -236,15 +247,10 @@ def _zero_bias(A: torch.Tensor, node_ndim: int) -> torch.Tensor:
     return torch.zeros(bias_shape, dtype=A.dtype, device=A.device)
 
 
-def _node_ndim_from_meta(node: fx.Node, batch_ndim: int) -> int:
-    """Infer the number of non-batch feature dimensions from node metadata.
-
-    Falls back to 0 when ``tensor_meta`` is unavailable.
-    """
-    meta = node.meta.get("tensor_meta")
-    if meta is not None:
-        return len(meta["shape"]) - batch_ndim
-    return 0
+def _node_feature_ndim(node_ndim: int, batch_ndim: int) -> int:
+    """Number of non-batch feature dimensions for a relaxation whose output
+    has ``node_ndim`` total dimensions (captured at build time)."""
+    return max(node_ndim - batch_ndim, 0)
 
 
 # ---------------------------------------------------------------------------
@@ -480,10 +486,15 @@ class AddRelaxation(BackwardRelaxation):
         The fx graph node for the left operand.
     right_node : fx.Node
         The fx graph node for the right operand.
+    input_ndim : int
+        Rank of the (broadcast) operand tensor, captured at build time so the
+        backward pass can compute the per-node feature-dim count without
+        touching ``node.meta``.
     """
 
     left_node: fx.Node
     right_node: fx.Node
+    input_ndim: int
 
     def predecessor_nodes(self) -> list[fx.Node]:
         return list({self.left_node, self.right_node})
@@ -493,7 +504,7 @@ class AddRelaxation(BackwardRelaxation):
         accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
         accumulate_a_terms(a_terms, self.right_node, A_lower, A_upper)
 
-        node_ndim = _node_ndim_from_meta(self.left_node, batch_ndim)
+        node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
         zero = _zero_bias(A_lower, node_ndim=node_ndim)
         return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
 
@@ -509,10 +520,13 @@ class SubRelaxation(BackwardRelaxation):
         The fx graph node for the left operand.
     right_node : fx.Node
         The fx graph node for the right operand.
+    input_ndim : int
+        Rank of the (broadcast) operand tensor, captured at build time.
     """
 
     left_node: fx.Node
     right_node: fx.Node
+    input_ndim: int
 
     def predecessor_nodes(self) -> list[fx.Node]:
         return list({self.left_node, self.right_node})
@@ -522,7 +536,7 @@ class SubRelaxation(BackwardRelaxation):
         accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
         accumulate_a_terms(a_terms, self.right_node, -A_lower, -A_upper)
 
-        node_ndim = _node_ndim_from_meta(self.left_node, batch_ndim)
+        node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
         zero = _zero_bias(A_lower, node_ndim=node_ndim)
         return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
 
@@ -589,15 +603,18 @@ class NegRelaxation(BackwardRelaxation):
     ----------
     input_node : fx.Node
         The fx graph node for the input operand.
+    input_ndim : int
+        Rank of the input tensor, captured at build time.
     """
 
     input_node: fx.Node
+    input_ndim: int
 
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
     def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        node_ndim = _node_ndim_from_meta(self.input_node, batch_ndim)
+        node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
         zero = _zero_bias(A_lower, node_ndim=node_ndim)
         return BackwardContributions(
             a_terms={self.input_node: (-A_lower, -A_upper)},

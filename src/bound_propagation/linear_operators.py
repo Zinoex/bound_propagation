@@ -344,11 +344,11 @@ class DenseOperator(LinearOperator):
         return DenseOperator(new_tensor, new_output_shape)
 
     def reshape_output(self, shape: tuple[int, ...]) -> DenseOperator:
-        new_tensor = self._tensor.reshape(*shape, *self.input_shape)
+        new_tensor = self._tensor.reshape((*shape, *self.input_shape))
         return DenseOperator(new_tensor, torch.Size(shape))
 
     def view_output(self, shape: tuple[int, ...]) -> DenseOperator:
-        new_tensor = self._tensor.view(*shape, *self.input_shape)
+        new_tensor = self._tensor.view((*shape, *self.input_shape))
         return DenseOperator(new_tensor, torch.Size(shape))
 
     def squeeze_output(self, dim: int | None = None) -> DenseOperator:

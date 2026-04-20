@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING
 import torch
 
 from ...bounds import LinearBounds
+from ...linear_operators import LinearOperator, ReshapeOperator
 from .base import ForwardLBPStrategy
 from .utils import transform_linear_terms
 
@@ -13,6 +14,24 @@ if TYPE_CHECKING:
 
     from ...regions import SimpleRegion
     from ..context import PropagationContext
+
+
+def _reshape_ops(ops: list[LinearOperator], new_output_shape: tuple[int, ...]) -> list[LinearOperator]:
+    """Wrap each operator in a :class:`ReshapeOperator` presenting ``new_output_shape``.
+
+    Operators whose ``output_shape`` already matches ``new_output_shape`` are
+    returned unchanged. This keeps structured operators (e.g.
+    :class:`Conv2dPatchOperator`) unmaterialized across reshape-family ops
+    (``flatten``/``view``/``reshape``/``squeeze``/``unsqueeze``).
+    """
+    target = torch.Size(new_output_shape)
+    result: list[LinearOperator] = []
+    for op in ops:
+        if op.output_shape == target:
+            result.append(op)
+        else:
+            result.append(ReshapeOperator(op, target))
+    return result
 
 
 class ForwardLBPConcat(ForwardLBPStrategy):
@@ -135,14 +154,9 @@ class ForwardLBPFlatten(ForwardLBPStrategy):
 
         bias_lower = bounds.bias_lower.flatten(start_dim, end_dim)
         bias_upper = bounds.bias_upper.flatten(start_dim, end_dim)
-        linear_lower = transform_linear_terms(
-            bounds.linear_lowers,
-            lambda linear: linear.flatten(start_dim, end_dim),
-        )
-        linear_upper = transform_linear_terms(
-            bounds.linear_uppers,
-            lambda linear: linear.flatten(start_dim, end_dim),
-        )
+        new_output_shape = tuple(bias_lower.shape)
+        linear_lower = _reshape_ops(bounds.linear_lowers_op, new_output_shape)
+        linear_upper = _reshape_ops(bounds.linear_uppers_op, new_output_shape)
 
         return LinearBounds(
             regions=bounds.regions,
@@ -193,15 +207,9 @@ class ForwardLBPReshape(ForwardLBPStrategy):
 
         bias_lower = bounds.bias_lower.reshape(target_shape)
         bias_upper = bounds.bias_upper.reshape(target_shape)
-        output_ndim = bounds.bias_lower.ndim
-        linear_lower = transform_linear_terms(
-            bounds.linear_lowers,
-            lambda linear: linear.reshape(*target_shape, *linear.shape[output_ndim:]),
-        )
-        linear_upper = transform_linear_terms(
-            bounds.linear_uppers,
-            lambda linear: linear.reshape(*target_shape, *linear.shape[output_ndim:]),
-        )
+        new_output_shape = tuple(bias_lower.shape)
+        linear_lower = _reshape_ops(bounds.linear_lowers_op, new_output_shape)
+        linear_upper = _reshape_ops(bounds.linear_uppers_op, new_output_shape)
 
         return LinearBounds(
             regions=bounds.regions,
@@ -274,24 +282,16 @@ class ForwardLBPSqueeze(ForwardLBPStrategy):
             if dim < 0 or dim >= output_ndim:
                 raise ValueError(f"squeeze dim must be in [0, {output_ndim - 1}], got {dim}")
 
-            linear_lower = transform_linear_terms(bounds.linear_lowers, lambda linear: linear.squeeze(dim))
-            linear_upper = transform_linear_terms(bounds.linear_uppers, lambda linear: linear.squeeze(dim))
             bias_lower = bounds.bias_lower.squeeze(dim)
             bias_upper = bounds.bias_upper.squeeze(dim)
         else:
             target_shape = tuple(size for size in bounds.bias_lower.shape if size != 1)
             bias_lower = bounds.bias_lower.reshape(target_shape)
             bias_upper = bounds.bias_upper.reshape(target_shape)
-            output_ndim = bounds.bias_lower.ndim
 
-            linear_lower = transform_linear_terms(
-                bounds.linear_lowers,
-                lambda linear: linear.reshape(*target_shape, *linear.shape[output_ndim:]),
-            )
-            linear_upper = transform_linear_terms(
-                bounds.linear_uppers,
-                lambda linear: linear.reshape(*target_shape, *linear.shape[output_ndim:]),
-            )
+        new_output_shape = tuple(bias_lower.shape)
+        linear_lower = _reshape_ops(bounds.linear_lowers_op, new_output_shape)
+        linear_upper = _reshape_ops(bounds.linear_uppers_op, new_output_shape)
 
         return LinearBounds(
             regions=bounds.regions,
@@ -502,10 +502,11 @@ class ForwardLBPUnsqueeze(ForwardLBPStrategy):
         if dim < 0 or dim > output_ndim:
             raise ValueError(f"unsqueeze dim must be in [0, {output_ndim}], got {dim}")
 
-        linear_lower = transform_linear_terms(bounds.linear_lowers, lambda linear: linear.unsqueeze(dim))
-        linear_upper = transform_linear_terms(bounds.linear_uppers, lambda linear: linear.unsqueeze(dim))
         bias_lower = bounds.bias_lower.unsqueeze(dim)
         bias_upper = bounds.bias_upper.unsqueeze(dim)
+        new_output_shape = tuple(bias_lower.shape)
+        linear_lower = _reshape_ops(bounds.linear_lowers_op, new_output_shape)
+        linear_upper = _reshape_ops(bounds.linear_uppers_op, new_output_shape)
 
         return LinearBounds(
             regions=bounds.regions,
@@ -536,19 +537,11 @@ class ForwardLBPView(ForwardLBPStrategy):
         else:
             shape = tuple(args[1:])
 
-        output_ndim = bounds.bias_lower.ndim
-
-        linear_lower = transform_linear_terms(
-            bounds.linear_lowers,
-            lambda linear: linear.view(*shape, *linear.shape[output_ndim:]),
-        )
-        linear_upper = transform_linear_terms(
-            bounds.linear_uppers,
-            lambda linear: linear.view(*shape, *linear.shape[output_ndim:]),
-        )
-
         bias_lower = bounds.bias_lower.view(*shape)
         bias_upper = bounds.bias_upper.view(*shape)
+        new_output_shape = tuple(bias_lower.shape)
+        linear_lower = _reshape_ops(bounds.linear_lowers_op, new_output_shape)
+        linear_upper = _reshape_ops(bounds.linear_uppers_op, new_output_shape)
 
         return LinearBounds(
             regions=bounds.regions,

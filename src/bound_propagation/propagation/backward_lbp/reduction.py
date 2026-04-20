@@ -141,7 +141,7 @@ class BackwardLBPSum(BackwardLBPStrategy):
 
         dim = args[1] if len(args) > 1 else kwargs.get("dim")
         keepdim = kwargs.get("keepdim", False)
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+        source_shape = tape.shape_of(node.args[0])
 
         return SumRelaxation(dim=dim, keepdim=keepdim, source_shape=source_shape, input_node=node.args[0])
 
@@ -159,7 +159,7 @@ class BackwardLBPMean(BackwardLBPStrategy):
 
         dim = args[1] if len(args) > 1 else kwargs.get("dim")
         keepdim = kwargs.get("keepdim", False)
-        source_shape = node.args[0].meta["tensor_meta"]["shape"]
+        source_shape = tape.shape_of(node.args[0])
 
         return MeanRelaxation(dim=dim, keepdim=keepdim, source_shape=source_shape, input_node=node.args[0])
 

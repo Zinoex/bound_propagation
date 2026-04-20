@@ -55,6 +55,11 @@ class BackwardTape:
         self._input_ids: dict[str, int] = {}
         self._alpha_provider: AlphaProvider = NullAlphaProvider()
 
+        # Per-node shape / dtype metadata captured at record time. Decouples
+        # backward-pass consumers from ``node.meta["tensor_meta"]`` reads.
+        self._shapes: dict[str, tuple[int, ...]] = {}
+        self._dtypes: dict[str, torch.dtype] = {}
+
         # Seed placeholders
         placeholders = [n for n in graph_module.graph.nodes if n.op == "placeholder"]
         if len(input_regions) != len(placeholders):
@@ -66,6 +71,22 @@ class BackwardTape:
             self._relaxations[ph.name] = marker
             self._input_regions[ph.name] = region
             self._input_ids[ph.name] = i
+            self._shapes[ph.name] = tuple(region.shape)
+            self._dtypes[ph.name] = region.dtype
+
+        # Bulk-copy ``node.meta["tensor_meta"]`` shape/dtype into the tape so
+        # strategies read shapes exclusively via :meth:`shape_of` / :meth:`dtype_of`.
+        # ``BoundModel`` runs :class:`MetadataPass` before constructing this tape,
+        # so every node with tensor semantics has meta populated at batch-promoted
+        # shapes. Strategies that compute their own shape (see
+        # :mod:`backward_lbp.shape`) overwrite this later via :meth:`set_shape`.
+        for n in graph_module.graph.nodes:
+            if n.name in self._shapes:
+                continue
+            meta = n.meta.get("tensor_meta")
+            if meta is not None:
+                self._shapes[n.name] = tuple(meta["shape"])
+                self._dtypes[n.name] = meta["dtype"]
 
         # Cache for concretized interval bounds
         self._interval_cache: dict[str, IntervalBounds] = {}
@@ -90,14 +111,83 @@ class BackwardTape:
     # Recording
     # ------------------------------------------------------------------
 
-    def record(self, node: fx.Node, relaxation: BackwardRelaxation) -> None:
-        """Record a relaxation for an abstract node."""
+    def record(
+        self,
+        node: fx.Node,
+        relaxation: BackwardRelaxation,
+        *,
+        output_shape: tuple[int, ...] | None = None,
+        dtype: torch.dtype | None = None,
+    ) -> None:
+        """Record a relaxation for an abstract node.
+
+        ``output_shape`` / ``dtype`` are optional at this stage; when
+        supplied they are stored in the per-node shape/dtype dicts so that
+        backward-pass consumers can look them up via :meth:`shape_of` /
+        :meth:`dtype_of` without touching ``node.meta``. When omitted,
+        ``shape_of`` / ``dtype_of`` fall back to the graph-level metadata.
+        """
         self._store[node.name] = relaxation
         self._relaxations[node.name] = relaxation
+        if output_shape is not None:
+            self._shapes[node.name] = tuple(output_shape)
+        if dtype is not None:
+            self._dtypes[node.name] = dtype
 
     def record_concrete(self, node: fx.Node, value: Any) -> None:
         """Record a concrete value for a non-abstract node."""
         self._store[node.name] = value
+        if isinstance(value, torch.Tensor):
+            self._shapes[node.name] = tuple(value.shape)
+            self._dtypes[node.name] = value.dtype
+
+    # ------------------------------------------------------------------
+    # Shape / dtype lookup
+    # ------------------------------------------------------------------
+
+    def set_shape(
+        self,
+        node: fx.Node,
+        shape: tuple[int, ...],
+        dtype: torch.dtype | None = None,
+    ) -> None:
+        """Record ``node``'s output shape (and optionally dtype) for later
+        lookup via :meth:`shape_of` / :meth:`dtype_of`. Strategies call this
+        during ``build_relaxation`` so the backward pass does not need to
+        touch ``node.meta``.
+        """
+        self._shapes[node.name] = tuple(shape)
+        if dtype is not None:
+            self._dtypes[node.name] = dtype
+
+    def shape_of(self, node: fx.Node) -> tuple[int, ...]:
+        """Return the recorded shape of ``node``.
+
+        Shapes are captured at tape construction time (bulk-copied from
+        ``node.meta["tensor_meta"]`` populated by :class:`MetadataPass`) and
+        overwritten by strategies that compute their own shape via
+        :meth:`set_shape`. :class:`KeyError` is raised if the node has no
+        tensor semantics.
+        """
+        try:
+            return self._shapes[node.name]
+        except KeyError as exc:
+            raise KeyError(
+                f"No shape recorded for node {node.name!r}; "
+                "ensure BoundModel ran MetadataPass before tape construction, or populate "
+                "the shape via BackwardTape.set_shape."
+            ) from exc
+
+    def dtype_of(self, node: fx.Node) -> torch.dtype:
+        """Return the recorded dtype of ``node`` (see :meth:`shape_of`)."""
+        try:
+            return self._dtypes[node.name]
+        except KeyError as exc:
+            raise KeyError(
+                f"No dtype recorded for node {node.name!r}; "
+                "ensure BoundModel ran MetadataPass before tape construction, or populate "
+                "the dtype via BackwardTape.set_shape."
+            ) from exc
 
     # ------------------------------------------------------------------
     # Resolution (like PropagationContext)
@@ -161,10 +251,10 @@ class BackwardTape:
         pending = self._compute_pending(subgraph)
 
         # Build identity A-matrix for the start node
-        shape = node.meta["tensor_meta"]["shape"]
+        shape = self.shape_of(node)
         feature_shape = shape[batch_ndim:]
         numel = math.prod(feature_shape)
-        dtype = node.meta["tensor_meta"]["dtype"]
+        dtype = self.dtype_of(node)
         device = self._infer_device()
 
         batch_ones = (1,) * batch_ndim

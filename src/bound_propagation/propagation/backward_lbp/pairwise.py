@@ -161,13 +161,13 @@ class BackwardLBPMul(BackwardLBPStrategy):
             return PairedBackwardRelaxation(params=params, left_node=left_node, right_node=right_node)
 
         if left_is_abstract:
-            constant = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
-            scale = constant.expand(node.meta["tensor_meta"]["shape"])
+            constant = torch.as_tensor(right, dtype=tape.dtype_of(left_node))
+            scale = constant.expand(tape.shape_of(left_node))
             return ScaleRelaxation(scale=scale, input_node=left_node)
 
         if right_is_abstract:
-            constant = torch.as_tensor(left, dtype=node.meta["tensor_meta"]["dtype"])
-            scale = constant.expand(node.meta["tensor_meta"]["shape"])
+            constant = torch.as_tensor(left, dtype=tape.dtype_of(right_node))
+            scale = constant.expand(tape.shape_of(right_node))
             return ScaleRelaxation(scale=scale, input_node=right_node)
 
         raise TypeError(f"BackwardLBPMul requires at least one abstract operand, got {type(left)} and {type(right)}")
@@ -221,8 +221,8 @@ class BackwardLBPDiv(BackwardLBPStrategy):
 
         if left_is_abstract:
             # abstract / constant = abstract * (1/constant)
-            divisor = torch.as_tensor(right, dtype=node.meta["tensor_meta"]["dtype"])
-            scale = (1.0 / divisor).expand(node.meta["tensor_meta"]["shape"])
+            divisor = torch.as_tensor(right, dtype=tape.dtype_of(left_node))
+            scale = (1.0 / divisor).expand(tape.shape_of(left_node))
             return ScaleRelaxation(scale=scale, input_node=left_node)
 
         if right_is_abstract:
