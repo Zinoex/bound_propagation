@@ -11,7 +11,6 @@ import torch.nn as nn
 
 from .conftest import assert_exact, assert_sound, propagate_bound, region
 
-
 # ---------------------------------------------------------------------------
 # Linear chains
 # ---------------------------------------------------------------------------

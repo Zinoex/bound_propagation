@@ -58,7 +58,26 @@ class BoundPropagationTracer(fx.Tracer):
         graph = super().trace(root, concrete_args=concrete_args)
         graph_module = fx.GraphModule(self.root, graph)
         self._validate_supported_operations(graph_module)
+        self._validate_single_output(graph_module)
         return graph_module
+
+    @staticmethod
+    def _validate_single_output(graph_module: fx.GraphModule) -> None:
+        """Reject traced graphs whose function returns a tuple/list of values.
+
+        Bound propagation supports one output per graph; multi-output functions
+        must be split into separate calls.
+        """
+        for node in graph_module.graph.nodes:
+            if node.op != "output":
+                continue
+            payload = node.args[0] if node.args else None
+            if isinstance(payload, (tuple, list)):
+                raise MultiOutputError(
+                    f"Traced function returns {len(payload)} values; only single-output "
+                    f"functions are supported. Split the function or call it once per output."
+                )
+            return
 
     def _validate_supported_operations(self, graph_module: fx.GraphModule) -> None:
         """Ensure all call nodes are supported by the registry."""
@@ -84,3 +103,7 @@ class UnsupportedOperationError(TraceError):
 
 class ControlFlowError(TraceError):
     """Raised for unsupported control flow."""
+
+
+class MultiOutputError(TraceError):
+    """Raised when a traced function returns multiple values."""

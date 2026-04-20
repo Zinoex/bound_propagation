@@ -78,7 +78,8 @@ class BackwardLBPPropagator(BoundPropagator):
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
-    ) -> Sequence[LinearBounds]:
+        batch_ndim: int = 0,
+    ) -> LinearBounds:
         placeholders = self._placeholder_nodes()
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
@@ -86,10 +87,10 @@ class BackwardLBPPropagator(BoundPropagator):
         regions_list = list(input_regions)
 
         if not self._alpha_config.enabled:
-            return self._propagate_once(regions_list, NullAlphaProvider())
+            return self._propagate_once(regions_list, NullAlphaProvider(), batch_ndim)
 
         return run_alpha_optimization(
-            propagate_once=lambda provider: self._propagate_once(regions_list, provider),
+            propagate_once=lambda provider: self._propagate_once(regions_list, provider, batch_ndim),
             config=self._alpha_config,
         )
 
@@ -97,7 +98,8 @@ class BackwardLBPPropagator(BoundPropagator):
         self,
         input_regions: list[SimpleRegion],
         alpha_provider: AlphaProvider,
-    ) -> Sequence[LinearBounds]:
+        batch_ndim: int,
+    ) -> LinearBounds:
         """Single forward walk + backward tape pass with the given provider.
 
         Separated out so the alpha-optimization loop can call it repeatedly
@@ -108,7 +110,7 @@ class BackwardLBPPropagator(BoundPropagator):
         # Final-only mode wraps intermediate CROWN concretizations in no_grad
         # so the outer optimizer only sees the final-layer dependence on alphas.
         no_grad_concretizations = self._alpha_config.enabled and not self._alpha_config.optimize_intermediate
-        provider = CrownBoundsProvider(tape, no_grad_concretizations=no_grad_concretizations)
+        provider = CrownBoundsProvider(tape, batch_ndim=batch_ndim, no_grad_concretizations=no_grad_concretizations)
 
         # Forward walk: build tape
         for node in self._graph_module.graph.nodes:
@@ -119,7 +121,7 @@ class BackwardLBPPropagator(BoundPropagator):
             elif node.op in ("call_function", "call_method", "call_module"):
                 self._propagate_operation(node, tape, provider)
             elif node.op == "output":
-                return self._handle_output(node, tape)
+                return self._handle_output(node, tape, batch_ndim)
 
         raise RuntimeError("Graph has no output node")
 
@@ -141,17 +143,12 @@ class BackwardLBPPropagator(BoundPropagator):
         relaxation = strategy.build_relaxation(node, tape, provider)
         tape.record(node, relaxation)
 
-    def _handle_output(self, node: fx.Node, tape: BackwardTape) -> list[LinearBounds]:
-        """Backward from each output node using the tape."""
-        args = node.args[0] if isinstance(node.args[0], (tuple, list)) else node.args
-
-        results: list[LinearBounds] = []
-        for output_arg in args:
-            if not isinstance(output_arg, fx.Node):
-                raise TypeError(f"Expected output to be an fx.Node, got {type(output_arg)}")
-            results.append(tape.backward_from(output_arg, batch_ndim=0))
-
-        return results
+    def _handle_output(self, node: fx.Node, tape: BackwardTape, batch_ndim: int) -> LinearBounds:
+        """Backward from the single output node using the tape."""
+        output_arg = node.args[0]
+        if not isinstance(output_arg, fx.Node):
+            raise TypeError(f"Expected output to be an fx.Node, got {type(output_arg)}")
+        return tape.backward_from(output_arg, batch_ndim=batch_ndim)
 
     @staticmethod
     def _evaluate_concrete(node: fx.Node, tape: BackwardTape) -> torch.Tensor:

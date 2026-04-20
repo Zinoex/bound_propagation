@@ -142,7 +142,7 @@ class TestIBPEndToEndDispatch:
             ]
         )
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([2.0, 4.0]))
         assert torch.allclose(out.upper, torch.tensor([3.0, 5.0]))
@@ -170,7 +170,7 @@ class TestIBPEndToEndDispatch:
 
         # x in [0,1]x[1,2], add [2,3] -> [2,3]x[4,5]
         # multiply by [2,-1] -> [4,6]x[-5,-4]
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([4.0, -5.0]))
         assert torch.allclose(out.upper, torch.tensor([6.0, -4.0]))
@@ -197,7 +197,7 @@ class TestIBPEndToEndDispatch:
             ]
         )
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([0.0, -0.5, -1.0]))
         assert torch.allclose(out.upper, torch.tensor([1.5, 1.0, 2.0]))
@@ -227,7 +227,7 @@ class TestIBPEndToEndDispatch:
             ]
         )
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([4.0, 3.0]))
         assert torch.allclose(out.upper, torch.tensor([9.0, 8.0]))

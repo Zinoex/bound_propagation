@@ -64,10 +64,12 @@ def test_mean_along_last_dim() -> None:
     # After mean along dim=-1, shape should be (2,)
     # Mean preserves linear terms: each row of 3 identity columns is averaged
     assert result.linear_lower is not None
-    expected_linear = torch.tensor([
-        [1 / 3, 1 / 3, 1 / 3, 0.0, 0.0, 0.0],
-        [0.0, 0.0, 0.0, 1 / 3, 1 / 3, 1 / 3],
-    ])
+    expected_linear = torch.tensor(
+        [
+            [1 / 3, 1 / 3, 1 / 3, 0.0, 0.0, 0.0],
+            [0.0, 0.0, 0.0, 1 / 3, 1 / 3, 1 / 3],
+        ]
+    )
     assert torch.allclose(result.linear_lower, expected_linear)
     assert torch.allclose(result.linear_upper, expected_linear)
 

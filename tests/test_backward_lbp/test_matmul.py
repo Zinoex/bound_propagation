@@ -146,14 +146,14 @@ class TestBackwardLBPMatmulAlpha:
         gm = tracer.trace(fn)
         MetadataPass(gm).run(r.lower)
 
-        plain = BackwardLBPPropagator(gm, registry=registry).propagate([r])[0]
+        plain = BackwardLBPPropagator(gm, registry=registry).propagate([r])
         lo_plain, up_plain = plain.concretize()
 
         optimized = BackwardLBPPropagator(
             gm,
             registry=registry,
             alpha_config=AlphaOptimizationConfig(enabled=True, iterations=8, lr=0.1),
-        ).propagate([r])[0]
+        ).propagate([r])
         lo_opt, up_opt = optimized.concretize()
 
         # Monte-Carlo soundness on the optimized bounds

@@ -49,7 +49,7 @@ class TestLinearBoundsExact:
 
         region = HyperRectangle(lower=torch.tensor([1.0, 2.0, 3.0]), upper=torch.tensor([4.0, 5.0, 6.0]))
         outputs = _trace_and_propagate(identity_fn, (torch.randn(3),), [region])
-        out = outputs[0]
+        out = outputs
 
         assert isinstance(out, LinearBounds)
         assert torch.allclose(out.linear_lower, torch.eye(3))
@@ -67,7 +67,7 @@ class TestLinearBoundsExact:
 
         region = HyperRectangle(lower=torch.zeros(3), upper=torch.ones(3))
         outputs = _trace_and_propagate(affine_fn, (torch.randn(3),), [region])
-        out = outputs[0]
+        out = outputs
 
         # For y = x @ W + b, backward LBP gives:
         # linear_lower/upper = W (transposed in the A-matrix convention)
@@ -89,7 +89,7 @@ class TestLinearBoundsExact:
 
         region = HyperRectangle(lower=torch.zeros(3), upper=torch.ones(3))
         outputs = _trace_and_propagate(chain_fn, (torch.randn(3),), [region])
-        out = outputs[0]
+        out = outputs
 
         expected_intercept = W2 @ b1 + b2
 
@@ -104,7 +104,7 @@ class TestLinearBoundsExact:
 
         region = HyperRectangle(lower=torch.tensor([1.0, 2.0]), upper=torch.tensor([3.0, 4.0]))
         outputs = _trace_and_propagate(fanout_fn, (torch.randn(2),), [region])
-        out = outputs[0]
+        out = outputs
 
         assert torch.allclose(out.linear_lower, 2 * torch.eye(2), atol=1e-5)
         assert torch.allclose(out.linear_upper, 2 * torch.eye(2), atol=1e-5)
@@ -119,7 +119,7 @@ class TestLinearBoundsExact:
 
         region = HyperRectangle(lower=torch.tensor([1.0, 2.0, 3.0]), upper=torch.tensor([4.0, 5.0, 6.0]))
         outputs = _trace_and_propagate(neg_fn, (torch.randn(3),), [region])
-        out = outputs[0]
+        out = outputs
 
         assert torch.allclose(out.linear_lower, -torch.eye(3), atol=1e-5)
         assert torch.allclose(out.linear_upper, -torch.eye(3), atol=1e-5)
@@ -132,7 +132,7 @@ class TestLinearBoundsExact:
 
         region = HyperRectangle(lower=torch.zeros(2), upper=torch.ones(2))
         outputs = _trace_and_propagate(scale_fn, (torch.randn(2),), [region])
-        out = outputs[0]
+        out = outputs
 
         assert torch.allclose(out.linear_lower, 3 * torch.eye(2), atol=1e-5)
         assert torch.allclose(out.linear_upper, 3 * torch.eye(2), atol=1e-5)
@@ -149,7 +149,7 @@ class TestNonlinearRegimes:
 
         region = HyperRectangle(lower=torch.tensor([1.0, 2.0]), upper=torch.tensor([3.0, 5.0]))
         outputs = _trace_and_propagate(relu_fn, (torch.randn(2),), [region])
-        out = outputs[0]
+        out = outputs
         assert torch.allclose(out.linear_lower, torch.eye(2), atol=1e-5)
         assert torch.allclose(out.linear_upper, torch.eye(2), atol=1e-5)
 
@@ -161,7 +161,7 @@ class TestNonlinearRegimes:
 
         region = HyperRectangle(lower=torch.tensor([-3.0, -2.0]), upper=torch.tensor([-1.0, -0.5]))
         outputs = _trace_and_propagate(relu_fn, (torch.randn(2),), [region])
-        out = outputs[0]
+        out = outputs
         lower, upper = out.concretize()
         assert torch.allclose(lower, torch.zeros(2), atol=1e-5)
         assert torch.allclose(upper, torch.zeros(2), atol=1e-5)
@@ -174,7 +174,7 @@ class TestNonlinearRegimes:
 
         region = HyperRectangle(lower=torch.tensor([-2.0]), upper=torch.tensor([3.0]))
         outputs = _trace_and_propagate(relu_fn, (torch.randn(1),), [region])
-        out = outputs[0]
+        out = outputs
         lower, upper = out.concretize()
         _check_soundness(torch.relu, region, lower, upper)
 
@@ -192,7 +192,7 @@ class TestEdgeCases:
 
         region = HyperRectangle(lower=torch.tensor([-1.0, 0.0]), upper=torch.tensor([1.0, 2.0]))
         outputs = _trace_and_propagate(diamond_fn, (torch.randn(2),), [region])
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         _check_soundness(diamond_fn, region, lower, upper)
 
     def test_chain_breaking_amax(self):
@@ -203,7 +203,7 @@ class TestEdgeCases:
 
         region = HyperRectangle(lower=torch.tensor([-1.0, 0.5]), upper=torch.tensor([1.0, 2.0]))
         outputs = _trace_and_propagate(chain_break_fn, (torch.randn(2),), [region])
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         _check_soundness(chain_break_fn, region, lower, upper)
 
     def test_zero_width_region(self):
@@ -214,7 +214,7 @@ class TestEdgeCases:
 
         region = HyperRectangle(lower=torch.tensor([2.0, 3.0]), upper=torch.tensor([2.0, 3.0]))
         outputs = _trace_and_propagate(identity_fn, (torch.randn(2),), [region])
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([2.0, 3.0]))
         assert torch.allclose(upper, torch.tensor([2.0, 3.0]))
 
@@ -226,7 +226,7 @@ class TestEdgeCases:
 
         region = HyperRectangle(lower=torch.tensor([-1.0]), upper=torch.tensor([1.0]))
         outputs = _trace_and_propagate(scalar_fn, (torch.randn(1),), [region])
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         _check_soundness(torch.relu, region, lower, upper)
 
     def test_deep_chain_soundness(self):
@@ -242,5 +242,5 @@ class TestEdgeCases:
 
         region = HyperRectangle(lower=-torch.ones(3), upper=torch.ones(3))
         outputs = _trace_and_propagate(deep_fn, (torch.randn(3),), [region])
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         _check_soundness(deep_fn, region, lower, upper)

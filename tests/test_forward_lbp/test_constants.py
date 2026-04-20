@@ -19,8 +19,8 @@ def _trace_and_run(fn, example_input: torch.Tensor, region: HyperRectangle) -> L
     MetadataPass(gm).run(example_input)
     propagator = ForwardLBPPropagator(gm)
     outputs = propagator.propagate([region])
-    assert isinstance(outputs[0], LinearBounds)
-    return outputs[0]
+    assert isinstance(outputs, LinearBounds)
+    return outputs
 
 
 def test_zeros_literal_shape() -> None:

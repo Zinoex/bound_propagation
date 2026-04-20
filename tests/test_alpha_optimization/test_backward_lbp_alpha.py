@@ -22,7 +22,7 @@ def _propagate_with(config: AlphaOptimizationConfig | None, net, region_):
     registry = create_default_backward_lbp_registry()
     gm = trace_fn(net, region_.lower, registry)
     propagator = BackwardLBPPropagator(gm, registry=registry, alpha_config=config)
-    [bounds] = propagator.propagate([region_])
+    bounds = propagator.propagate([region_])
     return bounds
 
 

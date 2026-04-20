@@ -126,8 +126,8 @@ class TestForwardBackwardVsOtherMethods:
         gm = tracer.trace(fn)
         MetadataPass(gm).run(example)
 
-        fb_lb = ForwardBackwardLBPPropagator(gm).propagate([region])[0]
-        ibp_b = IBPPropagator(gm).propagate([region])[0]
+        fb_lb = ForwardBackwardLBPPropagator(gm).propagate([region])
+        ibp_b = IBPPropagator(gm).propagate([region])
 
         fb_lo, fb_hi = fb_lb.concretize()
         assert torch.allclose(fb_lo, ibp_b.lower, atol=1e-5)
@@ -155,8 +155,8 @@ class TestForwardBackwardVsOtherMethods:
         gm = tracer.trace(fn)
         MetadataPass(gm).run(example)
 
-        crown_lb = BackwardLBPPropagator(gm).propagate([region])[0]
-        fb_lb = ForwardBackwardLBPPropagator(gm).propagate([region])[0]
+        crown_lb = BackwardLBPPropagator(gm).propagate([region])
+        fb_lb = ForwardBackwardLBPPropagator(gm).propagate([region])
 
         c_lo, c_hi = crown_lb.concretize()
         fb_lo, fb_hi = fb_lb.concretize()
@@ -185,8 +185,8 @@ class TestForwardBackwardVsOtherMethods:
         gm = tracer.trace(fn)
         MetadataPass(gm).run(example)
 
-        fb_lb = ForwardBackwardLBPPropagator(gm).propagate([region])[0]
-        crown_ibp_lb = CROWNIBPPropagator(gm).propagate([region])[0]
+        fb_lb = ForwardBackwardLBPPropagator(gm).propagate([region])
+        crown_ibp_lb = CROWNIBPPropagator(gm).propagate([region])
 
         fb_lo, fb_hi = fb_lb.concretize()
         ci_lo, ci_hi = crown_ibp_lb.concretize()
@@ -206,8 +206,7 @@ class TestForwardBackwardReturnsLinearBounds:
         )
         gm = trace_and_annotate(fn, torch.randn(2))
         outputs = ForwardBackwardLBPPropagator(gm).propagate([region])
-        assert len(outputs) == 1
-        assert isinstance(outputs[0], LinearBounds)
+        assert isinstance(outputs, LinearBounds)
 
 
 class TestForwardBackwardComplexNonlinearities:
@@ -349,7 +348,7 @@ class TestForwardBackwardMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([0.0, 2.0, 4.0]))
         assert torch.allclose(upper, torch.tensor([4.0, 6.0, 8.0]))
 
@@ -372,7 +371,7 @@ class TestForwardBackwardMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([2.0, 6.0]))
         assert torch.allclose(upper, torch.tensor([6.0, 10.0]))
 
@@ -397,7 +396,7 @@ class TestForwardBackwardMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        linear_bounds = outputs[0]
+        linear_bounds = outputs
         lower, upper = linear_bounds.concretize()
         num_samples = 1000
         x_rand = x_region.lower + torch.rand(num_samples, *x_region.lower.shape) * (x_region.upper - x_region.lower)

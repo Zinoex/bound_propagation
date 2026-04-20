@@ -45,7 +45,7 @@ class TestIBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([0.0, 0.0, 0.0]))
         assert torch.allclose(out.upper, torch.tensor([3.0, 3.0, 3.0]))
@@ -64,7 +64,7 @@ class TestIBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([1.0, 0.0, 0.5]))
         assert torch.allclose(out.upper, torch.tensor([2.0, 0.0, 1.5]))
@@ -82,7 +82,7 @@ class TestIBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([-2.0, -2.0, -3.0]))
         assert torch.allclose(out.upper, torch.tensor([4.0, 1.0, 6.0]))
@@ -100,7 +100,7 @@ class TestIBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([1.0, 1.0]), atol=1e-5)
         assert torch.allclose(out.upper, torch.exp(torch.tensor([1.0, 1.0])), atol=1e-5)
@@ -118,7 +118,7 @@ class TestIBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         expected_lower = torch.sigmoid(torch.tensor([-1.0, -1.0]))
         expected_upper = torch.sigmoid(torch.tensor([1.0, 1.0]))
@@ -144,7 +144,7 @@ class TestIBPWorkflowNeuralNetworks:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([-2.0, -4.5]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([3.0, 3.5]), atol=1e-5)
@@ -164,7 +164,7 @@ class TestIBPWorkflowNeuralNetworks:
         input_region = HyperRectangle(lower=torch.zeros(4), upper=torch.ones(4))
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert out.lower.shape == (2,)
         assert torch.allclose(out.lower, torch.zeros(2), atol=1e-5)
@@ -187,7 +187,7 @@ class TestIBPWorkflowComplexOperations:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([1.0, 1.0]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([4.0, 4.0]), atol=1e-5)
@@ -212,7 +212,7 @@ class TestIBPWorkflowComplexOperations:
             ]
         )
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([4.0, 3.0, 2.0]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([9.0, 8.0, 7.0]), atol=1e-5)
@@ -236,7 +236,7 @@ class TestIBPWorkflowComplexOperations:
 
         expected_lower = torch.sigmoid(torch.tensor([2.0, 1.0]))
         expected_upper = torch.sigmoid(torch.tensor([4.0, 1.5]))
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, expected_lower, atol=1e-5)
         assert torch.allclose(out.upper, expected_upper, atol=1e-5)
@@ -259,7 +259,7 @@ class TestIBPWorkflowEdgeCases:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([5.0, 10.0]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([6.0, 11.0]), atol=1e-5)
@@ -275,7 +275,7 @@ class TestIBPWorkflowEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([6.0, 10.0]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([6.0, 10.0]), atol=1e-5)
@@ -293,7 +293,7 @@ class TestIBPWorkflowEdgeCases:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.zeros(3), atol=1e-5)
         assert torch.allclose(out.upper, torch.zeros(3), atol=1e-5)
@@ -315,7 +315,7 @@ class TestIBPWorkflowVerification:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
 
         test_points = [
@@ -342,7 +342,7 @@ class TestIBPWorkflowVerification:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
 
         corner_points = [
@@ -377,7 +377,7 @@ class TestIBPAllOperations:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         sin_1 = torch.sin(torch.tensor(1.0)).item()
         cos_1 = torch.cos(torch.tensor(1.0)).item()
@@ -402,7 +402,7 @@ class TestIBPAllOperations:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([0.0, 0.0, 0.5]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([2.0, 2.0, 3.0]), atol=1e-5)
@@ -421,7 +421,7 @@ class TestIBPAllOperations:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([0.5, 1.0 / 3.0]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([1.0, 0.5]), atol=1e-5)
@@ -439,7 +439,7 @@ class TestIBPAllOperations:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([-0.5, 0.0, 1.0]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([0.0, 1.0, 1.5]), atol=1e-5)
@@ -459,7 +459,7 @@ class TestIBPAllOperations:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert out.lower.shape == (2,)
         assert torch.allclose(out.lower, torch.tensor([0.0, 0.0]), atol=1e-5)
@@ -487,7 +487,7 @@ class TestIBPAllOperations:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, IntervalBounds)
         assert torch.allclose(out.lower, torch.tensor([1.25, -2.625]), atol=1e-5)
         assert torch.allclose(out.upper, torch.tensor([1.75, -2.125]), atol=1e-5)

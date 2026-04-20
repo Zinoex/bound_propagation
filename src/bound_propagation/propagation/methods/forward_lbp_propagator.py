@@ -72,7 +72,9 @@ class ForwardLBPPropagator(BoundPropagator):
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
-    ) -> Sequence[LinearBounds]:
+        batch_ndim: int = 0,
+    ) -> LinearBounds:
+        del batch_ndim  # Forward LBP is shape-transparent; accepted for API uniformity.
         placeholders = self._placeholder_nodes()
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
@@ -89,7 +91,7 @@ class ForwardLBPPropagator(BoundPropagator):
         self,
         input_regions: list[SimpleRegion],
         alpha_provider: AlphaProvider,
-    ) -> Sequence[LinearBounds]:
+    ) -> LinearBounds:
         placeholders = self._placeholder_nodes()
         ctx = self._new_context()
         ctx.alpha_provider = alpha_provider
@@ -109,13 +111,10 @@ class ForwardLBPPropagator(BoundPropagator):
                 self._propagate_operation(node, ctx)
             elif node.op == "output":
                 args, _ = ctx.resolve_args(node)
-                outputs: list[LinearBounds] = []
-                output_values = args[0] if isinstance(args[0], (tuple, list)) else args
-                for val in output_values:
-                    if not isinstance(val, LinearBounds):
-                        raise TypeError(f"Expected output to be LinearBounds, got {type(val)}")
-                    outputs.append(val)
-                return outputs
+                value = args[0]
+                if not isinstance(value, LinearBounds):
+                    raise TypeError(f"Expected output to be LinearBounds, got {type(value)}")
+                return value
 
             ctx.release(node)
 

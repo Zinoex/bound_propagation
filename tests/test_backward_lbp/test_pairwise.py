@@ -11,8 +11,7 @@ from __future__ import annotations
 
 import torch
 
-from .conftest import assert_exact, assert_sound, propagate_bound, region
-
+from .conftest import assert_exact, assert_sound, region
 
 # ---------------------------------------------------------------------------
 # Multiplication

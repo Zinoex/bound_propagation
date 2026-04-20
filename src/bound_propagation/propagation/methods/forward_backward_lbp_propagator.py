@@ -123,16 +123,17 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
-    ) -> Sequence[LinearBounds]:
+        batch_ndim: int = 0,
+    ) -> LinearBounds:
         placeholders = self._placeholder_nodes()
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
 
         regions_list = list(input_regions)
         if not self._alpha_config.enabled:
-            return self._propagate_once(regions_list, NullAlphaProvider())
+            return self._propagate_once(regions_list, NullAlphaProvider(), batch_ndim)
         return run_alpha_optimization(
-            propagate_once=lambda provider: self._propagate_once(regions_list, provider),
+            propagate_once=lambda provider: self._propagate_once(regions_list, provider, batch_ndim),
             config=self._alpha_config,
         )
 
@@ -140,7 +141,8 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
         self,
         input_regions: list[SimpleRegion],
         alpha_provider: AlphaProvider,
-    ) -> Sequence[LinearBounds]:
+        batch_ndim: int,
+    ) -> LinearBounds:
         placeholders = self._placeholder_nodes()
         ctx = PropagationContext[LinearBounds](self._graph_module)
         ctx.alpha_provider = alpha_provider
@@ -164,7 +166,7 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
                 self._propagate_operation(node, ctx, tape, provider)
                 continue
             if node.op == "output":
-                return self._handle_output(node, tape)
+                return self._handle_output(node, tape, batch_ndim)
 
         raise RuntimeError("Graph has no output node")
 
@@ -192,16 +194,11 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
         relaxation = bwd_strategy.build_relaxation(node, tape, provider)
         tape.record(node, relaxation)
 
-    def _handle_output(self, node: fx.Node, tape: BackwardTape) -> list[LinearBounds]:
-        args = node.args[0] if isinstance(node.args[0], (tuple, list)) else node.args
-
-        results: list[LinearBounds] = []
-        for output_arg in args:
-            if not isinstance(output_arg, fx.Node):
-                raise TypeError(f"Expected output to be an fx.Node, got {type(output_arg)}")
-            results.append(tape.backward_from(output_arg, batch_ndim=0))
-
-        return results
+    def _handle_output(self, node: fx.Node, tape: BackwardTape, batch_ndim: int) -> LinearBounds:
+        output_arg = node.args[0]
+        if not isinstance(output_arg, fx.Node):
+            raise TypeError(f"Expected output to be an fx.Node, got {type(output_arg)}")
+        return tape.backward_from(output_arg, batch_ndim=batch_ndim)
 
     @staticmethod
     def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[LinearBounds]) -> torch.Tensor:

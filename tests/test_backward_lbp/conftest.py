@@ -36,7 +36,7 @@ def propagate_bound(fn, region, example_input=None):
     MetadataPass(gm).run(example_input)
     propagator = BackwardLBPPropagator(gm)
     outputs = propagator.propagate([region])
-    return outputs[0]
+    return outputs
 
 
 def check_soundness(fn, region, lower, upper, num_samples=2000, atol=1e-5):
@@ -66,13 +66,11 @@ def check_soundness(fn, region, lower, upper, num_samples=2000, atol=1e-5):
         output = fn(sample)
         if not torch.all(lower <= output + atol):
             raise AssertionError(
-                f"Lower bound violation: lower={lower}, output={output}, "
-                f"diff={output - lower}, input={sample}"
+                f"Lower bound violation: lower={lower}, output={output}, diff={output - lower}, input={sample}"
             )
         if not torch.all(output <= upper + atol):
             raise AssertionError(
-                f"Upper bound violation: upper={upper}, output={output}, "
-                f"diff={output - upper}, input={sample}"
+                f"Upper bound violation: upper={upper}, output={output}, diff={output - upper}, input={sample}"
             )
 
 
@@ -91,12 +89,8 @@ def assert_exact(fn, region, expected_lower, expected_upper, atol=1e-5):
     """Assert concretized bounds match expected values exactly."""
     bounds = propagate_bound(fn, region)
     lower, upper = bounds.concretize()
-    assert torch.allclose(lower, expected_lower, atol=atol), (
-        f"Lower mismatch: got {lower}, expected {expected_lower}"
-    )
-    assert torch.allclose(upper, expected_upper, atol=atol), (
-        f"Upper mismatch: got {upper}, expected {expected_upper}"
-    )
+    assert torch.allclose(lower, expected_lower, atol=atol), f"Lower mismatch: got {lower}, expected {expected_lower}"
+    assert torch.allclose(upper, expected_upper, atol=atol), f"Upper mismatch: got {upper}, expected {expected_upper}"
     return bounds
 
 

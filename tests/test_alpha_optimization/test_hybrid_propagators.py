@@ -27,7 +27,7 @@ def _crown_ibp_propagate(config: AlphaOptimizationConfig | None, net, region_):
     bwd_registry = create_default_backward_lbp_registry()
     gm = trace_fn(net, region_.lower, bwd_registry)
     prop = CROWNIBPPropagator(gm, ibp_registry=ibp_registry, backward_registry=bwd_registry, alpha_config=config)
-    [b] = prop.propagate([region_])
+    b = prop.propagate([region_])
     return b
 
 
@@ -38,7 +38,7 @@ def _forward_backward_propagate(config: AlphaOptimizationConfig | None, net, reg
     prop = ForwardBackwardLBPPropagator(
         gm, forward_registry=fwd_registry, backward_registry=bwd_registry, alpha_config=config
     )
-    [b] = prop.propagate([region_])
+    b = prop.propagate([region_])
     return b
 
 
@@ -46,7 +46,7 @@ def _forward_propagate(config: AlphaOptimizationConfig | None, net, region_):
     fwd_registry = create_default_forward_lbp_registry()
     gm = trace_fn(net, region_.lower, fwd_registry)
     prop = ForwardLBPPropagator(gm, registry=fwd_registry, alpha_config=config)
-    [b] = prop.propagate([region_])
+    b = prop.propagate([region_])
     return b
 
 

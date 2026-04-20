@@ -8,7 +8,7 @@ import torch.nn as nn
 
 from bound_propagation.propagation.ibp import create_default_ibp_registry
 from bound_propagation.tracer import BoundPropagationTracer
-from bound_propagation.tracer.fx_tracer import TraceError, UnsupportedOperationError
+from bound_propagation.tracer.fx_tracer import MultiOutputError, TraceError, UnsupportedOperationError
 
 
 def _default_registry():
@@ -189,3 +189,27 @@ class TestEndToEnd:
         original_out = complex_fn(x, y)
         traced_out = gm(x, y)
         assert torch.allclose(original_out, traced_out)
+
+
+class TestTraceMultiOutputRejection:
+    """Bound propagation supports single-output functions only."""
+
+    def test_tuple_return_raises(self):
+        def fn(x):
+            return torch.relu(x), torch.tanh(x)
+
+        with pytest.raises(MultiOutputError, match="returns 2 values"):
+            _trace(fn)
+
+    def test_list_return_raises(self):
+        def fn(x):
+            return [torch.relu(x), x + 1.0]
+
+        with pytest.raises(MultiOutputError):
+            _trace(fn)
+
+    def test_single_output_still_traces(self):
+        def fn(x):
+            return torch.relu(x)
+
+        _trace(fn)  # no raise

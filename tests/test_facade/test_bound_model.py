@@ -75,8 +75,8 @@ def small_region():
 def test_basic_end_to_end(method, small_model, small_region):
     example = torch.zeros(3)
     bm = BoundModel(small_model, dummy_inputs=(example,), method=method)
-    (bounds,) = bm.propagate(small_region)
-    lower, upper = _concretize(bounds)
+    bounds = bm.propagate(small_region)
+    lower, upper = bounds.concretize()
     assert lower.shape == (2,)
     assert upper.shape == (2,)
     assert torch.all(lower <= upper + 1e-6)
@@ -94,8 +94,8 @@ def test_multi_input_function():
     )
     region_x = HyperRectangle(lower=torch.tensor([-1.0, 0.0]), upper=torch.tensor([1.0, 2.0]))
     region_y = HyperRectangle(lower=torch.tensor([0.0, -1.0]), upper=torch.tensor([1.0, 1.0]))
-    (bounds,) = bm.propagate(region_x, region_y)
-    lower, upper = _concretize(bounds)
+    bounds = bm.propagate(region_x, region_y)
+    lower, upper = bounds.concretize()
     assert torch.allclose(lower, torch.tensor([-1.0, -2.0]))
     assert torch.allclose(upper, torch.tensor([3.0, 4.0]))
 
@@ -109,8 +109,8 @@ def test_composition_of_elementary_functions(method):
 
     region = HyperRectangle(lower=torch.tensor([-0.5, -0.3]), upper=torch.tensor([0.3, 0.4]))
     bm = BoundModel(fn, dummy_inputs=(torch.zeros(2),), method=method)
-    (bounds,) = bm.propagate(region)
-    lower, upper = _concretize(bounds)
+    bounds = bm.propagate(region)
+    lower, upper = bounds.concretize()
     assert torch.all(lower <= upper + 1e-5)
     _sample_bounds_are_sound(fn, region, lower, upper)
 
@@ -125,8 +125,8 @@ def test_dag_branch_rejoin(method):
 
     region = HyperRectangle(lower=torch.tensor([-1.0, -0.5, 0.2]), upper=torch.tensor([0.5, 1.0, 1.5]))
     bm = BoundModel(fn, dummy_inputs=(torch.zeros(3),), method=method)
-    (bounds,) = bm.propagate(region)
-    lower, upper = _concretize(bounds)
+    bounds = bm.propagate(region)
+    lower, upper = bounds.concretize()
     assert torch.all(lower <= upper + 1e-5)
     _sample_bounds_are_sound(fn, region, lower, upper)
 
@@ -142,27 +142,25 @@ def test_dag_two_branches_parallel(method):
 
     region = HyperRectangle(lower=torch.tensor([-1.5, -0.5]), upper=torch.tensor([0.5, 1.5]))
     bm = BoundModel(fn, dummy_inputs=(torch.zeros(2),), method=method)
-    (bounds,) = bm.propagate(region)
-    lower, upper = _concretize(bounds)
+    bounds = bm.propagate(region)
+    lower, upper = bounds.concretize()
+
     assert torch.all(lower <= upper + 1e-5)
     _sample_bounds_are_sound(fn, region, lower, upper)
 
 
 @pytest.mark.parametrize("method", ALL_METHODS)
 def test_batch_1d(method, small_model):
-    """Input region carries a leading batch dimension.
-
-    Only IBP and forward-LBP support batched inputs; the backward tape hard-codes
-    ``batch_ndim=0``, so ``backward_lbp`` / ``crown_ibp`` are excluded here.
-    """
+    """Input region carries one leading batch dim; ``dummy_inputs`` is feature-only."""
     batch = 4
     region = HyperRectangle(
         lower=torch.full((batch, 3), -0.5),
         upper=torch.full((batch, 3), 0.5),
     )
-    bm = BoundModel(small_model, dummy_inputs=(torch.zeros(batch, 3),), method=method)
-    (bounds,) = bm.propagate(region)
-    lower, upper = _concretize(bounds)
+    bm = BoundModel(small_model, dummy_inputs=(torch.zeros(3),), method=method)
+    bounds = bm.propagate(region)
+    lower, upper = bounds.concretize()
+
     assert lower.shape == (batch, 2)
     assert upper.shape == (batch, 2)
     assert torch.all(lower <= upper + 1e-5)
@@ -176,9 +174,10 @@ def test_batch_2d(method, small_model):
         lower=torch.full((2, 3, 3), -0.4),
         upper=torch.full((2, 3, 3), 0.4),
     )
-    bm = BoundModel(small_model, dummy_inputs=(torch.zeros(2, 3, 3),), method=method)
-    (bounds,) = bm.propagate(region)
-    lower, upper = _concretize(bounds)
+    bm = BoundModel(small_model, dummy_inputs=(torch.zeros(3),), method=method)
+    bounds = bm.propagate(region)
+    lower, upper = bounds.concretize()
+
     assert lower.shape == (2, 3, 2)
     assert upper.shape == (2, 3, 2)
     assert torch.all(lower <= upper + 1e-5)
@@ -191,7 +190,8 @@ def test_input_and_weight_hyperrectangles(method):
 
     Weight layout follows nn.Linear batched convention: ``W`` has shape
     ``(batch, output, input)`` and ``x`` has shape ``(batch, input)``. The
-    output has shape ``(batch, output)``.
+    output has shape ``(batch, output)``. ``dummy_inputs`` gives only the
+    feature dims; batch is inferred from the regions.
     """
     batch, in_dim, out_dim = 2, 3, 4
 
@@ -208,15 +208,46 @@ def test_input_and_weight_hyperrectangles(method):
     )
     bm = BoundModel(
         fn,
-        dummy_inputs=(torch.zeros(batch, in_dim), torch.zeros(batch, out_dim, in_dim)),
+        dummy_inputs=(torch.zeros(in_dim), torch.zeros(out_dim, in_dim)),
         method=method,
     )
-    (bounds,) = bm.propagate(x_region, w_region)
-    lower, upper = _concretize(bounds)
+    bounds = bm.propagate(x_region, w_region)
+    lower, upper = bounds.concretize()
+
     assert lower.shape == (batch, out_dim)
     assert upper.shape == (batch, out_dim)
     assert torch.all(lower <= upper + 1e-5)
     _sample_multi_input_sound(fn, (x_region, w_region), lower, upper)
+
+
+# ----------------------------------------------------------------------------
+# ndim and shape mismatch error paths
+# ---------------------------------------------------------------------------
+
+
+def test_batch_ndim_mismatch_across_regions_raises():
+    """Two inputs with different inferred batch_ndim must raise."""
+
+    def fn(x, y):
+        return x + y
+
+    bm = BoundModel(fn, dummy_inputs=(torch.zeros(3), torch.zeros(3)), method="ibp")
+    rx = HyperRectangle(lower=torch.full((2, 3), -0.1), upper=torch.full((2, 3), 0.1))
+    ry = HyperRectangle(lower=torch.full((3,), -0.1), upper=torch.full((3,), 0.1))
+    with pytest.raises(ValueError, match="same batch-dim count"):
+        bm.propagate(rx, ry)
+
+
+def test_region_feature_shape_mismatch_raises():
+    """Region whose trailing dims don't match the placeholder feature shape must raise."""
+
+    def fn(x):
+        return x + 1
+
+    bm = BoundModel(fn, dummy_inputs=(torch.zeros(3),), method="ibp")
+    bad = HyperRectangle(lower=torch.full((4,), -0.1), upper=torch.full((4,), 0.1))
+    with pytest.raises(ValueError, match="does not end with the expected feature shape"):
+        bm.propagate(bad)
 
 
 # ---------------------------------------------------------------------------
@@ -367,8 +398,9 @@ def test_alpha_config_accepted(method, small_model, small_region):
         method=method,
         alpha=alpha,
     )
-    (bounds,) = bm.propagate(small_region)
-    lower, upper = _concretize(bounds)
+    bounds = bm.propagate(small_region)
+    lower, upper = bounds.concretize()
+
     assert torch.all(lower <= upper + 1e-5)
 
 

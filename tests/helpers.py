@@ -7,7 +7,6 @@ from typing import Any
 import torch
 import torch.fx as fx
 
-from bound_propagation.bounds import AbstractBounds
 from bound_propagation.propagation.context import PropagationContext
 from bound_propagation.propagation.strategy import ForwardBoundingStrategy
 

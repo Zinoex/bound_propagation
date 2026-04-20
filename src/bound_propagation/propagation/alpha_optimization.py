@@ -30,9 +30,9 @@ Key types
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Literal, Protocol, TypeVar
+from typing import Literal, Protocol
 
 import torch
 import torch.fx as fx
@@ -340,30 +340,23 @@ class AutoRegisteringAlphaProvider:
 
 
 def _alpha_loss(
-    bounds_list: Sequence[LinearBounds],
+    bounds: LinearBounds,
     kind: Literal["width", "lower", "upper"],
 ) -> torch.Tensor:
-    """Reduce a list of :class:`LinearBounds` to a scalar loss.
+    """Reduce a :class:`LinearBounds` to a scalar loss.
 
-    - ``"width"``: minimize ``sum(upper) - sum(lower)`` across every output.
+    - ``"width"``: minimize ``sum(upper) - sum(lower)``.
     - ``"lower"``: maximize ``sum(lower)`` (returned as its negation).
     - ``"upper"``: minimize ``sum(upper)``.
     """
-    if not bounds_list:
-        raise ValueError("Cannot compute alpha loss: propagator returned no output bounds.")
-
-    total = torch.zeros((), dtype=bounds_list[0].bias_lower.dtype, device=bounds_list[0].bias_lower.device)
-    for lb in bounds_list:
-        concrete = lb.concretize()
-        if kind == "width":
-            total = total + (concrete.upper - concrete.lower).sum()
-        elif kind == "lower":
-            total = total - concrete.lower.sum()
-        elif kind == "upper":
-            total = total + concrete.upper.sum()
-        else:
-            raise ValueError(f"Unknown alpha loss kind: {kind!r}")
-    return total
+    concrete = bounds.concretize()
+    if kind == "width":
+        return (concrete.upper - concrete.lower).sum()
+    if kind == "lower":
+        return -concrete.lower.sum()
+    if kind == "upper":
+        return concrete.upper.sum()
+    raise ValueError(f"Unknown alpha loss kind: {kind!r}")
 
 
 def _build_optimizer(store: AlphaStore, config: AlphaOptimizationConfig) -> torch.optim.Optimizer:
@@ -382,13 +375,10 @@ def _build_optimizer(store: AlphaStore, config: AlphaOptimizationConfig) -> torc
     raise ValueError(f"Unknown optimizer_name: {config.optimizer_name!r}")
 
 
-T = TypeVar("T", bound=Sequence[LinearBounds])
-
-
 def run_alpha_optimization(
-    propagate_once: Callable[[AlphaProvider], T],
+    propagate_once: Callable[[AlphaProvider], LinearBounds],
     config: AlphaOptimizationConfig,
-) -> T:
+) -> LinearBounds:
     """Run projected-gradient-descent on alpha parameters.
 
     Orchestrates the standard alpha-CROWN outer loop:
@@ -436,6 +426,10 @@ def run_alpha_optimization(
         loss.backward()
         optimizer.step()
         store.project()
+
+    # TODO: Consider snapping every parameter to nearest point of {0, 1, slope-0}
+    # after optimization. I conjecture that the optimal solution always lies at one
+    # of these extreme/key points. This will require testing to confirm.
 
     with torch.no_grad():
         return propagate_once(provider.freeze())

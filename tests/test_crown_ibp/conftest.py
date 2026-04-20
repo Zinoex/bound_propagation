@@ -25,7 +25,7 @@ def propagate_crown_ibp(fn, region, example_input=None):
         example_input = torch.randn_like(region.lower)
     gm = trace_and_annotate(fn, example_input)
     propagator = CROWNIBPPropagator(gm)
-    return propagator.propagate([region])[0]
+    return propagator.propagate([region])
 
 
 def evaluate_linear_bounds_at(linear_bounds, x):
@@ -58,10 +58,6 @@ def check_soundness(fn, region, linear_bounds, num_samples=1000, atol=1e-4):
         output = fn(sample)
         lower, upper = evaluate_linear_bounds_at(linear_bounds, sample)
         if not torch.all(lower <= output + atol):
-            raise AssertionError(
-                f"Lower bound violation at x={sample}: lower={lower}, output={output}"
-            )
+            raise AssertionError(f"Lower bound violation at x={sample}: lower={lower}, output={output}")
         if not torch.all(output <= upper + atol):
-            raise AssertionError(
-                f"Upper bound violation at x={sample}: upper={upper}, output={output}"
-            )
+            raise AssertionError(f"Upper bound violation at x={sample}: upper={upper}, output={output}")

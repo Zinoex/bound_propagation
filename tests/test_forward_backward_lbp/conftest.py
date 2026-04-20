@@ -25,7 +25,7 @@ def propagate_forward_backward(fn, region, example_input=None):
         example_input = torch.randn_like(region.lower)
     gm = trace_and_annotate(fn, example_input)
     propagator = ForwardBackwardLBPPropagator(gm)
-    return propagator.propagate([region])[0]
+    return propagator.propagate([region])
 
 
 def evaluate_linear_bounds_at(linear_bounds, x):

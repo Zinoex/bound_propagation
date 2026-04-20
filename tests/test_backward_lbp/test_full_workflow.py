@@ -116,7 +116,7 @@ class TestBackwardLBPIdentity:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.allclose(lower, torch.tensor([1.0, 2.0, 3.0]))
@@ -135,7 +135,7 @@ class TestBackwardLBPIdentity:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([10.0, 20.0]))
         assert torch.allclose(upper, torch.tensor([11.0, 21.0]))
 
@@ -152,7 +152,7 @@ class TestBackwardLBPIdentity:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([-4.0, -5.0, -6.0]))
         assert torch.allclose(upper, torch.tensor([-1.0, -2.0, -3.0]))
 
@@ -169,7 +169,7 @@ class TestBackwardLBPIdentity:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([2.0, -2.0, 0.0]))
         assert torch.allclose(upper, torch.tensor([6.0, 2.0, 4.0]))
 
@@ -191,7 +191,7 @@ class TestBackwardLBPMatmul:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         # lower: all inputs at 0 -> [0, 0]
         # upper: all inputs at 1 -> [9, 12]
         assert torch.allclose(lower, torch.tensor([0.0, 0.0]))
@@ -212,7 +212,7 @@ class TestBackwardLBPMatmul:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([1.0, -1.0]))
         assert torch.allclose(upper, torch.tensor([10.0, 11.0]))
 
@@ -233,7 +233,7 @@ class TestBackwardLBPRelu:
         )
         outputs = propagator.propagate([input_region])
 
-        linear_bounds = outputs[0]
+        linear_bounds = outputs
         lower, upper = linear_bounds.concretize()
         # Sound: lower should be <= 0 (min of relu on [-2,3]) = 0
         # Upper should be >= 3 (max of relu on [-2,3]) = 3
@@ -254,7 +254,7 @@ class TestBackwardLBPRelu:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         # In positive regime: relu is identity, bounds should be exact
         assert torch.allclose(lower, torch.tensor([1.0, 2.0]))
         assert torch.allclose(upper, torch.tensor([3.0, 5.0]))
@@ -272,7 +272,7 @@ class TestBackwardLBPRelu:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         # Negative regime: relu output is always 0
         assert torch.allclose(lower, torch.tensor([0.0, 0.0]))
         assert torch.allclose(upper, torch.tensor([0.0, 0.0]))
@@ -299,7 +299,7 @@ class TestBackwardLBPTwoLayer:
         )
         outputs = propagator.propagate([input_region])
 
-        linear_bounds = outputs[0]
+        linear_bounds = outputs
         lower, upper = linear_bounds.concretize()
         # Sound: all inputs >= 0, all weights >= 0, so:
         # min at (0,0): h = [0,0,0], output = 0
@@ -327,14 +327,14 @@ class TestBackwardLBPTwoLayer:
         fwd_gm = _trace_and_annotate(network, (torch.randn(3),), registry=fwd_registry)
         fwd_propagator = ForwardLBPPropagator(fwd_gm)
         fwd_outputs = fwd_propagator.propagate([input_region])
-        fwd_bounds = fwd_outputs[0]
+        fwd_bounds = fwd_outputs
         fwd_lower, fwd_upper = fwd_bounds.concretize()
 
         # Backward LBP
         bwd_gm = _trace_and_annotate(network, (torch.randn(3),))
         bwd_propagator = BackwardLBPPropagator(bwd_gm)
         bwd_outputs = bwd_propagator.propagate([input_region])
-        bwd_bounds = bwd_outputs[0]
+        bwd_bounds = bwd_outputs
         bwd_lower, bwd_upper = bwd_bounds.concretize()
 
         # Both should be sound (checked via per-point linear bound evaluation)
@@ -366,7 +366,7 @@ class TestBackwardLBPSigmoid:
         )
         outputs = propagator.propagate([input_region])
 
-        linear_bounds = outputs[0]
+        linear_bounds = outputs
         lower, upper = linear_bounds.concretize()
         _check_soundness(sigmoid_fn, input_region, linear_bounds)
         # Linear relaxation bounds may exceed sigmoid's [0,1] range
@@ -392,7 +392,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 3.0, 1.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_pairwise_maximum_with_constant(self) -> None:
         """y = max(x, 0): effectively ReLU via maximum."""
@@ -410,7 +410,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([3.0, 2.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_pairwise_minimum_both_abstract(self) -> None:
         """y = min(x[:2], x[2:])."""
@@ -426,7 +426,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 3.0, 1.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_amax_reduction_sound(self) -> None:
         """y = amax(relu(x @ W), dim=0): reduction over a nonlinear layer."""
@@ -444,7 +444,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_amin_reduction_sound(self) -> None:
         """y = amin(sigmoid(x))."""
@@ -460,7 +460,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([1.0, 2.0, 3.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_pairwise_mul_both_abstract(self) -> None:
         """y = x[:2] * x[2:]: both arguments abstract (nonlinear)."""
@@ -476,7 +476,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 3.0, 1.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_reciprocal_near_asymptote(self) -> None:
         """y = 1/x on [0.1, 2]: steep gradient near the x=0 asymptote."""
@@ -494,7 +494,7 @@ class TestBackwardLBPComplexNonlinearities:
         )
         outputs = propagator.propagate([input_region])
 
-        linear_bounds = outputs[0]
+        linear_bounds = outputs
         lower, upper = linear_bounds.concretize()
         _check_soundness(fn, input_region, linear_bounds)
         # Sanity: true range of 1/x on [0.1, 2] is [0.5, 10], so bounds must contain it.
@@ -515,7 +515,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([1.0, 2.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_div_constant_over_abstract_near_asymptote(self) -> None:
         """y = 1 / (x + 0.1): constant/abstract division, region approaches asymptote."""
@@ -534,7 +534,7 @@ class TestBackwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 2.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
 
 class TestBackwardLBPMultiInput:
@@ -559,7 +559,7 @@ class TestBackwardLBPMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([0.0, 2.0, 4.0]))
         assert torch.allclose(upper, torch.tensor([4.0, 6.0, 8.0]))
 
@@ -582,7 +582,7 @@ class TestBackwardLBPMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([2.0, 6.0]))  # 5-3, 10-4
         assert torch.allclose(upper, torch.tensor([6.0, 10.0]))  # 7-1, 12-2
 
@@ -606,7 +606,7 @@ class TestBackwardLBPMultiInput:
         outputs = propagator.propagate([x_region, y_region])
 
         # Sample both input regions jointly to check soundness.
-        linear_bounds = outputs[0]
+        linear_bounds = outputs
         lower, upper = linear_bounds.concretize()
         num_samples = 1000
         x_rand = x_region.lower + torch.rand(num_samples, *x_region.lower.shape) * (x_region.upper - x_region.lower)
@@ -635,7 +635,7 @@ class TestBackwardLBPDAG:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([5.0, -5.0, 0.0]))
         assert torch.allclose(upper, torch.tensor([10.0, 5.0, 15.0]))
 
@@ -654,7 +654,7 @@ class TestBackwardLBPDAG:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.zeros(3), atol=1e-5)
         assert torch.allclose(upper, torch.zeros(3), atol=1e-5)
 
@@ -672,7 +672,7 @@ class TestBackwardLBPDAG:
             upper=torch.tensor([2.0, 3.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_diamond_two_linear_layers_shared_input(self) -> None:
         """y = (x @ W1) + (x @ W2): two affine paths from same input."""
@@ -692,8 +692,8 @@ class TestBackwardLBPDAG:
         outputs = propagator.propagate([input_region])
 
         # Linear combination, should be exact.
-        assert torch.allclose(outputs[0].linear_lowers[0], outputs[0].linear_uppers[0], atol=1e-5)
-        _check_soundness(fn, input_region, outputs[0])
+        assert torch.allclose(outputs.linear_lowers[0], outputs.linear_uppers[0], atol=1e-5)
+        _check_soundness(fn, input_region, outputs)
 
     def test_diamond_relu_sigmoid_sum(self) -> None:
         """y = relu(x) + sigmoid(x): two nonlinear paths from same input."""
@@ -709,7 +709,7 @@ class TestBackwardLBPDAG:
             upper=torch.tensor([2.0, 3.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
 
 class TestBackwardLBPDeepNonlinearDAG:
@@ -744,7 +744,7 @@ class TestBackwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_three_branches_nonlinear_each(self) -> None:
         """Three nonlinear branches from a shared nonlinear pre-feature.
@@ -779,7 +779,7 @@ class TestBackwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_residual_skip_with_nonlinearities(self) -> None:
         """Residual-style DAG: deep nonlinear main path plus nonlinear skip.
@@ -808,7 +808,7 @@ class TestBackwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_nested_diamond_nonlinear(self) -> None:
         """Diamond inside a diamond, all edges nonlinear.
@@ -837,7 +837,7 @@ class TestBackwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 2.0, 3.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_parallel_nonlinear_towers_then_deep_merge(self) -> None:
         """Two independent deep nonlinear towers on a shared pre-feature, then deep merge.
@@ -870,7 +870,7 @@ class TestBackwardLBPDeepNonlinearDAG:
             upper=torch.tensor([0.75, 0.75]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
 
 class TestBackwardLBPEdgeCases:
@@ -889,7 +889,7 @@ class TestBackwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, point)
         assert torch.allclose(upper, point)
 
@@ -907,7 +907,7 @@ class TestBackwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         expected = torch.relu(point)
         assert torch.allclose(lower, expected, atol=1e-5)
         assert torch.allclose(upper, expected, atol=1e-5)
@@ -928,7 +928,7 @@ class TestBackwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         expected = fn(point)
         assert torch.allclose(lower, expected, atol=1e-5)
         assert torch.allclose(upper, expected, atol=1e-5)
@@ -946,6 +946,6 @@ class TestBackwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.zeros(3), atol=1e-5)
         assert torch.allclose(upper, torch.zeros(3), atol=1e-5)

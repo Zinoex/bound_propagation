@@ -48,7 +48,9 @@ class IBPPropagator(BoundPropagator):
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
-    ) -> Sequence[IntervalBounds]:
+        batch_ndim: int = 0,
+    ) -> IntervalBounds:
+        del batch_ndim  # IBP is shape-transparent; accepted for API uniformity.
         placeholders = self._placeholder_nodes()
         if len(input_regions) != len(placeholders):
             raise ValueError(f"Expected {len(placeholders)} input regions, got {len(input_regions)}")
@@ -69,16 +71,11 @@ class IBPPropagator(BoundPropagator):
             elif node.op in ("call_function", "call_method", "call_module"):
                 self._propagate_operation(node, ctx)
             elif node.op == "output":
-                # Collect outputs
                 args, _ = ctx.resolve_args(node)
-                outputs: list[IntervalBounds] = []
-                # output node's args[0] is a tuple of return values
-                output_values = args[0] if isinstance(args[0], (tuple, list)) else args
-                for val in output_values:
-                    if not isinstance(val, IntervalBounds):
-                        raise TypeError(f"Expected output to be IntervalBounds, got {type(val)}")
-                    outputs.append(val)
-                return outputs
+                value = args[0]
+                if not isinstance(value, IntervalBounds):
+                    raise TypeError(f"Expected output to be IntervalBounds, got {type(value)}")
+                return value
 
             ctx.release(node)
 

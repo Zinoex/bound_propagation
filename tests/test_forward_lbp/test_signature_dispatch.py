@@ -139,7 +139,7 @@ class TestForwardLBPEndToEndDispatch:
         )
         outputs = propagator.propagate([input_region])
 
-        result = outputs[0]
+        result = outputs
         assert isinstance(result, LinearBounds)
         lower, upper = result.concretize()
         assert torch.allclose(lower, torch.tensor([3.0, 3.0]))
@@ -163,7 +163,7 @@ class TestForwardLBPEndToEndDispatch:
         )
         outputs = propagator.propagate([input_region])
 
-        result = outputs[0]
+        result = outputs
         assert isinstance(result, LinearBounds)
         lower, upper = result.concretize()
         assert torch.allclose(lower, torch.tensor([9.0, 9.0]))
@@ -189,7 +189,7 @@ class TestForwardLBPEndToEndDispatch:
         )
         outputs = propagator.propagate([input_region])
 
-        result = outputs[0]
+        result = outputs
         assert isinstance(result, LinearBounds)
         lower, upper = result.concretize()
         # x @ W: [0,1]^3 @ [[1,2],[3,4],[5,6]] -> col0: [0,9], col1: [0,12]

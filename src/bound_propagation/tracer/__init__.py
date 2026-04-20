@@ -7,6 +7,7 @@ validates that all operations are supported by a :class:`TargetRegistry`.
 from .fx_tracer import (
     BoundPropagationTracer,
     ControlFlowError,
+    MultiOutputError,
     TraceError,
     UnsupportedOperationError,
 )
@@ -14,6 +15,7 @@ from .fx_tracer import (
 __all__ = [
     "BoundPropagationTracer",
     "ControlFlowError",
+    "MultiOutputError",
     "TraceError",
     "UnsupportedOperationError",
 ]

@@ -42,15 +42,21 @@ class BoundPropagator(ABC):
     def propagate(
         self,
         input_regions: Sequence[SimpleRegion],
-    ) -> Sequence[AbstractBounds]:
+        batch_ndim: int = 0,
+    ) -> AbstractBounds:
         """Propagate bounds through the computation graph.
 
         Args:
             input_regions: Input regions defining bounds on each
                 placeholder input.
+            batch_ndim: Number of leading batch dimensions shared across
+                inputs and outputs. ``0`` (the default) treats the entire
+                tensor as semantic. Backward-mode propagators use this to
+                build per-batch-element linear bounds; forward-mode
+                propagators are shape-transparent and ignore it.
 
         Returns:
-            Computed bounds for each output.
+            The computed bounds for the model's single output.
         """
 
     @property

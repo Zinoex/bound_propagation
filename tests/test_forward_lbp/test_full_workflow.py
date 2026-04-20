@@ -78,7 +78,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         # Forward LBP ReLU uses the non-adaptive crossing relaxation where
@@ -100,7 +100,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.allclose(lower, torch.tensor([1.0, -1.0, 0.5]))
@@ -120,7 +120,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.allclose(lower, torch.tensor([1.0, 0.0, 0.5]))
@@ -139,7 +139,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.allclose(lower, torch.tensor([2.0, -3.0, 0.5]))
@@ -160,7 +160,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.allclose(lower, torch.tensor([[1.0, -1.0]]))
@@ -182,7 +182,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.allclose(lower, torch.tensor([[0.0]]))
@@ -201,7 +201,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.all(lower <= 1.01)
@@ -220,7 +220,7 @@ class TestForwardLBPWorkflowSimpleFunctions:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
 
@@ -257,7 +257,7 @@ class TestForwardLBPWorkflowModules:
         )
         outputs = propagator.propagate([input_region])
 
-        out = outputs[0]
+        out = outputs
         assert isinstance(out, LinearBounds)
         lower, upper = out.concretize()
         assert torch.all(lower >= -0.01)
@@ -281,7 +281,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 3.0, 1.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_pairwise_maximum_with_constant(self) -> None:
         """y = max(x, 0): effectively ReLU via maximum."""
@@ -299,7 +299,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([3.0, 2.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_pairwise_minimum_both_abstract(self) -> None:
         """y = min(x[:2], x[2:])."""
@@ -315,7 +315,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 3.0, 1.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_amax_reduction_sound(self) -> None:
         """y = amax(relu(x @ W)): reduction over a nonlinear layer."""
@@ -333,7 +333,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_amin_reduction_sound(self) -> None:
         """y = amin(sigmoid(x))."""
@@ -349,7 +349,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([1.0, 2.0, 3.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_pairwise_mul_both_abstract(self) -> None:
         """y = x[:2] * x[2:]: both arguments abstract (nonlinear)."""
@@ -365,7 +365,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 3.0, 1.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_reciprocal_near_asymptote(self) -> None:
         """y = 1/x on [0.1, 2]: steep gradient near the x=0 asymptote."""
@@ -381,7 +381,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 3.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_log_near_asymptote(self) -> None:
         """y = log(x) with the region's lower edge near the x=0 asymptote."""
@@ -397,7 +397,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([1.0, 2.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_div_constant_over_abstract_near_asymptote(self) -> None:
         """y = 1 / (x + 0.1): constant/abstract division, region approaches asymptote."""
@@ -415,7 +415,7 @@ class TestForwardLBPComplexNonlinearities:
             upper=torch.tensor([2.0, 2.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
 
 class TestForwardLBPMultiInput:
@@ -440,7 +440,7 @@ class TestForwardLBPMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([0.0, 2.0, 4.0]))
         assert torch.allclose(upper, torch.tensor([4.0, 6.0, 8.0]))
 
@@ -463,7 +463,7 @@ class TestForwardLBPMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([2.0, 6.0]))
         assert torch.allclose(upper, torch.tensor([6.0, 10.0]))
 
@@ -486,7 +486,7 @@ class TestForwardLBPMultiInput:
         )
         outputs = propagator.propagate([x_region, y_region])
 
-        linear_bounds = outputs[0]
+        linear_bounds = outputs
         lower, upper = linear_bounds.concretize()
         num_samples = 1000
         x_rand = x_region.lower + torch.rand(num_samples, *x_region.lower.shape) * (x_region.upper - x_region.lower)
@@ -515,7 +515,7 @@ class TestForwardLBPDAG:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.tensor([5.0, -5.0, 0.0]))
         assert torch.allclose(upper, torch.tensor([10.0, 5.0, 15.0]))
 
@@ -534,7 +534,7 @@ class TestForwardLBPDAG:
         )
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.zeros(3), atol=1e-5)
         assert torch.allclose(upper, torch.zeros(3), atol=1e-5)
 
@@ -552,7 +552,7 @@ class TestForwardLBPDAG:
             upper=torch.tensor([2.0, 3.0, 4.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_diamond_two_linear_layers_shared_input(self) -> None:
         """y = (x @ W1) + (x @ W2): two affine paths from same input."""
@@ -572,8 +572,8 @@ class TestForwardLBPDAG:
         outputs = propagator.propagate([input_region])
 
         # Linear combination, should be exact.
-        assert torch.allclose(outputs[0].linear_lowers[0], outputs[0].linear_uppers[0], atol=1e-5)
-        _check_soundness(fn, input_region, outputs[0])
+        assert torch.allclose(outputs.linear_lowers[0], outputs.linear_uppers[0], atol=1e-5)
+        _check_soundness(fn, input_region, outputs)
 
     def test_diamond_relu_sigmoid_sum(self) -> None:
         """y = relu(x) + sigmoid(x): two nonlinear paths from same input."""
@@ -589,7 +589,7 @@ class TestForwardLBPDAG:
             upper=torch.tensor([2.0, 3.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
 
 class TestForwardLBPDeepNonlinearDAG:
@@ -617,7 +617,7 @@ class TestForwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_three_branches_nonlinear_each(self) -> None:
         """Three nonlinear branches from a shared nonlinear pre-feature."""
@@ -645,7 +645,7 @@ class TestForwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_residual_skip_with_nonlinearities(self) -> None:
         """Residual-style DAG: deep nonlinear main path plus nonlinear skip."""
@@ -668,7 +668,7 @@ class TestForwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 1.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_nested_diamond_nonlinear(self) -> None:
         """Diamond inside a diamond, all edges nonlinear."""
@@ -689,7 +689,7 @@ class TestForwardLBPDeepNonlinearDAG:
             upper=torch.tensor([1.0, 2.0, 3.0]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
     def test_parallel_nonlinear_towers_then_deep_merge(self) -> None:
         """Two independent deep nonlinear towers, then deep merge."""
@@ -715,7 +715,7 @@ class TestForwardLBPDeepNonlinearDAG:
             upper=torch.tensor([0.75, 0.75]),
         )
         outputs = propagator.propagate([input_region])
-        _check_soundness(fn, input_region, outputs[0])
+        _check_soundness(fn, input_region, outputs)
 
 
 class TestForwardLBPEdgeCases:
@@ -734,7 +734,7 @@ class TestForwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, point)
         assert torch.allclose(upper, point)
 
@@ -751,7 +751,7 @@ class TestForwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         expected = torch.relu(point)
         assert torch.allclose(lower, expected, atol=1e-5)
         assert torch.allclose(upper, expected, atol=1e-5)
@@ -772,7 +772,7 @@ class TestForwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         expected = fn(point)
         assert torch.allclose(lower, expected, atol=1e-5)
         assert torch.allclose(upper, expected, atol=1e-5)
@@ -790,6 +790,6 @@ class TestForwardLBPEdgeCases:
         input_region = HyperRectangle(lower=point, upper=point)
         outputs = propagator.propagate([input_region])
 
-        lower, upper = outputs[0].concretize()
+        lower, upper = outputs.concretize()
         assert torch.allclose(lower, torch.zeros(3), atol=1e-5)
         assert torch.allclose(upper, torch.zeros(3), atol=1e-5)

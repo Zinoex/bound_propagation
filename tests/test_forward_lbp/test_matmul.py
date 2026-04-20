@@ -275,14 +275,14 @@ def test_matmul_abstract_abstract_alpha_crown_sound() -> None:
     gm = tracer.trace(fn)
     MetadataPass(gm).run(region.lower)
 
-    plain = ForwardLBPPropagator(gm, registry=registry).propagate([region])[0]
+    plain = ForwardLBPPropagator(gm, registry=registry).propagate([region])
     lo_plain, up_plain = plain.concretize()
 
     optimized = ForwardLBPPropagator(
         gm,
         registry=registry,
         alpha_config=AlphaOptimizationConfig(enabled=True, iterations=6, lr=0.1),
-    ).propagate([region])[0]
+    ).propagate([region])
     lo_opt, up_opt = optimized.concretize()
 
     # Soundness: evaluate true function on random samples

@@ -179,7 +179,13 @@ class BoundModel:
                 f"has {num_placeholders} placeholder(s)"
             )
 
+        # Initial MetadataPass at feature shapes validates that the model runs
+        # with these shapes. It is re-run per propagate() call with batch-promoted
+        # shapes so node.meta["tensor_meta"] matches the actual input rank.
         MetadataPass(graph_module).run(*dummy_inputs)
+
+        placeholder_feature_shapes = tuple(tuple(t.shape) for t in dummy_inputs)
+        placeholder_dtypes = tuple(t.dtype for t in dummy_inputs)
 
         propagator = self._build_propagator(method, graph_module, registries, alpha)
 
@@ -188,13 +194,21 @@ class BoundModel:
         self._graph_module = graph_module
         self._propagator = propagator
         self._num_placeholders = num_placeholders
+        self._placeholder_feature_shapes = placeholder_feature_shapes
+        self._placeholder_dtypes = placeholder_dtypes
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def propagate(self, *input_regions: SimpleRegion) -> Sequence[AbstractBounds]:
+    def propagate(self, *input_regions: SimpleRegion) -> AbstractBounds:
         """Propagate bounds for the given input regions.
+
+        The number of batch dimensions is inferred per call: each region's
+        shape must end with the corresponding placeholder's feature shape
+        (as given by ``dummy_inputs`` at construction), and any extra
+        leading dims are treated as shared batch dims. All regions must
+        agree on the batch-dim count.
 
         Parameters
         ----------
@@ -204,12 +218,58 @@ class BoundModel:
 
         Returns
         -------
-        sequence of AbstractBounds
-            One bounds object per model output.
+        AbstractBounds
+            Bounds for the model's single output. Bound-propagation
+            requires models to have exactly one output.
         """
         if len(input_regions) != self._num_placeholders:
             raise ValueError(f"Expected {self._num_placeholders} input region(s), got {len(input_regions)}")
-        return self._propagator.propagate(list(input_regions))
+        batch_ndim = self._infer_batch_ndim(input_regions)
+        self._refresh_metadata(input_regions, batch_ndim)
+        return self._propagator.propagate(list(input_regions), batch_ndim=batch_ndim)
+
+    def _refresh_metadata(self, input_regions: Sequence[SimpleRegion], batch_ndim: int) -> None:
+        """Re-run :class:`MetadataPass` with a zero-sample matching each region's full shape.
+
+        Backward-mode strategies read ``node.meta["tensor_meta"]["shape"]`` and
+        slice off ``batch_ndim`` leading dims to get feature shapes; this pass
+        ensures the recorded shapes include the caller's actual batch dims.
+        """
+        if batch_ndim == 0:
+            # Metadata from __init__ already matches feature shape; skip.
+            return
+        sample_inputs = tuple(
+            torch.zeros(tuple(region.shape), dtype=dtype)
+            for region, dtype in zip(input_regions, self._placeholder_dtypes, strict=True)
+        )
+        MetadataPass(self._graph_module).run(*sample_inputs)
+
+    def _infer_batch_ndim(self, input_regions: Sequence[SimpleRegion]) -> int:
+        """Infer the shared batch-dim count from region shapes vs. feature shapes."""
+        batch_ndims: list[int] = []
+        for idx, (region, feature_shape) in enumerate(
+            zip(input_regions, self._placeholder_feature_shapes, strict=True)
+        ):
+            region_shape = tuple(region.shape)
+            if len(region_shape) < len(feature_shape):
+                raise ValueError(
+                    f"input_regions[{idx}] has shape {region_shape} which is shorter than the "
+                    f"expected feature shape {feature_shape} (from dummy_inputs)"
+                )
+            split = len(region_shape) - len(feature_shape)
+            if region_shape[split:] != feature_shape:
+                raise ValueError(
+                    f"input_regions[{idx}] shape {region_shape} does not end with the expected "
+                    f"feature shape {feature_shape} (from dummy_inputs)"
+                )
+            batch_ndims.append(split)
+
+        if len(set(batch_ndims)) > 1:
+            raise ValueError(
+                f"All input regions must share the same batch-dim count; got {batch_ndims} "
+                f"for feature shapes {list(self._placeholder_feature_shapes)}"
+            )
+        return batch_ndims[0] if batch_ndims else 0
 
     @property
     def method(self) -> Method:
