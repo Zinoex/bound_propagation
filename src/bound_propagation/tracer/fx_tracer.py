@@ -29,7 +29,13 @@ class BoundPropagationTracer(fx.Tracer):
     """
 
     def __init__(self, registry: TargetRegistry) -> None:
-        super().__init__()
+        # Feed every user-callable registry target through fx's autowrap
+        # mechanism so registered free functions stay as leaf call_function
+        # nodes instead of being inlined. Classes (nn.Modules) are filtered
+        # out — they go through is_leaf_module. Torch builtins are harmless
+        # to pass (fx already treats them as leaves).
+        autowrap_functions = tuple(t for t in registry.targets() if callable(t) and not isinstance(t, type))
+        super().__init__(autowrap_functions=autowrap_functions)
         self._registry = registry
 
     def is_leaf_module(self, m: torch.nn.Module, module_qualified_name: str) -> bool:

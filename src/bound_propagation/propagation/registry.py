@@ -174,3 +174,7 @@ class TargetRegistry(Generic[T]):
     def supports_target(self, target: Callable[..., Any] | type) -> bool:
         """Return ``True`` if *target* has a registered strategy."""
         return target in self._strategies
+
+    def targets(self) -> list[Callable[..., Any] | type]:
+        """Return all targets that have a registered strategy."""
+        return list(self._strategies.keys())
