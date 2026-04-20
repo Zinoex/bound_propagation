@@ -7,6 +7,7 @@ import torch
 
 from bound_propagation.linear_operators import (
     DenseOperator,
+    IdentityOperator,
     apply_weight_to_bounds_pair,
     cat_output,
     stack_output,
@@ -299,6 +300,54 @@ class TestApplyWeightToBoundsPair:
         assert got.output_shape == torch.Size(())
         expected = (weight_pos[:, None] * lin_low + weight_neg[:, None] * lin_up).sum(dim=0)
         assert torch.allclose(got.tensor, expected)
+
+
+class TestIdentityOperator:
+    def test_basic_3d(self) -> None:
+        op = IdentityOperator(
+            feature_shape=(2, 4, 4), dtype=torch.float32, device=torch.device("cpu")
+        )
+        assert op.output_shape == torch.Size((2, 4, 4))
+        assert op.input_shape == torch.Size((2, 4, 4))
+
+    def test_with_batch_ones(self) -> None:
+        op = IdentityOperator(
+            feature_shape=(3, 4), dtype=torch.float32, device=torch.device("cpu"), batch_shape=(1,)
+        )
+        assert op.output_shape == torch.Size((1, 3, 4))
+        assert op.input_shape == torch.Size((3, 4))
+
+    def test_apply_is_identity(self) -> None:
+        op = IdentityOperator(feature_shape=(2, 4, 4), dtype=torch.float32, device=torch.device("cpu"))
+        x = torch.randn(2, 4, 4)
+        assert torch.equal(op.apply(x), x)
+
+    def test_concretize_returns_region_endpoints(self) -> None:
+        op = IdentityOperator(feature_shape=(2, 3), dtype=torch.float32, device=torch.device("cpu"))
+        region = _make_region((2, 3))
+        assert torch.equal(op.concretize_min(region), region.lower)
+        assert torch.equal(op.concretize_max(region), region.upper)
+
+    def test_to_dense_matches_eye(self) -> None:
+        op = IdentityOperator(feature_shape=(2, 3), dtype=torch.float32, device=torch.device("cpu"))
+        dense = op.to_dense()
+        expected = torch.eye(6).reshape(2, 3, 2, 3)
+        assert torch.allclose(dense.tensor, expected)
+
+    def test_to_dense_with_batch_shape(self) -> None:
+        op = IdentityOperator(
+            feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"), batch_shape=(1,)
+        )
+        dense = op.to_dense()
+        assert dense.output_shape == torch.Size((1, 3))
+        assert dense.input_shape == torch.Size((3,))
+        assert torch.allclose(dense.tensor, torch.eye(3).reshape(1, 3, 3))
+
+    def test_clone_is_independent_type(self) -> None:
+        op = IdentityOperator(feature_shape=(2, 3), dtype=torch.float32, device=torch.device("cpu"))
+        cloned = op.clone()
+        assert isinstance(cloned, IdentityOperator)
+        assert cloned.feature_shape == op.feature_shape
 
 
 class TestRoundTrip:

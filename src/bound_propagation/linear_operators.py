@@ -24,6 +24,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Sequence
 
 import torch
+import torch.nn.functional as F
 from plum import dispatch
 
 from .regions import HyperRectangle, SimpleRegion
@@ -107,24 +108,24 @@ class LinearOperator(ABC):
     @abstractmethod
     def neg(self) -> LinearOperator: ...
 
-    @abstractmethod
     def scale(self, factor: torch.Tensor) -> LinearOperator:
         """
         Return operator representing elementwise-scaled output ``y' = factor * (W @ x)``.
 
-        ``factor`` must broadcast to ``output_shape``. Scaling is applied in the
-        output space so convolutional / pooled operators can fold it in without
-        materializing.
+        ``factor`` must broadcast to ``output_shape``. Default: materialize to
+        dense and scale. Subclasses override to keep structured representations
+        when possible (e.g. a scaled-conv operator can fold the factor in).
         """
+        return self.to_dense().scale(factor)
 
-    @abstractmethod
     def add(self, other: LinearOperator) -> LinearOperator:
         """Return operator representing ``self + other``.
 
-        ``other`` must have matching ``output_shape`` and ``input_shape``. If the
-        structured representations are incompatible, implementations may fall
-        back to materialized dense arithmetic.
+        Default: materialize both sides and add as dense tensors. Subclasses
+        override when two structured operators of compatible form can be added
+        without materialization (e.g. two convs with matching kernel/stride).
         """
+        return self.to_dense().add(other.to_dense())
 
     def sub(self, other: LinearOperator) -> LinearOperator:
         """Return operator representing ``self - other`` (default: ``self + other.neg()``)."""
@@ -136,66 +137,64 @@ class LinearOperator(ABC):
     # output space.
     # ------------------------------------------------------------------
 
-    @abstractmethod
     def compose_with_linear_left(self, weight_pos: torch.Tensor, weight_neg: torch.Tensor) -> LinearOperator:
+        """Apply a sign-split weight on the trailing feature axis of ``output_shape``.
+
+        Strategies typically use :func:`apply_weight_to_bounds_pair` instead
+        of this method directly, since the signed composition needs both
+        lower and upper operators jointly. The default implementation raises
+        :class:`NotImplementedError`; structured subclasses that can support
+        conv-linear composition natively may override.
         """
-        Apply ``weight = weight_pos + weight_neg`` on the left of the trailing
-        feature axis of ``output_shape``, with positive/negative parts already
-        separated so that signed-interval composition ``weight_pos * lower +
-        weight_neg * upper`` can be implemented structurally.
-
-        Called by forward-LBP linear / matmul strategies. Both parts must share
-        the same shape. The supported shapes are:
-
-            weight.ndim == 2: ``(out_features, in_features)`` with
-                ``output_shape[-1] == in_features``. Result has ``output_shape``
-                ``(*output_shape[:-1], out_features)``.
-            weight.ndim == 1: ``(in_features,)`` with
-                ``output_shape[-1] == in_features``. Reduces the feature axis
-                (dot product). Result has ``output_shape[:-1]``.
-
-        This method is used for the "lower-bound under positive weight" shape of
-        composition. Subclasses that want to avoid redundant materialization
-        should override :meth:`compose_with_linear_signed`.
-        """
+        raise NotImplementedError(
+            "compose_with_linear_left is intentionally unimplemented by default; "
+            "strategies should use apply_weight_to_bounds_pair on paired lower/upper operators."
+        )
 
     # ------------------------------------------------------------------
     # Output-axis shape operations (input axes preserved)
+    #
+    # Defaults here materialize to a :class:`DenseOperator` and delegate. This
+    # lets structured subclasses (e.g. :class:`Conv2dOperator`) skip
+    # implementing every shape op — flatten/transpose/etc. typically break the
+    # structural representation anyway, so falling back to dense is the
+    # principled default. Subclasses override only the ops they can do
+    # natively without materialization.
     # ------------------------------------------------------------------
 
-    @abstractmethod
-    def flatten_output(self, start_dim: int, end_dim: int) -> LinearOperator: ...
+    def flatten_output(self, start_dim: int, end_dim: int) -> LinearOperator:
+        return self.to_dense().flatten_output(start_dim, end_dim)
 
-    @abstractmethod
-    def reshape_output(self, shape: tuple[int, ...]) -> LinearOperator: ...
+    def reshape_output(self, shape: tuple[int, ...]) -> LinearOperator:
+        return self.to_dense().reshape_output(shape)
 
-    @abstractmethod
-    def view_output(self, shape: tuple[int, ...]) -> LinearOperator: ...
+    def view_output(self, shape: tuple[int, ...]) -> LinearOperator:
+        return self.to_dense().view_output(shape)
 
-    @abstractmethod
-    def squeeze_output(self, dim: int | None = None) -> LinearOperator: ...
+    def squeeze_output(self, dim: int | None = None) -> LinearOperator:
+        return self.to_dense().squeeze_output(dim)
 
-    @abstractmethod
-    def unsqueeze_output(self, dim: int) -> LinearOperator: ...
+    def unsqueeze_output(self, dim: int) -> LinearOperator:
+        return self.to_dense().unsqueeze_output(dim)
 
-    @abstractmethod
-    def transpose_output(self, dim0: int, dim1: int) -> LinearOperator: ...
+    def transpose_output(self, dim0: int, dim1: int) -> LinearOperator:
+        return self.to_dense().transpose_output(dim0, dim1)
 
-    @abstractmethod
-    def permute_output(self, dims: tuple[int, ...]) -> LinearOperator: ...
+    def permute_output(self, dims: tuple[int, ...]) -> LinearOperator:
+        return self.to_dense().permute_output(dims)
 
-    @abstractmethod
-    def select_output(self, dim: int, index: int) -> LinearOperator: ...
+    def select_output(self, dim: int, index: int) -> LinearOperator:
+        return self.to_dense().select_output(dim, index)
 
-    @abstractmethod
-    def sum_output(self, dim: int | tuple[int, ...] | None, keepdim: bool) -> LinearOperator: ...
+    def sum_output(self, dim: int | tuple[int, ...] | None, keepdim: bool) -> LinearOperator:
+        return self.to_dense().sum_output(dim, keepdim)
 
-    @abstractmethod
-    def mean_output(self, dim: int | tuple[int, ...] | None, keepdim: bool) -> LinearOperator: ...
+    def mean_output(self, dim: int | tuple[int, ...] | None, keepdim: bool) -> LinearOperator:
+        return self.to_dense().mean_output(dim, keepdim)
 
-    @abstractmethod
     def getitem_output(self, item) -> LinearOperator:
         """Slice / index over output axes only, preserving input axes."""
+        return self.to_dense().getitem_output(item)
 
     # ------------------------------------------------------------------
     # Materialization + housekeeping
@@ -573,6 +572,11 @@ def _apply_reduction_to_shape(output_shape: torch.Size, dim: int | tuple[int, ..
 # Multi-operator combinators
 # ----------------------------------------------------------------------
 
+# TODO: update these to avoid materializing to dense when possible;
+# e.g. cat_output can often be implemented by concatenating the underlying
+# tensors of structured operators without materialization.
+# Potentially use @dispatch to implement structured vs dense paths separately.
+
 
 def cat_output(operators: Sequence[LinearOperator], dim: int) -> LinearOperator:
     """Concatenate operators along an output axis, preserving input axes."""
@@ -703,9 +707,1557 @@ def apply_weight_to_bounds_pair(
     return DenseOperator(new_tensor, new_output_shape)
 
 
+# ----------------------------------------------------------------------
+# Identity operator
+# ----------------------------------------------------------------------
+
+
+class IdentityOperator(LinearOperator):
+    """The identity linear map ``y = x`` over a fixed feature shape.
+
+    Used as the placeholder coefficient in forward-LBP (see
+    :func:`create_identity_bounds`). Its purpose is primarily **type-based
+    dispatch**: strategies that can exploit "my input is the raw network
+    input" can replace materialization with a structured operator (e.g.
+    :class:`ForwardLBPConv2d` emits a :class:`Conv2dOperator` when both of
+    its input operators are :class:`IdentityOperator`).
+
+    Shape convention:
+
+    - ``feature_shape`` is the raw input tensor shape (e.g. ``(C, H, W)`` for
+      a CNN input).
+    - ``output_shape`` equals ``(*batch, *feature_shape)`` where ``batch`` is
+      the leading broadcast shape carried by the containing ``LinearBounds``
+      (typically all ones). ``input_shape`` equals ``feature_shape``.
+
+    All algebraic operations besides the trivial ones fall back to dense via
+    :meth:`to_dense`, which materializes an ``eye(numel(feature_shape))``.
+    """
+
+    def __init__(
+        self,
+        feature_shape: tuple[int, ...],
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+        batch_shape: tuple[int, ...] = (),
+    ) -> None:
+        self._feature_shape = torch.Size(feature_shape)
+        self._batch_shape = torch.Size(batch_shape)
+        self._dtype = dtype
+        self._device = device
+
+    # ------------------------------------------------------------------
+    # Shape / metadata
+    # ------------------------------------------------------------------
+
+    @property
+    def output_shape(self) -> torch.Size:
+        return torch.Size((*self._batch_shape, *self._feature_shape))
+
+    @property
+    def input_shape(self) -> torch.Size:
+        return self._feature_shape
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self._dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self._device
+
+    @property
+    def feature_shape(self) -> torch.Size:
+        return self._feature_shape
+
+    @property
+    def batch_shape(self) -> torch.Size:
+        return self._batch_shape
+
+    # ------------------------------------------------------------------
+    # Core linear-map operations
+    # ------------------------------------------------------------------
+
+    def apply(self, x: torch.Tensor) -> torch.Tensor:
+        if tuple(x.shape[-len(self._feature_shape) :]) != tuple(self._feature_shape):
+            raise ValueError(
+                f"IdentityOperator.apply: x trailing shape {tuple(x.shape[-len(self._feature_shape) :])} "
+                f"does not match feature_shape {tuple(self._feature_shape)}"
+            )
+        return x
+
+    def apply_transpose(self, y: torch.Tensor) -> torch.Tensor:
+        output_ndim = self.output_ndim
+        if tuple(y.shape[-output_ndim:]) != tuple(self.output_shape):
+            raise ValueError(
+                f"IdentityOperator.apply_transpose: y trailing shape {tuple(y.shape[-output_ndim:])} "
+                f"does not match output_shape {tuple(self.output_shape)}"
+            )
+        leading = y.shape[:-output_ndim]
+        # Batch dims in output_shape are broadcast size-1, so reshaping them
+        # away is free. Any non-size-1 batch dim here would be a constructor
+        # violation; treat via reshape (sums would be the principled adjoint
+        # but size-1 dims make it a no-op).
+        return y.reshape(*leading, *self._feature_shape)
+
+    def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
+        return _identity_concretize(region, self, mode="min")  # ty:ignore[invalid-argument-type]
+
+    def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
+        return _identity_concretize(region, self, mode="max")  # ty:ignore[invalid-argument-type]
+
+    # ------------------------------------------------------------------
+    # Algebra
+    # ------------------------------------------------------------------
+
+    def neg(self) -> LinearOperator:
+        # No "-identity" structured type; materialize.
+        return self.to_dense().neg()
+
+    # ------------------------------------------------------------------
+    # Materialization + housekeeping
+    # ------------------------------------------------------------------
+
+    def to_dense(self) -> DenseOperator:
+        numel = 1
+        for s in self._feature_shape:
+            numel *= int(s)
+        eye = torch.eye(numel, dtype=self._dtype, device=self._device)
+        tensor = eye.reshape((1,) * len(self._batch_shape) + tuple(self._feature_shape) + tuple(self._feature_shape))
+        if self._batch_shape and any(s != 1 for s in self._batch_shape):
+            tensor = tensor.expand(*self._batch_shape, *self._feature_shape, *self._feature_shape).contiguous()
+        return DenseOperator(tensor, output_shape=self.output_shape)
+
+    def to(self, device: str | torch.device) -> IdentityOperator:
+        return IdentityOperator(
+            feature_shape=tuple(self._feature_shape),
+            dtype=self._dtype,
+            device=torch.device(device) if isinstance(device, str) else device,
+            batch_shape=tuple(self._batch_shape),
+        )
+
+    def clone(self) -> IdentityOperator:
+        return IdentityOperator(
+            feature_shape=tuple(self._feature_shape),
+            dtype=self._dtype,
+            device=self._device,
+            batch_shape=tuple(self._batch_shape),
+        )
+
+
+@dispatch
+def _identity_concretize(region: SimpleRegion, op: IdentityOperator, *, mode: str) -> torch.Tensor:  # noqa: ARG001
+    raise NotImplementedError(f"IdentityOperator concretization not implemented for region {type(region).__name__}")
+
+
+@dispatch
+def _identity_concretize(  # noqa: F811
+    region: HyperRectangle, op: IdentityOperator, *, mode: str
+) -> torch.Tensor:
+    source = region.lower if mode == "min" else region.upper
+    target = op.output_shape
+    if source.shape == target:
+        return source
+    # Reshape / broadcast — a HyperRectangle's tensor shape may differ from
+    # output_shape only in singleton leading dims (from batch_shape inference).
+    try:
+        return source.reshape(target)
+    except RuntimeError:
+        return source.expand(target)
+
+
+# ----------------------------------------------------------------------
+# Structured conv operator
+# ----------------------------------------------------------------------
+
+
+class Conv2dOperator(LinearOperator):
+    """Structured ``LinearOperator`` for a 2D convolution ``y = conv2d(x, W)``.
+
+    Represents the pure linear map; any bias term belongs to the enclosing
+    :class:`LinearBounds`' ``bias_lower`` / ``bias_upper`` tensors.
+
+    Shape conventions:
+
+    - ``input_shape`` is always ``(C_in, H_in, W_in)`` — exactly 3D.
+    - ``output_shape`` is ``(*batch, C_out, H_out, W_out)`` — at least 3D;
+      any leading batch dims are broadcast-compatible and the conv kernel is
+      batch-invariant.
+
+    The operator skips materializing the dense ``(*output_shape, *input_shape)``
+    Jacobian. Core ops (``apply``, ``apply_transpose``, ``concretize_{min,max}``,
+    ``neg``) stay structural; other operations (shape manipulation, algebraic
+    composition with incompatible operators) fall back to dense via ``to_dense``.
+
+    Notes
+    -----
+    - When the output's trailing spatial shape cannot be inferred from
+      ``output_shape`` against the stored hyperparameters, the constructor
+      raises :class:`ValueError`.
+    - Non-structural composition with, e.g., an ``nn.Linear`` layer will
+      materialize to dense at the point of that composition. This is the
+      intended memory trade-off: dense is fine at the head of a CNN where
+      features have already been downsampled.
+    """
+
+    def __init__(
+        self,
+        weight: torch.Tensor,
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
+        groups: int,
+        input_shape: tuple[int, ...],
+        output_shape: tuple[int, ...],
+    ) -> None:
+        if weight.ndim != 4:
+            raise ValueError(
+                f"Conv2dOperator weight must be 4D (C_out, C_in/groups, kH, kW), got {tuple(weight.shape)}"
+            )
+        if len(input_shape) != 3:
+            raise ValueError(f"Conv2dOperator input_shape must be 3D (C, H, W), got {tuple(input_shape)}")
+        if len(output_shape) < 3:
+            raise ValueError(
+                f"Conv2dOperator output_shape must be at least 3D (batch..., C_out, H_out, W_out), "
+                f"got {tuple(output_shape)}"
+            )
+        expected_c_out = weight.shape[0]
+        if output_shape[-3] != expected_c_out:
+            raise ValueError(
+                f"Conv2dOperator output_shape[-3] ({output_shape[-3]}) must match weight.shape[0] ({expected_c_out})"
+            )
+
+        self._weight = weight
+        self._stride = stride
+        self._padding = padding
+        self._dilation = dilation
+        self._groups = groups
+        self._input_shape = torch.Size(input_shape)
+        self._output_shape = torch.Size(output_shape)
+
+    # ------------------------------------------------------------------
+    # Shape / metadata
+    # ------------------------------------------------------------------
+
+    @property
+    def output_shape(self) -> torch.Size:
+        return self._output_shape
+
+    @property
+    def input_shape(self) -> torch.Size:
+        return self._input_shape
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self._weight.dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self._weight.device
+
+    @property
+    def weight(self) -> torch.Tensor:
+        return self._weight
+
+    @property
+    def stride(self) -> tuple[int, int]:
+        return self._stride
+
+    @property
+    def padding(self) -> tuple[int, int]:
+        return self._padding
+
+    @property
+    def dilation(self) -> tuple[int, int]:
+        return self._dilation
+
+    @property
+    def groups(self) -> int:
+        return self._groups
+
+    # ------------------------------------------------------------------
+    # Core linear-map operations
+    # ------------------------------------------------------------------
+
+    def apply(self, x: torch.Tensor) -> torch.Tensor:
+        if tuple(x.shape[-3:]) != tuple(self._input_shape):
+            raise ValueError(
+                f"Conv2dOperator.apply: x trailing shape {tuple(x.shape[-3:])} does not match "
+                f"input_shape {tuple(self._input_shape)}"
+            )
+        leading = x.shape[:-3]
+        flat = x.reshape(-1, *self._input_shape)
+        out = _conv2d(flat, self._weight, self._stride, self._padding, self._dilation, self._groups)
+        return out.reshape(*leading, *out.shape[-3:])
+
+    def apply_transpose(self, y: torch.Tensor) -> torch.Tensor:
+        output_ndim = self.output_ndim
+        if tuple(y.shape[-output_ndim:]) != tuple(self._output_shape):
+            raise ValueError(
+                f"Conv2dOperator.apply_transpose: y trailing shape {tuple(y.shape[-output_ndim:])} does "
+                f"not match output_shape {tuple(self._output_shape)}"
+            )
+        leading = y.shape[:-output_ndim]
+
+        # Apply conv_transpose2d on the trailing (C_out, H_out, W_out) axes,
+        # folding any preceding dims (both caller leading + output-shape batch)
+        # into a single flat batch.
+        all_flat_batch = y.shape[:-3]
+        y_flat = y.reshape(-1, *y.shape[-3:])
+        output_padding = _infer_conv_output_padding(
+            input_spatial=(int(self._input_shape[-2]), int(self._input_shape[-1])),
+            output_spatial=(int(y.shape[-2]), int(y.shape[-1])),
+            kernel_size=(int(self._weight.shape[-2]), int(self._weight.shape[-1])),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+        )
+        x_flat = F.conv_transpose2d(
+            y_flat,
+            self._weight,
+            bias=None,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            output_padding=output_padding,
+        )
+        x = x_flat.reshape(*all_flat_batch, *self._input_shape)
+
+        # Sum over the batch dims of ``output_shape`` (between caller-leading
+        # and the spatial axes) to match :meth:`DenseOperator.apply_transpose`
+        # semantics: the adjoint contracts the full output shape.
+        batch_of_output = output_ndim - 3
+        if batch_of_output > 0:
+            reduce_dims = tuple(range(-3 - batch_of_output, -3))
+            x = x.sum(dim=reduce_dims)
+        return x.reshape(*leading, *self._input_shape)
+
+    def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
+        return _conv2d_concretize(region, self, mode="min")  # ty:ignore[invalid-argument-type]
+
+    def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
+        return _conv2d_concretize(region, self, mode="max")  # ty:ignore[invalid-argument-type]
+
+    # ------------------------------------------------------------------
+    # Algebra
+    # ------------------------------------------------------------------
+
+    def neg(self) -> Conv2dOperator:
+        return Conv2dOperator(
+            weight=-self._weight,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def add(self, other: LinearOperator) -> LinearOperator:
+        """Two Conv2dOperators with identical hyperparameters add kernel-wise;
+        otherwise fall back to dense."""
+        if (
+            isinstance(other, Conv2dOperator)
+            and self._stride == other._stride
+            and self._padding == other._padding
+            and self._dilation == other._dilation
+            and self._groups == other._groups
+            and tuple(self._input_shape) == tuple(other._input_shape)
+            and tuple(self._output_shape) == tuple(other._output_shape)
+            and self._weight.shape == other._weight.shape
+        ):
+            return Conv2dOperator(
+                weight=self._weight + other._weight,
+                stride=self._stride,
+                padding=self._padding,
+                dilation=self._dilation,
+                groups=self._groups,
+                input_shape=tuple(self._input_shape),
+                output_shape=tuple(self._output_shape),
+            )
+        return super().add(other)
+
+    def scale(self, factor: torch.Tensor) -> LinearOperator:
+        """Per-output-element scaling: return a :class:`ScaledConv2dOperator`.
+
+        ``factor`` must broadcast to ``output_shape``. This keeps the
+        conv structure (no dense Jacobian) and enables chained ReLU/sigmoid
+        relaxations to stay structural over the same conv kernel.
+        """
+        factor_bc = _broadcast_factor_to(factor, self._output_shape)
+        return ScaledConv2dOperator(
+            weight=self._weight,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            alpha=factor_bc,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    # ------------------------------------------------------------------
+    # Materialization + housekeeping
+    # ------------------------------------------------------------------
+
+    def to_dense(self) -> DenseOperator:
+        """Materialize as a ``DenseOperator`` by running the conv on an
+        input one-hot basis. Memory scales as ``prod(output_shape) *
+        prod(input_shape)``; prefer the structural ops for large conv inputs.
+        """
+        c_in, h_in, w_in = self._input_shape
+        numel_in = int(c_in) * int(h_in) * int(w_in)
+        basis = torch.eye(numel_in, dtype=self.dtype, device=self.device).reshape(
+            numel_in, int(c_in), int(h_in), int(w_in)
+        )
+        out = _conv2d(basis, self._weight, self._stride, self._padding, self._dilation, self._groups)
+        c_out, h_out, w_out = out.shape[-3], out.shape[-2], out.shape[-1]
+        # Result currently has shape (numel_in, C_out, H_out, W_out). We want
+        # (*output_shape, *input_shape) = (*batch, C_out, H_out, W_out, C_in, H_in, W_in).
+        jac = out.permute(1, 2, 3, 0).reshape(c_out, h_out, w_out, int(c_in), int(h_in), int(w_in))
+
+        batch_of_output = tuple(self._output_shape[:-3])
+        if batch_of_output:
+            # Insert leading singleton dims, then broadcast-expand into the batch shape.
+            jac = jac.reshape((1,) * len(batch_of_output) + tuple(jac.shape))
+            target = (*batch_of_output, *jac.shape[len(batch_of_output) :])
+            jac = jac.expand(*target).contiguous()
+
+        return DenseOperator(jac, output_shape=self._output_shape)
+
+    def to(self, device: str | torch.device) -> Conv2dOperator:
+        return Conv2dOperator(
+            weight=self._weight.to(device),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def clone(self) -> Conv2dOperator:
+        return Conv2dOperator(
+            weight=self._weight.clone(),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+
+# ----------------------------------------------------------------------
+# Scaled conv operator
+# ----------------------------------------------------------------------
+
+
+class ScaledConv2dOperator(LinearOperator):
+    """Structured operator ``y = alpha * conv2d(x, W)`` with per-output-element alpha.
+
+    Conceptually a :class:`Conv2dOperator` with an output-space scaling
+    factor folded in. Useful for keeping the conv structure through one or
+    more subsequent element-wise nonlinearities (ReLU/sigmoid/tanh/...) that
+    would otherwise force materialization via their per-output-element alpha.
+
+    Chain preservation: a ``ScaledConv2dOperator.scale(factor)`` returns
+    another ``ScaledConv2dOperator`` with ``alpha' = alpha * factor``, and
+    ``.add(other)`` with another scaled conv over the *same* weight (and
+    hyperparameters) returns a scaled conv with ``alpha' = alpha_self +
+    alpha_other``. This means a full ``conv → relu → relu → ... → relu``
+    chain stays structural — only a layer that touches the underlying
+    spatial structure (a second conv, a flatten, a matmul) triggers
+    materialization.
+
+    Shape / math:
+
+    - ``input_shape = (C_in, H_in, W_in)`` — exactly 3D.
+    - ``output_shape = (*batch, C_out, H_out, W_out)`` — at least 3D.
+    - ``alpha`` has shape ``output_shape`` (per-output-element scaling).
+
+    The weight represents the pure linear conv map; bias still lives in the
+    enclosing :class:`LinearBounds`' ``bias_lower`` / ``bias_upper`` tensors.
+    """
+
+    def __init__(
+        self,
+        weight: torch.Tensor,
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
+        groups: int,
+        alpha: torch.Tensor,
+        input_shape: tuple[int, ...],
+        output_shape: tuple[int, ...],
+    ) -> None:
+        if weight.ndim != 4:
+            raise ValueError(
+                f"ScaledConv2dOperator weight must be 4D (C_out, C_in/groups, kH, kW), got {tuple(weight.shape)}"
+            )
+        if len(input_shape) != 3:
+            raise ValueError(f"ScaledConv2dOperator input_shape must be 3D (C, H, W), got {tuple(input_shape)}")
+        if len(output_shape) < 3:
+            raise ValueError(
+                f"ScaledConv2dOperator output_shape must be at least 3D (batch..., C_out, H_out, W_out), "
+                f"got {tuple(output_shape)}"
+            )
+        if output_shape[-3] != weight.shape[0]:
+            raise ValueError(
+                f"ScaledConv2dOperator output_shape[-3] ({output_shape[-3]}) must match weight.shape[0] "
+                f"({weight.shape[0]})"
+            )
+        if tuple(alpha.shape) != tuple(output_shape):
+            raise ValueError(
+                f"ScaledConv2dOperator alpha.shape {tuple(alpha.shape)} must equal output_shape {tuple(output_shape)}"
+            )
+
+        self._weight = weight
+        self._alpha = alpha
+        self._stride = stride
+        self._padding = padding
+        self._dilation = dilation
+        self._groups = groups
+        self._input_shape = torch.Size(input_shape)
+        self._output_shape = torch.Size(output_shape)
+
+    # ------------------------------------------------------------------
+    # Shape / metadata
+    # ------------------------------------------------------------------
+
+    @property
+    def output_shape(self) -> torch.Size:
+        return self._output_shape
+
+    @property
+    def input_shape(self) -> torch.Size:
+        return self._input_shape
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self._weight.dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self._weight.device
+
+    @property
+    def weight(self) -> torch.Tensor:
+        return self._weight
+
+    @property
+    def alpha(self) -> torch.Tensor:
+        return self._alpha
+
+    @property
+    def stride(self) -> tuple[int, int]:
+        return self._stride
+
+    @property
+    def padding(self) -> tuple[int, int]:
+        return self._padding
+
+    @property
+    def dilation(self) -> tuple[int, int]:
+        return self._dilation
+
+    @property
+    def groups(self) -> int:
+        return self._groups
+
+    # ------------------------------------------------------------------
+    # Core linear-map operations
+    # ------------------------------------------------------------------
+
+    def apply(self, x: torch.Tensor) -> torch.Tensor:
+        if tuple(x.shape[-3:]) != tuple(self._input_shape):
+            raise ValueError(
+                f"ScaledConv2dOperator.apply: x trailing shape {tuple(x.shape[-3:])} does not match "
+                f"input_shape {tuple(self._input_shape)}"
+            )
+        leading = x.shape[:-3]
+        flat = x.reshape(-1, *self._input_shape)
+        conv_out = _conv2d(flat, self._weight, self._stride, self._padding, self._dilation, self._groups)
+        conv_out = conv_out.reshape(*leading, *conv_out.shape[-3:])
+        # alpha has shape output_shape; conv_out has shape (*leading, *output_shape[-3:]).
+        # Broadcast alpha over any output_shape batch dims that aren't in leading.
+        return self._alpha * conv_out
+
+    def apply_transpose(self, y: torch.Tensor) -> torch.Tensor:
+        output_ndim = self.output_ndim
+        if tuple(y.shape[-output_ndim:]) != tuple(self._output_shape):
+            raise ValueError(
+                f"ScaledConv2dOperator.apply_transpose: y trailing shape {tuple(y.shape[-output_ndim:])} "
+                f"does not match output_shape {tuple(self._output_shape)}"
+            )
+        leading = y.shape[:-output_ndim]
+
+        # Adjoint of y' = alpha * conv(x, W):
+        #   <z, alpha * conv(x, W)> = <conv^T(alpha * z), x>
+        # Scale by alpha first, then apply conv_transpose.
+        scaled = y * self._alpha  # broadcasts over leading dims
+
+        all_flat_batch = scaled.shape[:-3]
+        s_flat = scaled.reshape(-1, *scaled.shape[-3:])
+        output_padding = _infer_conv_output_padding(
+            input_spatial=(int(self._input_shape[-2]), int(self._input_shape[-1])),
+            output_spatial=(int(scaled.shape[-2]), int(scaled.shape[-1])),
+            kernel_size=(int(self._weight.shape[-2]), int(self._weight.shape[-1])),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+        )
+        x_flat = F.conv_transpose2d(
+            s_flat,
+            self._weight,
+            bias=None,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            output_padding=output_padding,
+        )
+        x = x_flat.reshape(*all_flat_batch, *self._input_shape)
+
+        batch_of_output = output_ndim - 3
+        if batch_of_output > 0:
+            reduce_dims = tuple(range(-3 - batch_of_output, -3))
+            x = x.sum(dim=reduce_dims)
+        return x.reshape(*leading, *self._input_shape)
+
+    def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
+        return _scaled_conv2d_concretize(region, self, mode="min")  # ty:ignore[invalid-argument-type]
+
+    def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
+        return _scaled_conv2d_concretize(region, self, mode="max")  # ty:ignore[invalid-argument-type]
+
+    # ------------------------------------------------------------------
+    # Algebra
+    # ------------------------------------------------------------------
+
+    def neg(self) -> ScaledConv2dOperator:
+        return ScaledConv2dOperator(
+            weight=self._weight,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            alpha=-self._alpha,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def scale(self, factor: torch.Tensor) -> LinearOperator:
+        """Compose scaling: ``alpha' = alpha * factor`` (broadcast to output_shape)."""
+        factor_bc = _broadcast_factor_to(factor, self._output_shape)
+        return ScaledConv2dOperator(
+            weight=self._weight,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            alpha=self._alpha * factor_bc,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def add(self, other: LinearOperator) -> LinearOperator:
+        """Structural add when ``other`` is a scaled (or plain) conv over the
+        same weight and hyperparameters; otherwise fall back to dense.
+        """
+        if isinstance(other, ScaledConv2dOperator) and self._same_conv_as(
+            weight=other._weight,
+            stride=other._stride,
+            padding=other._padding,
+            dilation=other._dilation,
+            groups=other._groups,
+            input_shape=tuple(other._input_shape),
+            output_shape=tuple(other._output_shape),
+        ):
+            return ScaledConv2dOperator(
+                weight=self._weight,
+                stride=self._stride,
+                padding=self._padding,
+                dilation=self._dilation,
+                groups=self._groups,
+                alpha=self._alpha + other._alpha,
+                input_shape=tuple(self._input_shape),
+                output_shape=tuple(self._output_shape),
+            )
+        if isinstance(other, Conv2dOperator) and self._same_conv_as(
+            weight=other.weight,
+            stride=other.stride,
+            padding=other.padding,
+            dilation=other.dilation,
+            groups=other.groups,
+            input_shape=tuple(other.input_shape),
+            output_shape=tuple(other.output_shape),
+        ):
+            # Treat ``Conv2dOperator`` as ``ScaledConv2dOperator`` with alpha=1.
+            return ScaledConv2dOperator(
+                weight=self._weight,
+                stride=self._stride,
+                padding=self._padding,
+                dilation=self._dilation,
+                groups=self._groups,
+                alpha=self._alpha + 1,
+                input_shape=tuple(self._input_shape),
+                output_shape=tuple(self._output_shape),
+            )
+        return super().add(other)
+
+    def _same_conv_as(
+        self,
+        *,
+        weight: torch.Tensor,
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
+        groups: int,
+        input_shape: tuple[int, ...],
+        output_shape: tuple[int, ...],
+    ) -> bool:
+        if (
+            self._stride != stride
+            or self._padding != padding
+            or self._dilation != dilation
+            or self._groups != groups
+            or tuple(self._input_shape) != input_shape
+            or tuple(self._output_shape) != output_shape
+        ):
+            return False
+        # Weight equality: prefer identity (same tensor object), fall back to
+        # value equality. The identity path is hit in the common case where
+        # scale/add are chained on the same underlying conv.
+        return self._weight is weight or (self._weight.shape == weight.shape and torch.equal(self._weight, weight))
+
+    # ------------------------------------------------------------------
+    # Materialization + housekeeping
+    # ------------------------------------------------------------------
+
+    def to_dense(self) -> DenseOperator:
+        """Materialize: dense Jacobian of conv, then scale by alpha broadcast
+        over the input axes."""
+        base_dense = Conv2dOperator(
+            weight=self._weight,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        ).to_dense()
+        # base_dense.tensor: (*output_shape, *input_shape). alpha: output_shape.
+        alpha_bc = self._alpha.reshape(self._alpha.shape + (1,) * len(self._input_shape))
+        return DenseOperator(base_dense.tensor * alpha_bc, output_shape=self._output_shape)
+
+    def to(self, device: str | torch.device) -> ScaledConv2dOperator:
+        return ScaledConv2dOperator(
+            weight=self._weight.to(device),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            alpha=self._alpha.to(device),
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def clone(self) -> ScaledConv2dOperator:
+        return ScaledConv2dOperator(
+            weight=self._weight.clone(),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            alpha=self._alpha.clone(),
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+
+@dispatch
+def _scaled_conv2d_concretize(  # noqa: ARG001
+    region: SimpleRegion, op: ScaledConv2dOperator, *, mode: str
+) -> torch.Tensor:
+    raise NotImplementedError(
+        f"ScaledConv2dOperator concretization not implemented for region type {type(region).__name__}"
+    )
+
+
+@dispatch
+def _scaled_conv2d_concretize(  # noqa: F811
+    region: HyperRectangle, op: ScaledConv2dOperator, *, mode: str
+) -> torch.Tensor:
+    # For a per-output-element alpha, sign-decomposition splits by alpha's sign:
+    #   min_x (alpha_i * conv(x, W)_i) = alpha_i_pos * conv_min_i + alpha_i_neg * conv_max_i
+    # where conv_min/max are the standard sign-decomposed conv bounds.
+    lower_in = region.lower
+    upper_in = region.upper
+    if tuple(lower_in.shape[-3:]) != tuple(op.input_shape):
+        raise ValueError(
+            f"Region trailing shape {tuple(lower_in.shape[-3:])} does not match input_shape {tuple(op.input_shape)}"
+        )
+
+    w_pos = op.weight.clamp(min=0)
+    w_neg = op.weight.clamp(max=0)
+    leading = lower_in.shape[:-3]
+    flat_l = lower_in.reshape(-1, *op.input_shape)
+    flat_u = upper_in.reshape(-1, *op.input_shape)
+
+    conv_min_flat = _conv2d(flat_l, w_pos, op._stride, op._padding, op._dilation, op._groups) + _conv2d(
+        flat_u, w_neg, op._stride, op._padding, op._dilation, op._groups
+    )
+    conv_max_flat = _conv2d(flat_u, w_pos, op._stride, op._padding, op._dilation, op._groups) + _conv2d(
+        flat_l, w_neg, op._stride, op._padding, op._dilation, op._groups
+    )
+    conv_min = conv_min_flat.reshape(*leading, *conv_min_flat.shape[-3:])
+    conv_max = conv_max_flat.reshape(*leading, *conv_max_flat.shape[-3:])
+
+    # Broadcast to full output_shape.
+    if conv_min.shape != op.output_shape:
+        conv_min = conv_min.expand(op.output_shape)
+        conv_max = conv_max.expand(op.output_shape)
+
+    alpha_pos = op.alpha.clamp(min=0)
+    alpha_neg = op.alpha.clamp(max=0)
+    if mode == "min":
+        return alpha_pos * conv_min + alpha_neg * conv_max
+    if mode == "max":
+        return alpha_pos * conv_max + alpha_neg * conv_min
+    raise ValueError(f"Invalid concretize mode {mode!r}")
+
+
+def _broadcast_factor_to(factor: torch.Tensor, target: torch.Size) -> torch.Tensor:
+    """Broadcast-expand ``factor`` to match ``target`` shape.
+
+    Used when a scaling factor (e.g. from ``ElementwiseForwardRelaxation``) has
+    a shape shorter than the target (typically missing leading batch dims),
+    or uses size-1 broadcast dims. Returns a contiguous tensor of shape
+    ``target``.
+    """
+    if tuple(factor.shape) == tuple(target):
+        return factor
+    # Pad leading dims with 1s, then expand.
+    padded_shape = (1,) * (len(target) - factor.ndim) + tuple(factor.shape)
+    return factor.reshape(padded_shape).expand(target).contiguous()
+
+
+# ----------------------------------------------------------------------
+# Conv2d helpers
+# ----------------------------------------------------------------------
+
+
+def _conv2d(
+    x: torch.Tensor,
+    weight: torch.Tensor,
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+    groups: int,
+) -> torch.Tensor:
+    return F.conv2d(x, weight, bias=None, stride=stride, padding=padding, dilation=dilation, groups=groups)
+
+
+def _infer_conv_output_padding(
+    input_spatial: tuple[int, int],
+    output_spatial: tuple[int, int],
+    kernel_size: tuple[int, int],
+    stride: tuple[int, int],
+    padding: tuple[int, int],
+    dilation: tuple[int, int],
+) -> tuple[int, int]:
+    """Derive ``output_padding`` for ``F.conv_transpose2d`` to match ``input_spatial``.
+
+    Mirrors the helper in :mod:`backward_lbp.conv_pool`.
+    """
+    h_in, w_in = input_spatial
+    h_out, w_out = output_spatial
+    k_h, k_w = kernel_size
+    s_h, s_w = stride
+    p_h, p_w = padding
+    d_h, d_w = dilation
+
+    h_no_op = (h_out - 1) * s_h - 2 * p_h + d_h * (k_h - 1) + 1
+    w_no_op = (w_out - 1) * s_w - 2 * p_w + d_w * (k_w - 1) + 1
+    op_h = h_in - h_no_op
+    op_w = w_in - w_no_op
+    if op_h < 0 or op_w < 0 or op_h >= s_h or op_w >= s_w:
+        raise ValueError(
+            f"Cannot infer conv_transpose2d output_padding: "
+            f"output_padding=({op_h}, {op_w}) for input_spatial={input_spatial}, "
+            f"output_spatial={output_spatial}, stride={stride}"
+        )
+    return op_h, op_w
+
+
+@dispatch
+def _conv2d_concretize(region: SimpleRegion, conv: Conv2dOperator, *, mode: str) -> torch.Tensor:  # noqa: ARG001
+    raise NotImplementedError(
+        f"Conv2dOperator concretization is not implemented for region type {type(region).__name__}"
+    )
+
+
+@dispatch
+def _conv2d_concretize(  # noqa: F811
+    region: HyperRectangle, conv: Conv2dOperator, *, mode: str
+) -> torch.Tensor:
+    lower_in = region.lower
+    upper_in = region.upper
+
+    if tuple(lower_in.shape[-3:]) != tuple(conv.input_shape):
+        raise ValueError(
+            f"Region trailing shape {tuple(lower_in.shape[-3:])} does not match input_shape {tuple(conv.input_shape)}"
+        )
+
+    w_pos = conv.weight.clamp(min=0)
+    w_neg = conv.weight.clamp(max=0)
+
+    # Flatten leading batch dims for conv2d.
+    leading = lower_in.shape[:-3]
+    flat_l = lower_in.reshape(-1, *conv.input_shape)
+    flat_u = upper_in.reshape(-1, *conv.input_shape)
+
+    if mode == "min":
+        out = _conv2d(flat_l, w_pos, conv.stride, conv.padding, conv.dilation, conv.groups) + _conv2d(
+            flat_u, w_neg, conv.stride, conv.padding, conv.dilation, conv.groups
+        )
+    elif mode == "max":
+        out = _conv2d(flat_u, w_pos, conv.stride, conv.padding, conv.dilation, conv.groups) + _conv2d(
+            flat_l, w_neg, conv.stride, conv.padding, conv.dilation, conv.groups
+        )
+    else:
+        raise ValueError(f"Invalid concretize mode {mode!r}")
+
+    out = out.reshape(*leading, *out.shape[-3:])
+    # Broadcast to output_shape: if output_shape has extra batch dims not in
+    # the region, broadcast-expand; if it has fewer, that's a soundness error.
+    if out.shape != conv.output_shape:
+        try:
+            out = out.expand(conv.output_shape)
+        except RuntimeError as err:
+            raise ValueError(
+                f"Conv2dOperator concretization got shape {tuple(out.shape)} but output_shape is "
+                f"{tuple(conv.output_shape)}; region shape {tuple(lower_in.shape)} is incompatible"
+            ) from err
+    return out
+
+
+# ----------------------------------------------------------------------
+# Patch-mode conv operator (position-varying kernel)
+# ----------------------------------------------------------------------
+
+
+class Conv2dPatchOperator(LinearOperator):
+    """Linear map with a **position-varying** 2D kernel stored as patches.
+
+    Represents ``y[c_z, h, w] = sum_{c_x, m, n} patch[c_z, h, w, c_x, m, n] *
+    x[c_x, h * s + m - p, w * s + n - p]`` (stride=1, dilation=1, groups=1 in
+    the current implementation). This generalizes :class:`Conv2dOperator` —
+    which has a *single* kernel used at every output position — to the case
+    where a composition has introduced position dependence (e.g. a conv after
+    a position-dependent scaling from a ReLU relaxation).
+
+    Arises from composing ``conv_k ∘ ScaledConv2dOperator`` via
+    :func:`_compose_conv_with_scaled`, where the second conv's kernel absorbs
+    the scaled conv's alpha at each output position. The resulting patches
+    live on the combined receptive field ``k_combined = k1 + k2 - 1`` (for
+    stride-1, dilation-1 convs).
+
+    Shape conventions:
+
+    - ``input_shape = (C_in, H_in, W_in)`` — the original network input shape.
+    - ``output_shape = (*batch, C_out, H_out, W_out)``.
+    - ``patches`` has shape ``(*output_shape, C_in, k_h, k_w)``.
+
+    Structural algebra:
+
+    - ``scale(factor)`` folds ``factor`` into the patches (per-output-element).
+    - ``neg`` negates the patches.
+    - ``add(other)`` of two ``Conv2dPatchOperator``s with identical
+      hyperparameters and patch shapes sums the patches element-wise; other
+      cases fall back to dense.
+    - Shape ops (``flatten_output`` etc.) fall back to dense via the ABC default.
+    - ``apply_transpose`` falls back to dense.
+    """
+
+    def __init__(
+        self,
+        patches: torch.Tensor,
+        stride: tuple[int, int],
+        padding: tuple[int, int],
+        dilation: tuple[int, int],
+        groups: int,
+        input_shape: tuple[int, ...],
+        output_shape: tuple[int, ...],
+    ) -> None:
+        if groups != 1:
+            raise NotImplementedError(f"Conv2dPatchOperator currently supports groups=1; got groups={groups}")
+        if len(input_shape) != 3:
+            raise ValueError(f"Conv2dPatchOperator input_shape must be 3D, got {tuple(input_shape)}")
+        if len(output_shape) < 3:
+            raise ValueError(f"Conv2dPatchOperator output_shape must be at least 3D, got {tuple(output_shape)}")
+        c_in = input_shape[0]
+        expected_patches_shape = (*output_shape, c_in, *patches.shape[-2:])
+        if tuple(patches.shape) != tuple(expected_patches_shape):
+            raise ValueError(
+                f"Conv2dPatchOperator patches shape {tuple(patches.shape)} must equal "
+                f"(*output_shape, C_in, k_h, k_w) = {tuple(expected_patches_shape)}"
+            )
+
+        self._patches = patches
+        self._stride = stride
+        self._padding = padding
+        self._dilation = dilation
+        self._groups = groups
+        self._input_shape = torch.Size(input_shape)
+        self._output_shape = torch.Size(output_shape)
+
+    # ------------------------------------------------------------------
+    # Shape / metadata
+    # ------------------------------------------------------------------
+
+    @property
+    def output_shape(self) -> torch.Size:
+        return self._output_shape
+
+    @property
+    def input_shape(self) -> torch.Size:
+        return self._input_shape
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self._patches.dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self._patches.device
+
+    @property
+    def patches(self) -> torch.Tensor:
+        return self._patches
+
+    @property
+    def kernel_size(self) -> tuple[int, int]:
+        return (int(self._patches.shape[-2]), int(self._patches.shape[-1]))
+
+    @property
+    def stride(self) -> tuple[int, int]:
+        return self._stride
+
+    @property
+    def padding(self) -> tuple[int, int]:
+        return self._padding
+
+    @property
+    def dilation(self) -> tuple[int, int]:
+        return self._dilation
+
+    @property
+    def groups(self) -> int:
+        return self._groups
+
+    # ------------------------------------------------------------------
+    # Core linear-map operations
+    # ------------------------------------------------------------------
+
+    def apply(self, x: torch.Tensor) -> torch.Tensor:
+        """y[b, c_z, h, w] = sum_{c_x, m, n} patches[*, c_z, h, w, c_x, m, n] * x_unfold[*, c_x, m, n, h, w]."""
+        if tuple(x.shape[-3:]) != tuple(self._input_shape):
+            raise ValueError(
+                f"Conv2dPatchOperator.apply: x trailing shape {tuple(x.shape[-3:])} does not match "
+                f"input_shape {tuple(self._input_shape)}"
+            )
+        c_in, k_h, k_w = int(self._input_shape[0]), *self.kernel_size
+        h_out, w_out = int(self._output_shape[-2]), int(self._output_shape[-1])
+
+        leading = x.shape[:-3]
+        x_flat = x.reshape(-1, *self._input_shape)
+        # Unfold x through the effective receptive field.
+        x_unf = F.unfold(
+            x_flat,
+            kernel_size=(k_h, k_w),
+            dilation=self._dilation,
+            padding=self._padding,
+            stride=self._stride,
+        )
+        x_unf = x_unf.reshape(-1, c_in, k_h, k_w, h_out, w_out)
+        x_unf = x_unf.reshape(*leading, c_in, k_h, k_w, h_out, w_out)
+
+        # patches: (*output_shape, C_in, k_h, k_w) where output_shape =
+        # (*batch_out, C_z, H_out, W_out).  x_unf: (*leading, C_in, k_h, k_w,
+        # H_out, W_out). The einsum contracts (C_in, k_h, k_w) and keeps
+        # (..., C_z, H_out, W_out).
+        # We treat trailing batch of output_shape and leading of x as sharing.
+        return torch.einsum("...zhwikl,...iklhw->...zhw", self._patches, x_unf)
+
+    def apply_transpose(self, y: torch.Tensor) -> torch.Tensor:
+        """Structured adjoint via :func:`F.fold`.
+
+        Forward is ``y = einsum("...zhwcmn,...cmnhw->...zhw", patches, x_unfold)``
+        where ``x_unfold = F.unfold(x, kernel_size, padding, stride, dilation)``.
+        Adjoint: contract ``patches`` against ``y`` on the output dims, then
+        ``F.fold`` (the adjoint of ``F.unfold``) back into the input grid —
+        which correctly sums overlapping patch contributions.
+
+        Matches :meth:`DenseOperator.apply_transpose` semantics: reduces over
+        all of ``output_shape`` (including any batch prefix in the operator's
+        output).
+        """
+        output_ndim = self.output_ndim
+        if tuple(y.shape[-output_ndim:]) != tuple(self._output_shape):
+            raise ValueError(
+                f"Conv2dPatchOperator.apply_transpose: y trailing shape "
+                f"{tuple(y.shape[-output_ndim:])} does not match output_shape "
+                f"{tuple(self._output_shape)}"
+            )
+        leading_ndim = y.ndim - output_ndim
+        leading_shape = y.shape[:leading_ndim]
+        c_in = int(self._input_shape[0])
+        k_h, k_w = self.kernel_size
+        h_in = int(self._input_shape[-2])
+        w_in = int(self._input_shape[-1])
+        h_z = int(self._output_shape[-2])
+        w_z = int(self._output_shape[-1])
+
+        # Broadcast-multiply patches against y, summing over the part of
+        # output_shape before (H_z, W_z) — i.e. *batch_out and C_z.
+        y_expanded = y.reshape(y.shape + (1, 1, 1))
+        patches_expanded = self._patches.reshape((1,) * leading_ndim + self._patches.shape)
+        product = patches_expanded * y_expanded  # (*leading, *output_shape, C_in, k_h, k_w)
+
+        sum_dims = tuple(range(leading_ndim, leading_ndim + output_ndim - 2))
+        reduced = product.sum(dim=sum_dims) if sum_dims else product
+        # reduced shape: (*leading, H_z, W_z, C_in, k_h, k_w)
+
+        # Permute to (*leading, C_in, k_h, k_w, H_z, W_z) for F.fold.
+        perm = list(range(leading_ndim)) + [
+            leading_ndim + 2,
+            leading_ndim + 3,
+            leading_ndim + 4,
+            leading_ndim,
+            leading_ndim + 1,
+        ]
+        permuted = reduced.permute(perm)
+
+        fold_input = permuted.reshape(-1, c_in * k_h * k_w, h_z * w_z)
+        folded = F.fold(
+            fold_input,
+            output_size=(h_in, w_in),
+            kernel_size=(k_h, k_w),
+            padding=self._padding,
+            stride=self._stride,
+            dilation=self._dilation,
+        )
+        return folded.reshape(*leading_shape, c_in, h_in, w_in)
+
+    def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
+        return _patch_concretize(region, self, mode="min")  # ty:ignore[invalid-argument-type]
+
+    def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
+        return _patch_concretize(region, self, mode="max")  # ty:ignore[invalid-argument-type]
+
+    # ------------------------------------------------------------------
+    # Algebra
+    # ------------------------------------------------------------------
+
+    def neg(self) -> Conv2dPatchOperator:
+        return Conv2dPatchOperator(
+            patches=-self._patches,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def scale(self, factor: torch.Tensor) -> LinearOperator:
+        factor_bc = _broadcast_factor_to(factor, self._output_shape)
+        # Append singleton dims for (C_in, k_h, k_w) to broadcast over patches.
+        extra = factor_bc.reshape(factor_bc.shape + (1, 1, 1))
+        return Conv2dPatchOperator(
+            patches=self._patches * extra,
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def add(self, other: LinearOperator) -> LinearOperator:
+        if isinstance(other, Conv2dPatchOperator) and self._same_patch_hyperparams(other):
+            return Conv2dPatchOperator(
+                patches=self._patches + other._patches,
+                stride=self._stride,
+                padding=self._padding,
+                dilation=self._dilation,
+                groups=self._groups,
+                input_shape=tuple(self._input_shape),
+                output_shape=tuple(self._output_shape),
+            )
+        return super().add(other)
+
+    def _same_patch_hyperparams(self, other: Conv2dPatchOperator) -> bool:
+        return (
+            self._stride == other._stride
+            and self._padding == other._padding
+            and self._dilation == other._dilation
+            and self._groups == other._groups
+            and tuple(self._input_shape) == tuple(other._input_shape)
+            and tuple(self._output_shape) == tuple(other._output_shape)
+            and self._patches.shape[-2:] == other._patches.shape[-2:]
+        )
+
+    # ------------------------------------------------------------------
+    # Materialization + housekeeping
+    # ------------------------------------------------------------------
+
+    def to_dense(self) -> DenseOperator:
+        """Materialize the full ``(*output_shape, *input_shape)`` Jacobian.
+
+        Each patch entry maps to one coefficient in the dense Jacobian; we
+        place it at the corresponding (output-position, input-position) pair
+        via a small Python loop over kernel offsets and output locations.
+        This is ``O(H_out * W_out * k_h * k_w)`` Python iterations, each doing
+        a vectorised copy of shape ``(*batch, C_out, C_in)`` — acceptable for
+        occasional materialisation.
+        """
+        c_in, h_in, w_in = (int(s) for s in self._input_shape)
+        k_h, k_w = self.kernel_size
+        h_out, w_out = int(self._output_shape[-2]), int(self._output_shape[-1])
+        p_h, p_w = self._padding
+        s_h, s_w = self._stride
+        d_h, d_w = self._dilation
+        batch_shape = tuple(self._output_shape[:-3])
+        c_out = int(self._output_shape[-3])
+
+        dense = torch.zeros(*batch_shape, c_out, h_out, w_out, c_in, h_in, w_in, dtype=self.dtype, device=self.device)
+        # TODO: Replace with advanced indexing instead of Python loops.
+        for h_o in range(h_out):
+            for w_o in range(w_out):
+                for m in range(k_h):
+                    r = h_o * s_h - p_h + m * d_h
+                    if r < 0 or r >= h_in:
+                        continue
+                    for n in range(k_w):
+                        c = w_o * s_w - p_w + n * d_w
+                        if c < 0 or c >= w_in:
+                            continue
+                        dense[..., :, h_o, w_o, :, r, c] = self._patches[..., :, h_o, w_o, :, m, n]
+        return DenseOperator(dense, output_shape=self._output_shape)
+
+    def to(self, device: str | torch.device) -> Conv2dPatchOperator:
+        return Conv2dPatchOperator(
+            patches=self._patches.to(device),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+    def clone(self) -> Conv2dPatchOperator:
+        return Conv2dPatchOperator(
+            patches=self._patches.clone(),
+            stride=self._stride,
+            padding=self._padding,
+            dilation=self._dilation,
+            groups=self._groups,
+            input_shape=tuple(self._input_shape),
+            output_shape=tuple(self._output_shape),
+        )
+
+
+@dispatch
+def _patch_concretize(region: SimpleRegion, op: Conv2dPatchOperator, *, mode: str) -> torch.Tensor:  # noqa: ARG001
+    raise NotImplementedError(
+        f"Conv2dPatchOperator concretization not implemented for region type {type(region).__name__}"
+    )
+
+
+@dispatch
+def _patch_concretize(  # noqa: F811
+    region: HyperRectangle, op: Conv2dPatchOperator, *, mode: str
+) -> torch.Tensor:
+    lower_in = region.lower
+    upper_in = region.upper
+    if tuple(lower_in.shape[-3:]) != tuple(op.input_shape):
+        raise ValueError(
+            f"Region trailing shape {tuple(lower_in.shape[-3:])} does not match input_shape {tuple(op.input_shape)}"
+        )
+
+    c_in, _, _ = op.input_shape
+    k_h, k_w = op.kernel_size
+    h_out, w_out = int(op.output_shape[-2]), int(op.output_shape[-1])
+
+    leading = lower_in.shape[:-3]
+    l_flat = lower_in.reshape(-1, *op.input_shape)
+    u_flat = upper_in.reshape(-1, *op.input_shape)
+
+    l_unf = F.unfold(l_flat, kernel_size=(k_h, k_w), dilation=op._dilation, padding=op.padding, stride=op.stride)
+    u_unf = F.unfold(u_flat, kernel_size=(k_h, k_w), dilation=op._dilation, padding=op.padding, stride=op.stride)
+    l_unf = l_unf.reshape(*leading, int(c_in), k_h, k_w, h_out, w_out)
+    u_unf = u_unf.reshape(*leading, int(c_in), k_h, k_w, h_out, w_out)
+
+    patches = op.patches
+    patch_pos = patches.clamp(min=0)
+    patch_neg = patches.clamp(max=0)
+
+    if mode == "min":
+        out = torch.einsum("...zhwikl,...iklhw->...zhw", patch_pos, l_unf) + torch.einsum(
+            "...zhwikl,...iklhw->...zhw", patch_neg, u_unf
+        )
+    elif mode == "max":
+        out = torch.einsum("...zhwikl,...iklhw->...zhw", patch_pos, u_unf) + torch.einsum(
+            "...zhwikl,...iklhw->...zhw", patch_neg, l_unf
+        )
+    else:
+        raise ValueError(f"Invalid concretize mode {mode!r}")
+
+    if out.shape != op.output_shape:
+        out = out.expand(op.output_shape)
+    return out
+
+
+def _compose_conv_with_scaled(
+    scaled_op: ScaledConv2dOperator,
+    weight2: torch.Tensor,
+    stride2: tuple[int, int],
+    padding2: tuple[int, int],
+    dilation2: tuple[int, int],
+    groups2: int,
+    output_shape: tuple[int, ...],
+) -> Conv2dPatchOperator:
+    """Compose a 2D conv after a :class:`ScaledConv2dOperator` into a
+    :class:`Conv2dPatchOperator` that preserves the structure.
+
+    Math (stride=1, dilation=1, groups=1, for both convs):
+
+    Let ``y = alpha * conv(x, W1, p1)`` and ``z = conv(y, W2, p2)``. Then
+    ``z[c_z, h, w] = sum_{c_x, m, n} patch[c_z, h, w, c_x, m, n] *
+    x[c_x, h + m - p_combined, w + n - p_combined]`` with
+    ``k_combined = k1 + k2 - 1`` and ``p_combined = p1 + p2``, and
+
+        patch[c_z, h, w, c_x, m, n] = sum_{c_y, di, dj}
+            W2[c_z, c_y, di, dj] * alpha[c_y, h+di-p2, w+dj-p2] * W1[c_y, c_x, m-di, n-dj]
+
+    Implemented by (1) unfolding ``alpha`` through conv₂'s receptive field,
+    (2) multiplying by ``W2`` to get an intermediate tensor indexed by
+    (c_z, c_y, di, dj, h, w), then (3) applying a 2-D transposed convolution
+    against ``W1`` to expand the kernel offsets into the combined receptive
+    field (m, n).
+
+    Raises ``NotImplementedError`` when stride/dilation/groups ≠ baseline.
+    """
+    if scaled_op.stride != (1, 1) or stride2 != (1, 1):
+        raise NotImplementedError(
+            f"_compose_conv_with_scaled requires stride=(1,1) on both convs; got {scaled_op.stride} and {stride2}"
+        )
+    if scaled_op.dilation != (1, 1) or dilation2 != (1, 1):
+        raise NotImplementedError(
+            f"_compose_conv_with_scaled requires dilation=(1,1); got {scaled_op.dilation} and {dilation2}"
+        )
+    if scaled_op.groups != 1 or groups2 != 1:
+        raise NotImplementedError(f"_compose_conv_with_scaled requires groups=1; got {scaled_op.groups} and {groups2}")
+    if weight2.ndim != 4:
+        raise ValueError(f"weight2 must be 4D (C_z, C_y, k2h, k2w), got {tuple(weight2.shape)}")
+
+    w1 = scaled_op.weight  # (C_y, C_x, k1h, k1w)
+    alpha = scaled_op.alpha  # shape = scaled_op.output_shape = (*batch, C_y, H_y, W_y)
+    c_z, c_y_w2, k2h, k2w = weight2.shape
+    c_y_w1, c_x, k1h, k1w = w1.shape
+    if c_y_w2 != c_y_w1:
+        raise ValueError(f"Intermediate channel mismatch: weight2 has C_y={c_y_w2}, scaled_op.weight has C_y={c_y_w1}")
+    c_y = c_y_w1
+    p1h, p1w = scaled_op.padding
+    p2h, p2w = padding2
+
+    h_z = int(output_shape[-2])
+    w_z = int(output_shape[-1])
+
+    # Flatten any leading batch dims in alpha so F.unfold treats them as batch.
+    batch_shape = alpha.shape[:-3]
+    alpha_flat = alpha.reshape(-1, c_y, alpha.shape[-2], alpha.shape[-1])
+    B = alpha_flat.shape[0]
+
+    # Unfold α through conv₂'s kernel: (B, C_y*k2h*k2w, H_z*W_z) → (B, C_y, k2h, k2w, H_z, W_z).
+    alpha_unf = F.unfold(alpha_flat, kernel_size=(k2h, k2w), padding=(p2h, p2w), stride=1)
+    alpha_unf = alpha_unf.reshape(B, c_y, k2h, k2w, h_z, w_z)
+
+    # Multiply by W2. Result: (B, C_z, C_y, k2h, k2w, H_z, W_z).
+    a = weight2.reshape(1, c_z, c_y, k2h, k2w, 1, 1) * alpha_unf.reshape(B, 1, c_y, k2h, k2w, h_z, w_z)
+
+    # Reshape to (B*C_z*H_z*W_z, C_y, k2h, k2w) for F.conv_transpose2d.
+    a_perm = a.permute(0, 1, 5, 6, 2, 3, 4).contiguous()  # (B, C_z, H_z, W_z, C_y, k2h, k2w)
+    a_flat = a_perm.reshape(-1, c_y, k2h, k2w)
+
+    # F.conv_transpose2d with stride=1, padding=0 produces output size k2 + k1 - 1.
+    # Weight shape (C_in=C_y, C_out=C_x, k1h, k1w). The math expands the kernel
+    # offsets additively — exactly what we need.
+    k_combined_h = k1h + k2h - 1
+    k_combined_w = k1w + k2w - 1
+    patch_flat = F.conv_transpose2d(a_flat, w1, stride=1, padding=0)
+    # Expect output shape (-1, C_x, k_combined_h, k_combined_w).
+    if patch_flat.shape[-3:] != (c_x, k_combined_h, k_combined_w):
+        raise RuntimeError(
+            f"Unexpected composed-patch shape {tuple(patch_flat.shape)}; expected trailing "
+            f"({c_x}, {k_combined_h}, {k_combined_w})"
+        )
+
+    patches = patch_flat.reshape(B, c_z, h_z, w_z, c_x, k_combined_h, k_combined_w)
+    patches = patches.reshape(*batch_shape, c_z, h_z, w_z, c_x, k_combined_h, k_combined_w)
+
+    return Conv2dPatchOperator(
+        patches=patches,
+        stride=(1, 1),
+        padding=(p1h + p2h, p1w + p2w),
+        dilation=(1, 1),
+        groups=1,
+        input_shape=tuple(scaled_op.input_shape),
+        output_shape=tuple(output_shape),
+    )
+
+
+def _compose_conv_with_patch(
+    patch_op: Conv2dPatchOperator,
+    weight3: torch.Tensor,
+    stride3: tuple[int, int],
+    padding3: tuple[int, int],
+    dilation3: tuple[int, int],
+    groups3: int,
+    output_shape: tuple[int, ...],
+) -> Conv2dPatchOperator:
+    """Compose a 2D conv after a :class:`Conv2dPatchOperator` into a larger
+    ``Conv2dPatchOperator`` without materializing.
+
+    Supports stride=1, dilation=1, groups=1 on both the incoming patch op and
+    the new conv₃. Effective hyperparameters of the composed patch op:
+
+    - stride = (1, 1)
+    - padding = ``patch_op.padding + padding3`` (componentwise)
+    - dilation = (1, 1)
+    - kernel_size = ``patch_op.kernel_size + k3 - 1`` (componentwise)
+
+    Math (all stride-1, dilation-1 assumed)::
+
+        z[c_z, h_z, w_z] = sum_{c_y, di_y, dj_y}
+            W3[c_z, c_y, di_y, dj_y] * y[c_y, h_z + di_y - p3, w_z + dj_y - p3]
+
+    where ``y`` is itself a patch op. Substituting and grouping by the
+    effective input offset ``(m_new, n_new) = (di_y + m, dj_y + n)`` yields::
+
+        new_patch[c_z, h_z, w_z, c_x, m_new, n_new]
+            = sum_{c_y, di_y, dj_y, m, n : m_new == di_y + m, n_new == dj_y + n}
+                W3[c_z, c_y, di_y, dj_y] *
+                patch[c_y, h_z + di_y - p3, w_z + dj_y - p3, c_x, m, n]
+
+    Implementation: Python loop over ``(di_y, dj_y)`` with a vectorised
+    gather along ``(H_y, W_y)``, a contract against ``W3[:, :, di_y, dj_y]``,
+    and a scatter-add into the new kernel slot
+    ``[di_y : di_y+k_p_h, dj_y : dj_y+k_p_w]``.
+    """
+    if patch_op.stride != (1, 1) or stride3 != (1, 1):
+        raise NotImplementedError(
+            f"_compose_conv_with_patch requires stride=(1,1); got patch stride={patch_op.stride}, conv stride={stride3}"
+        )
+    if patch_op.dilation != (1, 1) or dilation3 != (1, 1):
+        raise NotImplementedError(
+            f"_compose_conv_with_patch requires dilation=(1,1); got patch dilation={patch_op.dilation}, "
+            f"conv dilation={dilation3}"
+        )
+    if patch_op.groups != 1 or groups3 != 1:
+        raise NotImplementedError("_compose_conv_with_patch requires groups=1 on both operators")
+    if weight3.ndim != 4:
+        raise ValueError(f"weight3 must be 4D, got {tuple(weight3.shape)}")
+
+    p3h, p3w = padding3
+    pph, ppw = patch_op.padding
+    _, c_y_w3, k3h, k3w = weight3.shape
+    kph, kpw = patch_op.kernel_size
+
+    c_y_patch = int(patch_op.output_shape[-3])
+    if c_y_w3 != c_y_patch:
+        raise ValueError(f"Intermediate channel mismatch: weight3 expects C_y={c_y_w3}, patch_op has C_y={c_y_patch}")
+
+    new_kh = k3h + kph - 1
+    new_kw = k3w + kpw - 1
+    new_padding = (p3h + pph, p3w + ppw)
+
+    c_x = int(patch_op.input_shape[0])
+    h_y = int(patch_op.output_shape[-2])
+    w_y = int(patch_op.output_shape[-1])
+    h_z = int(output_shape[-2])
+    w_z = int(output_shape[-1])
+
+    if tuple(output_shape[:-3]) != tuple(patch_op.output_shape[:-3]):
+        raise NotImplementedError(
+            "_compose_conv_with_patch does not currently support differing batch prefixes "
+            f"({tuple(output_shape[:-3])} vs {tuple(patch_op.output_shape[:-3])})"
+        )
+
+    patches_old = patch_op.patches  # (*batch, C_y, H_y, W_y, C_x, kph, kpw)
+
+    new_patches = torch.zeros(*output_shape, c_x, new_kh, new_kw, dtype=patches_old.dtype, device=patches_old.device)
+
+    hz_range = torch.arange(h_z, device=patches_old.device)
+    wz_range = torch.arange(w_z, device=patches_old.device)
+
+    for di_y in range(k3h):
+        hy = hz_range + di_y - p3h
+        h_mask = (hy >= 0) & (hy < h_y)
+        if not bool(h_mask.any()):
+            continue
+        valid_hz = hz_range[h_mask]
+        valid_hy = hy[h_mask]
+        h_start = int(valid_hz[0].item())
+        h_end = int(valid_hz[-1].item()) + 1
+        for dj_y in range(k3w):
+            wy = wz_range + dj_y - p3w
+            w_mask = (wy >= 0) & (wy < w_y)
+            if not bool(w_mask.any()):
+                continue
+            valid_wz = wz_range[w_mask]
+            valid_wy = wy[w_mask]
+            w_start = int(valid_wz[0].item())
+            w_end = int(valid_wz[-1].item()) + 1
+
+            # Patches layout: (*batch, C_y, H_y, W_y, C_x, k_h, k_w). H_y is at
+            # axis -5 (counting from the right), W_y at -4.
+            sub = patches_old.index_select(-5, valid_hy).index_select(-4, valid_wy)
+            # shape: (*batch, C_y, |vh|, |vw|, C_x, kph, kpw)
+
+            w3_slice = weight3[:, :, di_y, dj_y]  # (C_z, C_y)
+            contrib = torch.einsum("ZC,...Chwikl->...Zhwikl", w3_slice, sub)
+            # shape: (*batch, C_z, |vh|, |vw|, C_x, kph, kpw)
+
+            existing = new_patches[..., :, h_start:h_end, w_start:w_end, :, di_y : di_y + kph, dj_y : dj_y + kpw]
+            new_patches[..., :, h_start:h_end, w_start:w_end, :, di_y : di_y + kph, dj_y : dj_y + kpw] = (
+                existing + contrib
+            )
+
+    return Conv2dPatchOperator(
+        patches=new_patches,
+        stride=(1, 1),
+        padding=new_padding,
+        dilation=(1, 1),
+        groups=1,
+        input_shape=tuple(patch_op.input_shape),
+        output_shape=tuple(output_shape),
+    )
+
+
 __all__ = [
+    "Conv2dOperator",
+    "Conv2dPatchOperator",
     "DenseOperator",
+    "IdentityOperator",
     "LinearOperator",
+    "ScaledConv2dOperator",
     "apply_weight_to_bounds_pair",
     "cat_output",
     "stack_output",

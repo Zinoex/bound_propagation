@@ -36,7 +36,6 @@ from ..linear_relaxations.elementwise import (
 from .base import ForwardLBPStrategy
 
 if TYPE_CHECKING:
-    import torch
     import torch.fx as fx
 
     from ..context import PropagationContext
@@ -79,7 +78,11 @@ class ElementwiseForwardRelaxation:
         broadcast by appending ones.
 
         Handles signed alpha via positive/negative clamping so the result is always
-        a valid lower/upper bound.
+        a valid lower/upper bound. Uses the ``LinearOperator`` algebra
+        (``.scale`` + ``.add``) rather than raw tensor ops — structured inputs
+        like :class:`Conv2dOperator` / :class:`ScaledConv2dOperator` stay
+        structured when the operations permit (the default dense fallback
+        reproduces the previous raw-tensor behavior for DenseOperator inputs).
         """
 
         al_pos = self.params.alpha_lower.clamp(min=0)
@@ -87,35 +90,25 @@ class ElementwiseForwardRelaxation:
         au_pos = self.params.alpha_upper.clamp(min=0)
         au_neg = self.params.alpha_upper.clamp(max=0)
 
-        def broadcast(alpha: torch.Tensor, linear: torch.Tensor) -> torch.Tensor:
-            # alpha: (*batch_dims, *output_dims)
-            # linear: (*batch_dims, *output_dims, *input_dims)
-            # Append one dimension per input axis so broadcasting is correct.
-            extra = linear.ndim - alpha.ndim
-            return alpha.reshape(alpha.shape + (1,) * extra)
-
         # Lower bound: alpha_lower_pos * W_lower  +  alpha_lower_neg * W_upper
-        linear_lower = [
-            broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
-            for wl, wu in zip(input_bounds.linear_lowers, input_bounds.linear_uppers, strict=True)
+        linear_lower_ops = [
+            lower_op.scale(al_pos).add(upper_op.scale(al_neg))
+            for lower_op, upper_op in zip(input_bounds.linear_lowers_op, input_bounds.linear_uppers_op, strict=True)
         ]
         bias_lower = al_pos * input_bounds.bias_lower + al_neg * input_bounds.bias_upper + self.params.beta_lower
 
         # Upper bound: alpha_upper_pos * W_upper  +  alpha_upper_neg * W_lower
-        if input_bounds.linear_lowers is None and input_bounds.linear_uppers is None:
-            linear_upper = None
-        else:
-            linear_upper = [
-                broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
-                for wl, wu in zip(input_bounds.linear_lowers, input_bounds.linear_uppers, strict=True)
-            ]
+        linear_upper_ops = [
+            upper_op.scale(au_pos).add(lower_op.scale(au_neg))
+            for lower_op, upper_op in zip(input_bounds.linear_lowers_op, input_bounds.linear_uppers_op, strict=True)
+        ]
         bias_upper = au_pos * input_bounds.bias_upper + au_neg * input_bounds.bias_lower + self.params.beta_upper
 
         return LinearBounds(
             regions=input_bounds.regions,
-            linear_lower=linear_lower or None,
+            linear_lower=linear_lower_ops or None,
             bias_lower=bias_lower,
-            linear_upper=linear_upper or None,
+            linear_upper=linear_upper_ops or None,
             bias_upper=bias_upper,
             input_ids=input_bounds.input_ids or None,
         )

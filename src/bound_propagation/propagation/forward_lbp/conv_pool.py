@@ -33,7 +33,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ...bounds import LinearBounds
-from ...linear_operators import DenseOperator, LinearOperator
+from ...linear_operators import (
+    Conv2dOperator,
+    Conv2dPatchOperator,
+    DenseOperator,
+    IdentityOperator,
+    LinearOperator,
+    ScaledConv2dOperator,
+    _compose_conv_with_patch,
+    _compose_conv_with_scaled,
+)
 from ..linear_relaxations.alpha_resolvers import resolve_maxpool2d_alphas
 from .base import ForwardLBPStrategy
 
@@ -108,6 +117,16 @@ class ForwardLBPConv2d(ForwardLBPStrategy):
     feature ``(C_in, H_in, W_in)`` axes while leaving the trailing input axes
     intact. The bias terms are transformed identically (and the conv's bias
     is added to both ``bias_lower`` and ``bias_upper``).
+
+    Fast path: when both the lower and upper input operators are
+    :class:`IdentityOperator` — i.e. this conv is consuming the raw network
+    input — the output coefficients are returned as :class:`Conv2dOperator`
+    instances so no dense Jacobian is materialized. In that case the sign
+    decomposition collapses: ``y_lower = y_upper = conv(x) + b`` exactly,
+    because both endpoints of the input interval are the same linear map
+    (identity). Any subsequent non-trivial operator input (e.g. after a
+    ReLU that materialized its scale) triggers the dense materialization
+    path, which produces :class:`DenseOperator` outputs.
     """
 
     def propagate_forward(self, node: fx.Node, ctx: PropagationContext) -> LinearBounds:
@@ -118,6 +137,33 @@ class ForwardLBPConv2d(ForwardLBPStrategy):
             raise TypeError("ForwardLBPConv2d requires input to be LinearBounds")
 
         weight, bias, conv_kwargs = _resolve_conv2d_params(node, ctx, args, kwargs)
+
+        # Fast path 1: input operators are identity → emit structured Conv2dOperator
+        # coefficients without materializing any dense Jacobian.
+        if _all_identity(bounds.linear_lowers_op) and _all_identity(bounds.linear_uppers_op):
+            return _propagate_identity_input_conv2d(bounds, weight, bias, conv_kwargs)
+
+        # Fast path 2: input operators are all ScaledConv2dOperator over a
+        # compatible first conv → emit Conv2dPatchOperator via structural
+        # composition. Covers the second-conv-layer-after-nonlinearity case.
+        if _all_scaled_conv_composable(bounds.linear_lowers_op, bounds.linear_uppers_op, conv_kwargs):
+            try:
+                return _propagate_scaled_input_conv2d(bounds, weight, bias, conv_kwargs)
+            except NotImplementedError:
+                # Some edge case (stride/dilation/groups) not supported by the
+                # compose helper; fall through to the dense path below.
+                pass
+
+        # Fast path 3: input operators are all Conv2dPatchOperator with
+        # compatible hyperparameters → structurally compose into a larger
+        # Conv2dPatchOperator. Covers a third (or deeper) conv layer after
+        # two+ relu/conv layers have already been fused into a patch op.
+        if _all_patch_composable(bounds.linear_lowers_op, bounds.linear_uppers_op, conv_kwargs):
+            try:
+                return _propagate_patch_input_conv2d(bounds, weight, bias, conv_kwargs)
+            except NotImplementedError:
+                pass
+
         weight_pos = weight.clamp(min=0)
         weight_neg = weight.clamp(max=0)
 
@@ -173,6 +219,342 @@ class ForwardLBPConv2d(ForwardLBPStrategy):
             bias_upper=new_bias_upper,
             input_ids=bounds.input_ids,
         )
+
+
+def _all_identity(operators: list[LinearOperator]) -> bool:
+    """Return True when every operator is an :class:`IdentityOperator`."""
+    return len(operators) > 0 and all(isinstance(op, IdentityOperator) for op in operators)
+
+
+def _all_scaled_conv_composable(
+    lower_ops: list[LinearOperator],
+    upper_ops: list[LinearOperator],
+    conv_kwargs: dict[str, Any],
+) -> bool:
+    """Return True when all input operators are ``ScaledConv2dOperator`` over
+    a conv that can be structurally composed with the current conv.
+
+    All operators (lower + upper) must have stride=(1,1), dilation=(1,1),
+    groups=1, AND the current conv must also match those constraints.
+    """
+    if not lower_ops or not upper_ops:
+        return False
+    if not all(isinstance(op, ScaledConv2dOperator) for op in lower_ops):
+        return False
+    if not all(isinstance(op, ScaledConv2dOperator) for op in upper_ops):
+        return False
+    for op in (*lower_ops, *upper_ops):
+        assert isinstance(op, ScaledConv2dOperator)
+        if op.stride != (1, 1) or op.dilation != (1, 1) or op.groups != 1:
+            return False
+    # Current conv constraints.
+    if _pair(conv_kwargs["stride"]) != (1, 1):
+        return False
+    if _pair(conv_kwargs["dilation"]) != (1, 1):
+        return False
+    if int(conv_kwargs["groups"]) != 1:
+        return False
+    return True
+
+
+def _propagate_scaled_input_conv2d(
+    bounds: LinearBounds,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    conv_kwargs: dict[str, Any],
+) -> LinearBounds:
+    """Fast path 2: conv consuming scaled-conv input operators emits
+    :class:`Conv2dPatchOperator` coefficients via structural composition.
+
+    For each input affine term (a pair of lower/upper ``ScaledConv2dOperator``
+    instances over the same first-conv weight), the sign-decomposed conv
+    produces two patch operators that are then summed::
+
+        new_lower = compose(conv_pos, lower_scaled).add(compose(conv_neg, upper_scaled))
+        new_upper = compose(conv_pos, upper_scaled).add(compose(conv_neg, lower_scaled))
+
+    The bias is transformed the same way the identity-input path transforms
+    it: apply sign-decomposed conv + conv's own bias.
+    """
+    stride = _pair(conv_kwargs["stride"])
+    padding = _pair(conv_kwargs["padding"])
+    dilation = _pair(conv_kwargs["dilation"])
+    groups = int(conv_kwargs["groups"])
+
+    weight_pos = weight.clamp(min=0)
+    weight_neg = weight.clamp(max=0)
+
+    output_ndim = bounds.bias_lower.ndim
+    feature_ndim = 3
+
+    def conv_on_bias(t: torch.Tensor, pos: bool) -> torch.Tensor:
+        kern = weight_pos if pos else weight_neg
+        return F.conv2d(t, kern, bias=None, **conv_kwargs)
+
+    new_bias_lower = _apply_feature_op(
+        bounds.bias_lower, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=True)
+    ) + _apply_feature_op(bounds.bias_upper, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=False))
+    new_bias_upper = _apply_feature_op(
+        bounds.bias_upper, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=True)
+    ) + _apply_feature_op(bounds.bias_lower, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=False))
+
+    if bias is not None:
+        new_bias_lower = new_bias_lower + bias.view(-1, 1, 1)
+        new_bias_upper = new_bias_upper + bias.view(-1, 1, 1)
+
+    new_output_shape = tuple(new_bias_lower.shape)
+
+    new_linear_lower: list[LinearOperator] = []
+    new_linear_upper: list[LinearOperator] = []
+    for lower_op, upper_op in zip(bounds.linear_lowers_op, bounds.linear_uppers_op, strict=True):
+        assert isinstance(lower_op, ScaledConv2dOperator)
+        assert isinstance(upper_op, ScaledConv2dOperator)
+
+        patch_pos_on_lower = _compose_conv_with_scaled(
+            scaled_op=lower_op,
+            weight2=weight_pos,
+            stride2=stride,
+            padding2=padding,
+            dilation2=dilation,
+            groups2=groups,
+            output_shape=new_output_shape,
+        )
+        patch_neg_on_upper = _compose_conv_with_scaled(
+            scaled_op=upper_op,
+            weight2=weight_neg,
+            stride2=stride,
+            padding2=padding,
+            dilation2=dilation,
+            groups2=groups,
+            output_shape=new_output_shape,
+        )
+        patch_pos_on_upper = _compose_conv_with_scaled(
+            scaled_op=upper_op,
+            weight2=weight_pos,
+            stride2=stride,
+            padding2=padding,
+            dilation2=dilation,
+            groups2=groups,
+            output_shape=new_output_shape,
+        )
+        patch_neg_on_lower = _compose_conv_with_scaled(
+            scaled_op=lower_op,
+            weight2=weight_neg,
+            stride2=stride,
+            padding2=padding,
+            dilation2=dilation,
+            groups2=groups,
+            output_shape=new_output_shape,
+        )
+        # Same hyperparameters (stride, padding, kernel size, input/output
+        # shapes) → .add stays structural (elementwise patch sum).
+        new_linear_lower.append(patch_pos_on_lower.add(patch_neg_on_upper))
+        new_linear_upper.append(patch_pos_on_upper.add(patch_neg_on_lower))
+
+    return LinearBounds(
+        regions=bounds.regions,
+        linear_lower=new_linear_lower,
+        bias_lower=new_bias_lower,
+        linear_upper=new_linear_upper,
+        bias_upper=new_bias_upper,
+        input_ids=bounds.input_ids,
+    )
+
+
+def _all_patch_composable(
+    lower_ops: list[LinearOperator],
+    upper_ops: list[LinearOperator],
+    conv_kwargs: dict[str, Any],
+) -> bool:
+    """Return True when all input operators are ``Conv2dPatchOperator``
+    instances with baseline hyperparams and the current conv also matches.
+    """
+    if not lower_ops or not upper_ops:
+        return False
+    if not all(isinstance(op, Conv2dPatchOperator) for op in lower_ops):
+        return False
+    if not all(isinstance(op, Conv2dPatchOperator) for op in upper_ops):
+        return False
+    for op in (*lower_ops, *upper_ops):
+        assert isinstance(op, Conv2dPatchOperator)
+        if op.stride != (1, 1) or op.dilation != (1, 1) or op.groups != 1:
+            return False
+    if _pair(conv_kwargs["stride"]) != (1, 1):
+        return False
+    if _pair(conv_kwargs["dilation"]) != (1, 1):
+        return False
+    if int(conv_kwargs["groups"]) != 1:
+        return False
+    return True
+
+
+def _propagate_patch_input_conv2d(
+    bounds: LinearBounds,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    conv_kwargs: dict[str, Any],
+) -> LinearBounds:
+    """Fast path 3: conv consuming ``Conv2dPatchOperator`` input operators emits
+    a larger ``Conv2dPatchOperator`` via :func:`_compose_conv_with_patch`.
+
+    Sign-decomposed composition mirrors fast path 2 but uses the patch
+    composer. The four ``compose(conv_pos/conv_neg, lower/upper)`` patches are
+    pairwise summed (structurally, since all hyperparams match) to produce
+    the new lower/upper operators.
+    """
+    stride = _pair(conv_kwargs["stride"])
+    padding = _pair(conv_kwargs["padding"])
+    dilation = _pair(conv_kwargs["dilation"])
+    groups = int(conv_kwargs["groups"])
+
+    weight_pos = weight.clamp(min=0)
+    weight_neg = weight.clamp(max=0)
+
+    output_ndim = bounds.bias_lower.ndim
+    feature_ndim = 3
+
+    def conv_on_bias(t: torch.Tensor, pos: bool) -> torch.Tensor:
+        kern = weight_pos if pos else weight_neg
+        return F.conv2d(t, kern, bias=None, **conv_kwargs)
+
+    new_bias_lower = _apply_feature_op(
+        bounds.bias_lower, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=True)
+    ) + _apply_feature_op(bounds.bias_upper, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=False))
+    new_bias_upper = _apply_feature_op(
+        bounds.bias_upper, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=True)
+    ) + _apply_feature_op(bounds.bias_lower, output_ndim, feature_ndim, lambda t: conv_on_bias(t, pos=False))
+
+    if bias is not None:
+        new_bias_lower = new_bias_lower + bias.view(-1, 1, 1)
+        new_bias_upper = new_bias_upper + bias.view(-1, 1, 1)
+
+    new_output_shape = tuple(new_bias_lower.shape)
+
+    new_linear_lower: list[LinearOperator] = []
+    new_linear_upper: list[LinearOperator] = []
+    for lower_op, upper_op in zip(bounds.linear_lowers_op, bounds.linear_uppers_op, strict=True):
+        assert isinstance(lower_op, Conv2dPatchOperator)
+        assert isinstance(upper_op, Conv2dPatchOperator)
+
+        pos_on_lower = _compose_conv_with_patch(
+            patch_op=lower_op,
+            weight3=weight_pos,
+            stride3=stride,
+            padding3=padding,
+            dilation3=dilation,
+            groups3=groups,
+            output_shape=new_output_shape,
+        )
+        neg_on_upper = _compose_conv_with_patch(
+            patch_op=upper_op,
+            weight3=weight_neg,
+            stride3=stride,
+            padding3=padding,
+            dilation3=dilation,
+            groups3=groups,
+            output_shape=new_output_shape,
+        )
+        pos_on_upper = _compose_conv_with_patch(
+            patch_op=upper_op,
+            weight3=weight_pos,
+            stride3=stride,
+            padding3=padding,
+            dilation3=dilation,
+            groups3=groups,
+            output_shape=new_output_shape,
+        )
+        neg_on_lower = _compose_conv_with_patch(
+            patch_op=lower_op,
+            weight3=weight_neg,
+            stride3=stride,
+            padding3=padding,
+            dilation3=dilation,
+            groups3=groups,
+            output_shape=new_output_shape,
+        )
+        new_linear_lower.append(pos_on_lower.add(neg_on_upper))
+        new_linear_upper.append(pos_on_upper.add(neg_on_lower))
+
+    return LinearBounds(
+        regions=bounds.regions,
+        linear_lower=new_linear_lower,
+        bias_lower=new_bias_lower,
+        linear_upper=new_linear_upper,
+        bias_upper=new_bias_upper,
+        input_ids=bounds.input_ids,
+    )
+
+
+def _propagate_identity_input_conv2d(
+    bounds: LinearBounds,
+    weight: torch.Tensor,
+    bias: torch.Tensor | None,
+    conv_kwargs: dict[str, Any],
+) -> LinearBounds:
+    """Fast path: conv consuming identity-input operators emits ``Conv2dOperator``.
+
+    When both input coefficient operators are :class:`IdentityOperator`, the
+    sign decomposition collapses because ``lower_op`` and ``upper_op`` are the
+    same linear map. The resulting lower/upper coefficients are both a single
+    :class:`Conv2dOperator` wrapping ``weight``; no Jacobian is materialized.
+
+    The bias term is updated by applying the conv to the existing bias tensor
+    (typically zero at the placeholder) and adding the conv's bias.
+    """
+    stride = _pair(conv_kwargs["stride"])
+    padding = _pair(conv_kwargs["padding"])
+    dilation = _pair(conv_kwargs["dilation"])
+    groups = int(conv_kwargs["groups"])
+
+    # Bias transformation is the same for lower and upper (no sign decomp needed
+    # here either, since bias_lower == bias_upper at the placeholder; even if
+    # not, this is how the conv's linear map updates any pre-existing bias).
+    output_ndim = bounds.bias_lower.ndim
+    feature_ndim = 3
+
+    def conv_raw(t: torch.Tensor) -> torch.Tensor:
+        return F.conv2d(t, weight, bias=None, **conv_kwargs)
+
+    new_bias_lower = _apply_feature_op(bounds.bias_lower, output_ndim, feature_ndim, conv_raw)
+    new_bias_upper = _apply_feature_op(bounds.bias_upper, output_ndim, feature_ndim, conv_raw)
+    if bias is not None:
+        new_bias_lower = new_bias_lower + bias.view(-1, 1, 1)
+        new_bias_upper = new_bias_upper + bias.view(-1, 1, 1)
+
+    # Build a Conv2dOperator per input region. For each identity input op, the
+    # structured output is simply the conv layer. ``Conv2dOperator.input_shape``
+    # is (C, H, W) — the last three dims of the identity's feature_shape; any
+    # leading axes are user-batch dims carried into ``output_shape``. The
+    # resulting LinearBounds linear term has shape ``(*output_shape, *input_shape)``.
+    new_output_shape = tuple(new_bias_lower.shape)
+    new_linear_lower: list[LinearOperator] = []
+    new_linear_upper: list[LinearOperator] = []
+    for lower_op in bounds.linear_lowers_op:
+        assert isinstance(lower_op, IdentityOperator)  # precondition verified by caller
+        feat = tuple(lower_op.feature_shape)
+        if len(feat) < 3:
+            raise ValueError(f"ForwardLBPConv2d identity fast path requires >=3-D feature shape, got {feat}")
+        input_shape = feat[-3:]
+        conv_op = Conv2dOperator(
+            weight=weight,
+            stride=stride,
+            padding=padding,
+            dilation=dilation,
+            groups=groups,
+            input_shape=input_shape,
+            output_shape=new_output_shape,
+        )
+        new_linear_lower.append(conv_op)
+        new_linear_upper.append(conv_op)
+
+    return LinearBounds(
+        regions=bounds.regions,
+        linear_lower=new_linear_lower,
+        bias_lower=new_bias_lower,
+        linear_upper=new_linear_upper,
+        bias_upper=new_bias_upper,
+        input_ids=bounds.input_ids,
+    )
 
 
 def _resolve_conv2d_params(
@@ -323,6 +705,12 @@ class ForwardLBPMaxPool2d(ForwardLBPStrategy):
     compute ``indices = argmax(lower_in, pool_window)``, then route each
     linear term through those indices (select one input position per output
     cell, scaled by alpha).
+
+    TODO: Make the winner position ``i*`` itself alpha-tunable. Today it is
+    fixed to ``argmax(lower)`` per pool window; a convex mixture over
+    pool-window positions (softmax with alpha-tunable temperature) can be
+    tighter when the window has multiple near-winners. This mirrors the
+    identical TODO in :class:`MaxPool2dBackwardRelaxation`.
     """
 
     def propagate_forward(self, node: fx.Node, ctx: PropagationContext) -> LinearBounds:

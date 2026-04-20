@@ -8,9 +8,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from bound_propagation.bounds import LinearBounds
+from bound_propagation.linear_operators import Conv2dOperator
 from bound_propagation.passes import MetadataPass
 from bound_propagation.propagation import ForwardLBPPropagator
+from bound_propagation.propagation.context import PropagationContext
 from bound_propagation.propagation.forward_lbp import create_default_forward_lbp_registry
+from bound_propagation.propagation.forward_lbp.conv_pool import ForwardLBPConv2d
+from bound_propagation.propagation.forward_lbp.utils import create_identity_bounds
 from bound_propagation.regions import HyperRectangle
 from bound_propagation.tracer import BoundPropagationTracer
 
@@ -250,6 +254,119 @@ class TestForwardLBPCNNFull:
         gm = _trace_and_annotate(model, (region.lower,))
         out = ForwardLBPPropagator(gm).propagate([region])
         _check_sound(model, region, out)
+
+
+class TestForwardLBPConv2dStructuredFastPath:
+    """Verify that the first conv layer emits Conv2dOperator coefficients
+    instead of materializing a dense Jacobian."""
+
+    def test_first_conv_emits_conv2d_operator(self) -> None:
+        """Tracing a bare nn.Conv2d with an IdentityOperator-backed input
+        should produce ``Conv2dOperator`` coefficients on the output."""
+        torch.manual_seed(0)
+
+        class Net(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = nn.Conv2d(2, 3, kernel_size=3, padding=1)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.conv(x)
+
+        model = Net()
+        region = _make_region((2, 4, 4))
+        gm = _trace_and_annotate(model, (region.lower,))
+        propagator = ForwardLBPPropagator(gm)
+        out = propagator.propagate([region])
+
+        # Both lower and upper coefficient operators must be Conv2dOperator
+        # (the identity-input fast path kicked in).
+        assert all(isinstance(op, Conv2dOperator) for op in out.linear_lowers_op)
+        assert all(isinstance(op, Conv2dOperator) for op in out.linear_uppers_op)
+
+        # Output bounds must still be sound.
+        _check_sound(model, region, out)
+
+    def test_second_conv_emits_patch_operator(self) -> None:
+        """A conv whose input was already relu'd still stays structural:
+        the ``scale`` from ReLU produced a ScaledConv2dOperator, and the
+        second conv composes into a Conv2dPatchOperator."""
+        from bound_propagation.linear_operators import Conv2dPatchOperator  # noqa: PLC0415
+
+        torch.manual_seed(1)
+
+        class Net(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.c1 = nn.Conv2d(2, 3, kernel_size=3, padding=1)
+                self.c2 = nn.Conv2d(3, 2, kernel_size=3, padding=1)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.c2(torch.relu(self.c1(x)))
+
+        model = Net()
+        region = _make_region((2, 4, 4), seed=1)
+        gm = _trace_and_annotate(model, (region.lower,))
+        out = ForwardLBPPropagator(gm).propagate([region])
+        # Structural patch-mode composition preserves structure across
+        # conv → relu → conv.
+        assert all(isinstance(op, Conv2dPatchOperator) for op in out.linear_lowers_op)
+        assert all(isinstance(op, Conv2dPatchOperator) for op in out.linear_uppers_op)
+        _check_sound(model, region, out)
+
+    def test_structured_and_dense_agree_on_bounds(self) -> None:
+        """The fast-path output (structured) must concretize identically to
+        what a full dense materialization would produce."""
+        torch.manual_seed(2)
+        weight = torch.randn(3, 2, 3, 3)
+        bias = torch.randn(3)
+
+        # Structured path: directly drive the strategy with identity bounds.
+        region = _make_region((2, 4, 4), seed=2)
+        identity_bounds = create_identity_bounds(id=0, region=region, shape=region.lower.shape)
+
+        # Build a minimal fx graph with one call_function node invoking F.conv2d.
+        import torch.fx as fx
+
+        graph = fx.Graph()
+        x_ph = graph.placeholder("x")
+        w_ph = graph.placeholder("weight")
+        b_ph = graph.placeholder("bias")
+        conv_node = graph.call_function(
+            F.conv2d, args=(x_ph, w_ph, b_ph, 1, 1, 1, 1)
+        )
+        graph.output(conv_node)
+        gm = fx.GraphModule(torch.nn.Module(), graph)
+
+        ctx = PropagationContext(gm)
+        ctx.store(x_ph, identity_bounds)
+        ctx.store(w_ph, weight)
+        ctx.store(b_ph, bias)
+
+        out_struct = ForwardLBPConv2d().propagate_forward(conv_node, ctx)
+        assert all(isinstance(op, Conv2dOperator) for op in out_struct.linear_lowers_op)
+        lo_s, up_s = out_struct.concretize()
+
+        # Dense baseline: same conv applied via the standard tracing path
+        # (identity input → dense materialization).
+        class Net(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = nn.Conv2d(2, 3, kernel_size=3, padding=1)
+                with torch.no_grad():
+                    self.conv.weight.copy_(weight)
+                    self.conv.bias.copy_(bias)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.conv(x)
+
+        model = Net()
+        gm_full = _trace_and_annotate(model, (region.lower,))
+        out_dense = ForwardLBPPropagator(gm_full).propagate([region])
+        lo_d, up_d = out_dense.concretize()
+
+        assert torch.allclose(lo_s, lo_d, atol=1e-5)
+        assert torch.allclose(up_s, up_d, atol=1e-5)
 
 
 class TestForwardLBPUnsupported:

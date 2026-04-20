@@ -2,7 +2,14 @@
 
 from .bounds import AbstractBounds
 from .facade import BoundModel, Method, RegistryExtension
-from .linear_operators import DenseOperator, LinearOperator
+from .linear_operators import (
+    Conv2dOperator,
+    Conv2dPatchOperator,
+    DenseOperator,
+    IdentityOperator,
+    LinearOperator,
+    ScaledConv2dOperator,
+)
 from .propagation import (
     AlphaOptimizationConfig,
     BackwardLBPPropagator,
@@ -23,13 +30,17 @@ __all__ = [
     "BoundModel",
     "BoundPropagator",
     "CROWNIBPPropagator",
+    "Conv2dOperator",
+    "Conv2dPatchOperator",
     "DenseOperator",
     "ForwardBackwardLBPPropagator",
     "ForwardLBPPropagator",
     "HyperRectangle",
     "IBPPropagator",
+    "IdentityOperator",
     "LinearOperator",
     "Method",
+    "ScaledConv2dOperator",
     "RegistryExtension",
     "SimpleRegion",
     "TargetRegistry",

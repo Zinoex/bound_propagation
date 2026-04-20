@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 import torch
 import torch.nn as nn
@@ -17,7 +19,13 @@ def _sample_sound(fn, region: HyperRectangle, lower: torch.Tensor, upper: torch.
         assert torch.all(y <= upper + 1e-5), (upper, y)
 
 
-PROP_METHODS = ["ibp", "backward_lbp", "forward_lbp", "crown_ibp", "forward_backward_lbp"]
+PROP_METHODS: list[Literal["ibp", "backward_lbp", "forward_lbp", "crown_ibp", "forward_backward_lbp"]] = [
+    "ibp",
+    "backward_lbp",
+    "forward_lbp",
+    "crown_ibp",
+    "forward_backward_lbp",
+]
 
 
 @pytest.fixture
@@ -42,7 +50,11 @@ def cnn_region() -> HyperRectangle:
 
 
 @pytest.mark.parametrize("method", PROP_METHODS)
-def test_cnn_end_to_end(small_cnn: nn.Module, cnn_region: HyperRectangle, method: str) -> None:
+def test_cnn_end_to_end(
+    small_cnn: nn.Module,
+    cnn_region: HyperRectangle,
+    method: Literal["ibp", "backward_lbp", "forward_lbp", "crown_ibp", "forward_backward_lbp"],
+) -> None:
     dummy = torch.zeros(2, 8, 8)
     bm = BoundModel(small_cnn, dummy_inputs=(dummy,), method=method)
     bounds = bm.propagate(cnn_region)
@@ -54,7 +66,9 @@ def test_cnn_end_to_end(small_cnn: nn.Module, cnn_region: HyperRectangle, method
 
 
 @pytest.mark.parametrize("method", PROP_METHODS)
-def test_cnn_batched_inputs(small_cnn: nn.Module, method: str) -> None:
+def test_cnn_batched_inputs(
+    small_cnn: nn.Module, method: Literal["ibp", "backward_lbp", "forward_lbp", "crown_ibp", "forward_backward_lbp"]
+) -> None:
     """Batched verification: feature_shape=(2,8,8), region adds a batch dim."""
     torch.manual_seed(2)
     dummy = torch.zeros(2, 8, 8)
@@ -74,7 +88,9 @@ def test_cnn_batched_inputs(small_cnn: nn.Module, method: str) -> None:
 
 
 @pytest.mark.parametrize("method", PROP_METHODS)
-def test_cnn_with_classifier_head(method: str) -> None:
+def test_cnn_with_classifier_head(
+    method: Literal["ibp", "backward_lbp", "forward_lbp", "crown_ibp", "forward_backward_lbp"],
+) -> None:
     """Conv + Pool + flatten-all + Linear on unbatched input."""
     torch.manual_seed(3)
 

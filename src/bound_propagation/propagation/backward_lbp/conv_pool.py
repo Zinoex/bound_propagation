@@ -538,6 +538,16 @@ class MaxPool2dBackwardRelaxation(BackwardRelaxation):
     ``alpha_upper`` are ``None`` (alpha optimization disabled for this node),
     the analytical default ``alpha = 1`` is used and the fast path skips the
     per-sign split of the routed A.
+
+    TODO: Make the winner position *itself* alpha-tunable. Right now ``i*`` is
+    fixed to ``argmax(lower)`` within each pool window, which is a reasonable
+    default but may be far from optimal — e.g. when the pool window has
+    multiple "near-winners" under the input region, averaging the routing
+    across them (convex mixture over pool positions) can tighten both bounds.
+    A natural parameterization is a softmax over the pool-window positions
+    (per output cell), with a temperature that alpha-optimization can drive
+    toward one-hot. This requires extending the scatter routing in
+    ``_route_A_via_indices`` to a weighted scatter across multiple positions.
     """
 
     kernel_size: tuple[int, int]
