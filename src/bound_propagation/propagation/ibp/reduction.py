@@ -36,7 +36,7 @@ class IBPMax(ForwardIBPStrategy):
             lower = torch.amax(x_bounds.lower)
             upper = torch.amax(x_bounds.upper)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
 
 
 class IBPMin(ForwardIBPStrategy):
@@ -63,7 +63,7 @@ class IBPMin(ForwardIBPStrategy):
             lower = torch.amin(x_bounds.lower)
             upper = torch.amin(x_bounds.upper)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
 
 
 class IBPMean(ForwardIBPStrategy):
@@ -86,7 +86,7 @@ class IBPMean(ForwardIBPStrategy):
         lower = x_bounds.lower.mean(dim=dim, keepdim=keepdim)
         upper = x_bounds.upper.mean(dim=dim, keepdim=keepdim)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))
 
 
 class IBPSum(ForwardIBPStrategy):
@@ -109,4 +109,4 @@ class IBPSum(ForwardIBPStrategy):
         lower = torch.sum(x_bounds.lower, dim, keepdim=keepdim)
         upper = torch.sum(x_bounds.upper, dim, keepdim=keepdim)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=min(x_bounds.batch_ndim, lower.ndim))

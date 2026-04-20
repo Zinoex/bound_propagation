@@ -124,23 +124,31 @@ class IntervalBounds(AbstractBounds):
         upper: Upper bound tensor
     """
 
-    def __init__(self, lower: torch.Tensor, upper: torch.Tensor) -> None:
+    def __init__(self, lower: torch.Tensor, upper: torch.Tensor, *, batch_ndim: int = 0) -> None:
         """
         Initialize interval bounds.
 
         Args:
-            region: Input region (e.g., HyperRectangle)
-            lower: Lower bound tensor
-            upper: Upper bound tensor
+            lower: Lower bound tensor of shape ``(*batch_dims, *feature_dims)``.
+            upper: Upper bound tensor, same shape as ``lower``.
+            batch_ndim: Number of leading batch dimensions. Must satisfy
+                ``0 <= batch_ndim <= lower.ndim``. Defaults to ``0`` so legacy
+                callers that do not yet thread batch information still work.
 
         Raises:
-            ValueError: If shapes don't match or bounds are invalid
+            ValueError: If shapes don't match, bounds are invalid, or
+                ``batch_ndim`` is out of range.
         """
         if lower.shape != upper.shape:
             raise ValueError(f"Lower and upper bounds must have same shape: {lower.shape} vs {upper.shape}")
 
         if lower.device != upper.device:
             raise ValueError(f"Lower and upper bounds must be on same device: {lower.device} vs {upper.device}")
+
+        if batch_ndim < 0 or batch_ndim > lower.ndim:
+            raise ValueError(
+                f"batch_ndim must be in [0, {lower.ndim}] for tensor shape {tuple(lower.shape)}, got {batch_ndim}"
+            )
 
         # Check that lower <= upper (allow some numerical tolerance)
         if not torch.all(lower <= upper + 1e-6):
@@ -149,6 +157,7 @@ class IntervalBounds(AbstractBounds):
 
         self._lower = lower
         self._upper = upper
+        self._batch_ndim = batch_ndim
 
     @property
     def lower(self) -> torch.Tensor:
@@ -175,6 +184,16 @@ class IntervalBounds(AbstractBounds):
         """Get dtype of bounds."""
         return self._lower.dtype
 
+    @property
+    def batch_ndim(self) -> int:
+        """Number of leading batch dimensions. ``0`` means every dim is a feature dim."""
+        return self._batch_ndim
+
+    @property
+    def feature_shape(self) -> tuple[int, ...]:
+        """Trailing feature dimensions — ``shape[batch_ndim:]``."""
+        return tuple(self._lower.shape[self._batch_ndim :])
+
     def to(self, device: str | torch.device) -> IntervalBounds:
         """
         Move bounds to a device.
@@ -188,6 +207,7 @@ class IntervalBounds(AbstractBounds):
         return IntervalBounds(
             lower=self._lower.to(device),
             upper=self._upper.to(device),
+            batch_ndim=self._batch_ndim,
         )
 
     def __iter__(self):
@@ -204,9 +224,13 @@ class IntervalBounds(AbstractBounds):
         Returns:
             New bounds corresponding to the slice/index
         """
+        sliced_lower = self._lower[item]
+        sliced_upper = self._upper[item]
+        new_batch_ndim = min(self._batch_ndim, sliced_lower.ndim)
         return IntervalBounds(
-            lower=self._lower[item],
-            upper=self._upper[item],
+            lower=sliced_lower,
+            upper=sliced_upper,
+            batch_ndim=new_batch_ndim,
         )
 
     def concretize(self) -> IntervalBounds:
@@ -270,7 +294,7 @@ class IntervalBounds(AbstractBounds):
         """
         lower = torch.full_like(x.lower, float("-inf"))
         upper = torch.full_like(x.upper, float("inf"))
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x.batch_ndim)
 
     def clone(self) -> IntervalBounds:
         """
@@ -282,6 +306,7 @@ class IntervalBounds(AbstractBounds):
         return IntervalBounds(
             lower=self._lower.clone(),
             upper=self._upper.clone(),
+            batch_ndim=self._batch_ndim,
         )
 
 
@@ -312,6 +337,8 @@ class LinearBounds(AbstractBounds):
         linear_upper: torch.Tensor | LinearOperator | Sequence[torch.Tensor | LinearOperator] | None = None,
         regions: SimpleRegion | Sequence[SimpleRegion] | None = None,
         input_ids: int | Sequence[int] | None = None,
+        *,
+        batch_ndim: int = 0,
     ) -> None:
         """
         Initialize linear bounds.
@@ -322,15 +349,23 @@ class LinearBounds(AbstractBounds):
         Args:
             regions: Input regions, one for each affine coefficient term
             linear_lower: Linear coefficients for lower bound (can be empty for constant bounds)
-            bias_lower: Bias for lower bound
+            bias_lower: Bias for lower bound, shape ``(*batch_dims, *feature_dims)``.
             linear_upper: Linear coefficients for upper bound (can be empty for constant bounds)
             bias_upper: Bias for upper bound
             input_ids: Optional list of input node IDs
+            batch_ndim: Number of leading batch dimensions of ``bias_lower``/``bias_upper``.
+                Must satisfy ``0 <= batch_ndim <= bias_lower.ndim``. Defaults to ``0``.
         """
         normalized_regions = self._normalize_regions(regions)
         normalized_linear_lower = self._normalize_linear_terms(linear_lower, bias_lower.shape, "linear_lower")
         normalized_linear_upper = self._normalize_linear_terms(linear_upper, bias_upper.shape, "linear_upper")
         normalized_input_ids = self._normalize_input_ids(input_ids)
+
+        if batch_ndim < 0 or batch_ndim > bias_lower.ndim:
+            raise ValueError(
+                f"batch_ndim must be in [0, {bias_lower.ndim}] for bias shape {tuple(bias_lower.shape)}, "
+                f"got {batch_ndim}"
+            )
 
         self._check_uniformity(
             normalized_regions, normalized_linear_lower, normalized_linear_upper, normalized_input_ids
@@ -345,6 +380,7 @@ class LinearBounds(AbstractBounds):
         self._linear_upper = normalized_linear_upper
         self._regions = normalized_regions
         self._input_ids = normalized_input_ids
+        self._batch_ndim = batch_ndim
 
     def has_linear_terms(self) -> bool:
         """Whether these bounds include linear terms (as opposed to being purely constant)."""
@@ -652,6 +688,16 @@ class LinearBounds(AbstractBounds):
         return tuple(self.bias_lower.shape)
 
     @property
+    def batch_ndim(self) -> int:
+        """Number of leading batch dimensions of the bias / output shape."""
+        return self._batch_ndim
+
+    @property
+    def feature_shape(self) -> tuple[int, ...]:
+        """Trailing feature dimensions — ``bias_lower.shape[batch_ndim:]``."""
+        return tuple(self.bias_lower.shape[self._batch_ndim :])
+
+    @property
     def input_shapes(self) -> list[tuple[int, ...]]:
         """Get shapes of input tensors corresponding to each region."""
         return [tuple(op.input_shape) for op in self._linear_lower]
@@ -694,17 +740,21 @@ class LinearBounds(AbstractBounds):
             linear_upper=[op.to(device) for op in self._linear_upper],
             bias_upper=self.bias_upper.to(device),
             input_ids=self._input_ids.copy() if self._input_ids else None,
+            batch_ndim=self._batch_ndim,
         )
 
     def __getitem__(self, item) -> LinearBounds:
         """Slice/index the bounds over the output (batch) axes; input axes are preserved."""
+        sliced_bias_lower = self.bias_lower[item]
+        new_batch_ndim = min(self._batch_ndim, sliced_bias_lower.ndim)
         return LinearBounds(
             regions=self._regions,
             linear_lower=[op.getitem_output(item) for op in self._linear_lower],
-            bias_lower=self.bias_lower[item],
+            bias_lower=sliced_bias_lower,
             linear_upper=[op.getitem_output(item) for op in self._linear_upper],
             bias_upper=self.bias_upper[item],
             input_ids=self._input_ids.copy() if self._input_ids else None,
+            batch_ndim=new_batch_ndim,
         )
 
     def concretize(self) -> IntervalBounds:
@@ -727,7 +777,7 @@ class LinearBounds(AbstractBounds):
         for region, upper_op in zip(self._regions, self._linear_upper, strict=True):
             upper_result = upper_result + upper_op.concretize_max(region)
 
-        return IntervalBounds(lower=lower_result, upper=upper_result)
+        return IntervalBounds(lower=lower_result, upper=upper_result, batch_ndim=self._batch_ndim)
 
     def clone(self) -> LinearBounds:
         """Create a deep copy."""
@@ -738,4 +788,5 @@ class LinearBounds(AbstractBounds):
             linear_upper=[op.clone() for op in self._linear_upper],
             bias_upper=self.bias_upper.clone(),
             input_ids=self._input_ids,
+            batch_ndim=self._batch_ndim,
         )

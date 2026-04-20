@@ -33,7 +33,7 @@ class IBPClamp(ForwardIBPStrategy):
         lower = torch.clamp(x_bounds.lower, min=clamp_min, max=clamp_max)
         upper = torch.clamp(x_bounds.upper, min=clamp_min, max=clamp_max)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPAbs(ForwardIBPStrategy):
@@ -61,7 +61,7 @@ class IBPAbs(ForwardIBPStrategy):
         )
         upper = torch.max(abs_lower, abs_upper)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPCbrt(ForwardIBPStrategy):
@@ -81,7 +81,7 @@ class IBPCbrt(ForwardIBPStrategy):
         lower = torch.copysign(torch.pow(x_bounds.lower.abs(), 1 / 3), x_bounds.lower)
         upper = torch.copysign(torch.pow(x_bounds.upper.abs(), 1 / 3), x_bounds.upper)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPCos(ForwardIBPStrategy):
@@ -119,7 +119,7 @@ class IBPCos(ForwardIBPStrategy):
             torch.max(cos_lower, cos_upper),
         )
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPExp(ForwardIBPStrategy):
@@ -136,7 +136,7 @@ class IBPExp(ForwardIBPStrategy):
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPExp requires input to be IntervalBounds")
 
-        return IntervalBounds(torch.exp(x_bounds.lower), torch.exp(x_bounds.upper))
+        return IntervalBounds(torch.exp(x_bounds.lower), torch.exp(x_bounds.upper), batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPLog(ForwardIBPStrategy):
@@ -156,7 +156,7 @@ class IBPLog(ForwardIBPStrategy):
         if torch.any(x_bounds.lower <= 0):
             raise ValueError("log requires positive input bounds")
 
-        return IntervalBounds(torch.log(x_bounds.lower), torch.log(x_bounds.upper))
+        return IntervalBounds(torch.log(x_bounds.lower), torch.log(x_bounds.upper), batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPPow(ForwardIBPStrategy):
@@ -181,30 +181,30 @@ class IBPPow(ForwardIBPStrategy):
         lower, upper = x_bounds.lower, x_bounds.upper
 
         if isinstance(power, torch.Tensor):
-            return self._tensor_power(lower, upper, power)
+            return self._tensor_power(lower, upper, power, x_bounds.batch_ndim)
 
-        return self._scalar_power(lower, upper, power)
+        return self._scalar_power(lower, upper, power, x_bounds.batch_ndim)
 
     @staticmethod
-    def _scalar_power(lower: torch.Tensor, upper: torch.Tensor, power: int) -> IntervalBounds:
+    def _scalar_power(lower: torch.Tensor, upper: torch.Tensor, power: int, batch_ndim: int) -> IntervalBounds:
         if power == 0:
             ones = torch.ones_like(lower)
-            return IntervalBounds(ones, ones)
+            return IntervalBounds(ones, ones, batch_ndim=batch_ndim)
 
         if power % 2 == 0:
             lower_act = torch.pow(lower, power)
             upper_act = torch.pow(upper, power)
             lower_out = torch.where((lower < 0) & (upper > 0), 0.0, torch.min(lower_act, upper_act))
             upper_out = torch.max(lower_act, upper_act)
-            return IntervalBounds(lower_out, upper_out)
+            return IntervalBounds(lower_out, upper_out, batch_ndim=batch_ndim)
 
-        return IntervalBounds(torch.pow(lower, power), torch.pow(upper, power))
+        return IntervalBounds(torch.pow(lower, power), torch.pow(upper, power), batch_ndim=batch_ndim)
 
     @staticmethod
-    def _tensor_power(lower: torch.Tensor, upper: torch.Tensor, power: torch.Tensor) -> IntervalBounds:
+    def _tensor_power(lower: torch.Tensor, upper: torch.Tensor, power: torch.Tensor, batch_ndim: int) -> IntervalBounds:
         if torch.all(power == 0):
             ones = torch.ones_like(lower)
-            return IntervalBounds(ones, ones)
+            return IntervalBounds(ones, ones, batch_ndim=batch_ndim)
 
         lower_act = torch.pow(lower, power)
         upper_act = torch.pow(upper, power)
@@ -233,7 +233,7 @@ class IBPPow(ForwardIBPStrategy):
         lower_out[odd] = lower_act[odd]
         upper_out[odd] = upper_act[odd]
 
-        return IntervalBounds(lower_out, upper_out)
+        return IntervalBounds(lower_out, upper_out, batch_ndim=batch_ndim)
 
 
 class IBPReciprocal(ForwardIBPStrategy):
@@ -258,7 +258,7 @@ class IBPReciprocal(ForwardIBPStrategy):
         upper = 1 / x_bounds.lower
         upper = torch.where(unbounded_mask, float("inf"), upper)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPRelu(ForwardIBPStrategy):
@@ -278,7 +278,7 @@ class IBPRelu(ForwardIBPStrategy):
         lower = torch.clamp(x_bounds.lower, min=0.0)
         upper = torch.clamp(x_bounds.upper, min=0.0)
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPSigmoid(ForwardIBPStrategy):
@@ -295,7 +295,9 @@ class IBPSigmoid(ForwardIBPStrategy):
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPSigmoid requires input to be IntervalBounds")
 
-        return IntervalBounds(torch.sigmoid(x_bounds.lower), torch.sigmoid(x_bounds.upper))
+        return IntervalBounds(
+            torch.sigmoid(x_bounds.lower), torch.sigmoid(x_bounds.upper), batch_ndim=x_bounds.batch_ndim
+        )
 
 
 class IBPSin(ForwardIBPStrategy):
@@ -339,7 +341,7 @@ class IBPSin(ForwardIBPStrategy):
             torch.max(sin_lower, sin_upper),
         )
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPSqrt(ForwardIBPStrategy):
@@ -359,7 +361,7 @@ class IBPSqrt(ForwardIBPStrategy):
         if torch.any(x_bounds.lower < 0):
             raise ValueError("sqrt requires non-negative input bounds")
 
-        return IntervalBounds(torch.sqrt(x_bounds.lower), torch.sqrt(x_bounds.upper))
+        return IntervalBounds(torch.sqrt(x_bounds.lower), torch.sqrt(x_bounds.upper), batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPTan(ForwardIBPStrategy):
@@ -388,7 +390,7 @@ class IBPTan(ForwardIBPStrategy):
         lower[contains_asymptote] = float("-inf")
         upper[contains_asymptote] = float("inf")
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPTanh(ForwardIBPStrategy):
@@ -405,4 +407,4 @@ class IBPTanh(ForwardIBPStrategy):
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPTanh requires input to be IntervalBounds")
 
-        return IntervalBounds(torch.tanh(x_bounds.lower), torch.tanh(x_bounds.upper))
+        return IntervalBounds(torch.tanh(x_bounds.lower), torch.tanh(x_bounds.upper), batch_ndim=x_bounds.batch_ndim)

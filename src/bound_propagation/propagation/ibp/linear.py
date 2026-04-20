@@ -56,7 +56,7 @@ class IBPLinear(ForwardIBPStrategy):
             lower = lower + bias
             upper = upper + bias
 
-        return IntervalBounds(lower, upper)
+        return IntervalBounds(lower, upper, batch_ndim=x_bounds.batch_ndim)
 
 
 class IBPAdd(ForwardIBPStrategy):
@@ -71,13 +71,17 @@ class IBPAdd(ForwardIBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, IntervalBounds) and isinstance(right, IntervalBounds):
-            return IntervalBounds(left.lower + right.lower, left.upper + right.upper)
+            return IntervalBounds(
+                left.lower + right.lower,
+                left.upper + right.upper,
+                batch_ndim=max(left.batch_ndim, right.batch_ndim),
+            )
 
         if isinstance(left, IntervalBounds):
-            return IntervalBounds(left.lower + right, left.upper + right)
+            return IntervalBounds(left.lower + right, left.upper + right, batch_ndim=left.batch_ndim)
 
         if isinstance(right, IntervalBounds):
-            return IntervalBounds(left + right.lower, left + right.upper)
+            return IntervalBounds(left + right.lower, left + right.upper, batch_ndim=right.batch_ndim)
 
         raise TypeError(f"IBPAdd requires at least one IntervalBounds, got {type(left)} and {type(right)}")
 
@@ -94,15 +98,19 @@ class IBPSub(ForwardIBPStrategy):
         left, right = args[0], args[1]
 
         if isinstance(left, IntervalBounds) and isinstance(right, IntervalBounds):
-            return IntervalBounds(left.lower - right.upper, left.upper - right.lower)
+            return IntervalBounds(
+                left.lower - right.upper,
+                left.upper - right.lower,
+                batch_ndim=max(left.batch_ndim, right.batch_ndim),
+            )
 
         if isinstance(left, IntervalBounds):
             # abstract - constant
-            return IntervalBounds(left.lower - right, left.upper - right)
+            return IntervalBounds(left.lower - right, left.upper - right, batch_ndim=left.batch_ndim)
 
         if isinstance(right, IntervalBounds):
             # constant - abstract
-            return IntervalBounds(left - right.upper, left - right.lower)
+            return IntervalBounds(left - right.upper, left - right.lower, batch_ndim=right.batch_ndim)
 
         raise TypeError(f"IBPSub requires at least one IntervalBounds, got {type(left)} and {type(right)}")
 
@@ -121,4 +129,4 @@ class IBPNeg(ForwardIBPStrategy):
         if not isinstance(x_bounds, IntervalBounds):
             raise TypeError("IBPNeg requires input to be IntervalBounds")
 
-        return IntervalBounds(-x_bounds.upper, -x_bounds.lower)
+        return IntervalBounds(-x_bounds.upper, -x_bounds.lower, batch_ndim=x_bounds.batch_ndim)

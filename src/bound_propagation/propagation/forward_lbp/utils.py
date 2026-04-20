@@ -43,8 +43,7 @@ def create_identity_bounds(id: int, region: SimpleRegion, shape: tuple[int, ...]
     Used for input nodes in forward-mode LBP. The coefficient operators are
     :class:`IdentityOperator` instances so downstream strategies can
     type-dispatch on "this is the raw input identity" to avoid unnecessary
-    materialization (e.g. :class:`ForwardLBPConv2d` emits a
-    :class:`Conv2dOperator` when both input operators are identity).
+    materialization.
 
     Args:
         region: Input region

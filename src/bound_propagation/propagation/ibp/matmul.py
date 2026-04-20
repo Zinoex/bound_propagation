@@ -77,6 +77,7 @@ def _matmul_interval_with_constant(interval: IntervalBounds, constant: torch.Ten
     return IntervalBounds(
         _restore_matmul_output(lower_result, squeeze_left, squeeze_right),
         _restore_matmul_output(upper_result, squeeze_left, squeeze_right),
+        batch_ndim=interval.batch_ndim,
     )
 
 
@@ -97,6 +98,7 @@ def _matmul_constant_with_interval(constant: torch.Tensor, interval: IntervalBou
     return IntervalBounds(
         _restore_matmul_output(lower_result, squeeze_left, squeeze_right),
         _restore_matmul_output(upper_result, squeeze_left, squeeze_right),
+        batch_ndim=interval.batch_ndim,
     )
 
 
@@ -120,6 +122,7 @@ def _matmul_interval_with_interval(left: IntervalBounds, right: IntervalBounds) 
     return IntervalBounds(
         _restore_matmul_output(lower_result, squeeze_left, squeeze_right),
         _restore_matmul_output(upper_result, squeeze_left, squeeze_right),
+        batch_ndim=max(left.batch_ndim, right.batch_ndim),
     )
 
 

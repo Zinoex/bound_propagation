@@ -3,12 +3,10 @@
 from .bounds import AbstractBounds
 from .facade import BoundModel, Method, RegistryExtension
 from .linear_operators import (
-    Conv2dOperator,
-    Conv2dPatchOperator,
     DenseOperator,
     IdentityOperator,
     LinearOperator,
-    ScaledConv2dOperator,
+    ReshapeOperator,
 )
 from .propagation import (
     AlphaOptimizationConfig,
@@ -30,8 +28,6 @@ __all__ = [
     "BoundModel",
     "BoundPropagator",
     "CROWNIBPPropagator",
-    "Conv2dOperator",
-    "Conv2dPatchOperator",
     "DenseOperator",
     "ForwardBackwardLBPPropagator",
     "ForwardLBPPropagator",
@@ -40,7 +36,7 @@ __all__ = [
     "IdentityOperator",
     "LinearOperator",
     "Method",
-    "ScaledConv2dOperator",
+    "ReshapeOperator",
     "RegistryExtension",
     "SimpleRegion",
     "TargetRegistry",

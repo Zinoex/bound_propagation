@@ -80,8 +80,7 @@ class ElementwiseForwardRelaxation:
         Handles signed alpha via positive/negative clamping so the result is always
         a valid lower/upper bound. Uses the ``LinearOperator`` algebra
         (``.scale`` + ``.add``) rather than raw tensor ops — structured inputs
-        like :class:`Conv2dOperator` / :class:`ScaledConv2dOperator` stay
-        structured when the operations permit (the default dense fallback
+        stay structured when the operations permit (the default dense fallback
         reproduces the previous raw-tensor behavior for DenseOperator inputs).
         """
 
