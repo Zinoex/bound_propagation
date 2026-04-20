@@ -218,6 +218,13 @@ class Conv2dBackwardRelaxation(BackwardRelaxation):
         return [self.input_node]
 
     def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+        # TODO: This should support convolutional patches.
+        # The main barrier is that the patch extraction and unfolding logic in the forward pass
+        # needs to be mirrored in the backward pass to correctly route the A's.
+        # The better option is probably to propagate linear operators instead of dense A tensors,
+        # so the backward pass can directly compose with the forward-pass patch operators without
+        # needing to materialize any dense intermediates.
+
         h_in, w_in = int(self.input_shape[-2]), int(self.input_shape[-1])
         new_A_lower = _conv2d_adjoint(
             A_lower, self.weight, self.stride, self.padding, self.dilation, self.groups, (h_in, w_in)

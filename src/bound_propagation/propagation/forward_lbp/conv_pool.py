@@ -138,6 +138,8 @@ class ForwardLBPConv2d(ForwardLBPStrategy):
 
         weight, bias, conv_kwargs = _resolve_conv2d_params(node, ctx, args, kwargs)
 
+        # TODO: We should always return structured operators.
+
         # Fast path 1: input operators are identity → emit structured Conv2dOperator
         # coefficients without materializing any dense Jacobian.
         if _all_identity(bounds.linear_lowers_op) and _all_identity(bounds.linear_uppers_op):
@@ -147,22 +149,14 @@ class ForwardLBPConv2d(ForwardLBPStrategy):
         # compatible first conv → emit Conv2dPatchOperator via structural
         # composition. Covers the second-conv-layer-after-nonlinearity case.
         if _all_scaled_conv_composable(bounds.linear_lowers_op, bounds.linear_uppers_op, conv_kwargs):
-            try:
-                return _propagate_scaled_input_conv2d(bounds, weight, bias, conv_kwargs)
-            except NotImplementedError:
-                # Some edge case (stride/dilation/groups) not supported by the
-                # compose helper; fall through to the dense path below.
-                pass
+            return _propagate_scaled_input_conv2d(bounds, weight, bias, conv_kwargs)
 
         # Fast path 3: input operators are all Conv2dPatchOperator with
         # compatible hyperparameters → structurally compose into a larger
         # Conv2dPatchOperator. Covers a third (or deeper) conv layer after
         # two+ relu/conv layers have already been fused into a patch op.
         if _all_patch_composable(bounds.linear_lowers_op, bounds.linear_uppers_op, conv_kwargs):
-            try:
-                return _propagate_patch_input_conv2d(bounds, weight, bias, conv_kwargs)
-            except NotImplementedError:
-                pass
+            return _propagate_patch_input_conv2d(bounds, weight, bias, conv_kwargs)
 
         weight_pos = weight.clamp(min=0)
         weight_neg = weight.clamp(max=0)
