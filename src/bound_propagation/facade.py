@@ -17,7 +17,7 @@ import torch
 import torch.fx as fx
 
 from .bounds import AbstractBounds
-from .passes import MetadataPass
+from .passes import MetadataPass, SimplificationPass
 from .propagation import (
     AlphaOptimizationConfig,
     BackwardLBPPropagator,
@@ -192,6 +192,12 @@ class BoundModel:
     alpha : AlphaOptimizationConfig, optional
         Alpha-CROWN optimization config. Only meaningful for methods whose
         propagators accept one (all LBP-based methods).
+    simplify : bool, optional
+        Run :class:`~bound_propagation.passes.SimplificationPass` on the
+        traced graph before building the propagator. Default ``False``.
+        Enable to fold algebraic identities and drop structural no-ops;
+        note that some rewrites (e.g. ``x * x → pow(x, 2)``) introduce
+        targets that require corresponding registry entries.
 
     Raises
     ------
@@ -210,6 +216,7 @@ class BoundModel:
         registry: TargetRegistry | Mapping[str, TargetRegistry] | None = None,
         extensions: Sequence[RegistryExtension] = (),
         alpha: AlphaOptimizationConfig | None = None,
+        simplify: bool = False,
     ) -> None:
         if method not in _METHOD_REGISTRY_KEYS:
             raise ValueError(f"Unknown method {method!r}; expected one of {tuple(_METHOD_REGISTRY_KEYS)}")
@@ -238,6 +245,13 @@ class BoundModel:
         # with these shapes. It is re-run per propagate() call with batch-promoted
         # shapes so node.meta["tensor_meta"] matches the actual input rank.
         MetadataPass(graph_module).run(*dummy_inputs)
+
+        if simplify:
+            SimplificationPass().run(graph_module)
+            # Rewrites invalidate meta on changed nodes; refresh so downstream
+            # consumers (propagator construction, output-meta extraction) see
+            # consistent shape/dtype annotations.
+            MetadataPass(graph_module).run(*dummy_inputs)
 
         placeholder_feature_shapes = tuple(tuple(t.shape) for t in dummy_inputs)
         placeholder_dtypes = tuple(t.dtype for t in dummy_inputs)

@@ -460,3 +460,35 @@ def test_registries_property_returns_configured_keys(small_model):
     bm = BoundModel(small_model, dummy_inputs=(torch.zeros(3),), method="forward_backward_lbp")
     assert set(bm.registries) == {"forward_lbp", "backward_lbp"}
     assert isinstance(bm.registries["forward_lbp"], TargetRegistry)
+
+
+def _count_op_targets(graph_module, targets):
+    return sum(
+        1
+        for node in graph_module.graph.nodes
+        if node.op in ("call_function", "call_method") and node.target in targets
+    )
+
+
+def test_simplify_default_off_preserves_graph():
+    """``log(exp(x))`` stays in the graph when ``simplify=False`` (the default)."""
+
+    def fn(x):
+        return torch.log(torch.exp(x))
+
+    bm = BoundModel(fn, dummy_inputs=(torch.zeros(2),), method="ibp")
+    assert _count_op_targets(bm.graph_module, {torch.log, torch.exp}) == 2
+
+
+def test_simplify_rewrites_log_of_exp():
+    """``simplify=True`` drops ``log(exp(x)) → x`` and preserves soundness."""
+
+    def fn(x):
+        return torch.log(torch.exp(x))
+
+    region = HyperRectangle(lower=torch.tensor([-0.3, 0.1]), upper=torch.tensor([0.2, 0.5]))
+    bm = BoundModel(fn, dummy_inputs=(torch.zeros(2),), method="ibp", simplify=True)
+    assert _count_op_targets(bm.graph_module, {torch.log, torch.exp}) == 0
+    lower, upper = bm.propagate(region).concretize()
+    assert torch.all(lower <= upper + 1e-5)
+    _sample_bounds_are_sound(fn, region, lower, upper)
