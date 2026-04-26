@@ -10,6 +10,7 @@ from ..linear_relaxations.alpha_resolvers import (
     resolve_cos_alpha,
     resolve_exp_alpha,
     resolve_log_alpha,
+    resolve_pow_alpha,
     resolve_reciprocal_alphas,
     resolve_relu_alpha,
     resolve_sigmoid_alphas,
@@ -25,6 +26,7 @@ from ..linear_relaxations.elementwise import (
     compute_cos_relaxation,
     compute_exp_relaxation,
     compute_log_relaxation,
+    compute_pow_relaxation,
     compute_reciprocal_relaxation,
     compute_relu_relaxation,
     compute_sigmoid_relaxation,
@@ -382,5 +384,34 @@ class ForwardLBPTanh(ForwardLBPStrategy):
             alpha_tanh_tangent_lower=alpha_lo,
             alpha_tanh_tangent_upper=alpha_up,
         )
+        relaxation = ElementwiseForwardRelaxation(params=params)
+        return relaxation.forward(bounds)
+
+
+class ForwardLBPPow(ForwardLBPStrategy):
+    """Forward LBP strategy for ``pow(x, n)`` using linear relaxation.
+
+    Currently supports integer exponent ``n == 2`` (the case produced by the
+    ``x*x → pow(x, 2)`` simplification rewrite). Other powers raise
+    ``NotImplementedError`` from the underlying relaxation.
+    """
+
+    def propagate_forward(
+        self,
+        node: fx.Node,
+        ctx: PropagationContext,
+    ) -> LinearBounds:
+        args, _ = ctx.resolve_args(node)
+        bounds = args[0]
+        power = args[1]
+
+        if not isinstance(bounds, LinearBounds):
+            raise TypeError("ForwardLBPPow requires input to be LinearBounds")
+        if not isinstance(power, int):
+            raise TypeError(f"ForwardLBPPow requires an int exponent, got {type(power).__name__}")
+
+        concrete_bounds = bounds.concretize()
+        alpha = resolve_pow_alpha(ctx.alpha_provider, node, concrete_bounds)
+        params = compute_pow_relaxation(concrete_bounds, power=power, alpha_pow_tangent=alpha)
         relaxation = ElementwiseForwardRelaxation(params=params)
         return relaxation.forward(bounds)

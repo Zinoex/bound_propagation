@@ -22,6 +22,7 @@ from ..linear_relaxations.alpha_resolvers import (
     resolve_cos_alpha,
     resolve_exp_alpha,
     resolve_log_alpha,
+    resolve_pow_alpha,
     resolve_reciprocal_alphas,
     resolve_relu_alpha,
     resolve_sigmoid_alphas,
@@ -37,6 +38,7 @@ from ..linear_relaxations.elementwise import (
     compute_cos_relaxation,
     compute_exp_relaxation,
     compute_log_relaxation,
+    compute_pow_relaxation,
     compute_reciprocal_relaxation,
     compute_relu_relaxation,
     compute_sigmoid_relaxation,
@@ -293,6 +295,28 @@ class BackwardLBPTan(_ElementwiseBackwardLBP):
         alpha = resolve_tan_alpha(tape.alpha_provider, node, input_bounds)
         params = compute_tan_relaxation(input_bounds, alpha_tan_tangent_frac=alpha)
         return ElementwiseBackwardRelaxation(params=params, input_node=input_node)
+
+
+class BackwardLBPPow(BackwardLBPStrategy):
+    """Backward LBP strategy for ``pow(x, n)``.
+
+    Currently supports integer exponent ``n == 2`` (the case produced by the
+    ``x*x → pow(x, 2)`` simplification rewrite). Other powers raise
+    ``NotImplementedError`` from the underlying relaxation.
+    """
+
+    def build_relaxation(
+        self, node: fx.Node, tape: BackwardTape, bounds: IntermediateBoundsProvider
+    ) -> ElementwiseBackwardRelaxation:
+        args, _ = tape.resolve_args(node)
+        input_node = node.args[0]
+        power = args[1]
+        if not isinstance(power, int):
+            raise TypeError(f"BackwardLBPPow requires an int exponent, got {type(power).__name__}")
+        input_bounds = bounds(input_node)  # ty:ignore[invalid-argument-type]
+        alpha = resolve_pow_alpha(tape.alpha_provider, node, input_bounds)
+        params = compute_pow_relaxation(input_bounds, power=power, alpha_pow_tangent=alpha)
+        return ElementwiseBackwardRelaxation(params=params, input_node=input_node)  # ty:ignore[invalid-argument-type]
 
 
 class BackwardLBPClamp(BackwardLBPStrategy):

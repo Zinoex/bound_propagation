@@ -19,6 +19,11 @@ dependencies = [
     "plum-dispatch",
 ]
 
+[project.optional-dependencies]
+viz = [
+    "matplotlib",
+]
+
 [project.urls]
 Homepage = "https://github.com/zinoex/bound_propagation"
 "Bug Tracker" = "https://github.com/zinoex/bound_propagation/issues"

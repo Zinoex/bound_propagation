@@ -256,6 +256,26 @@ def _node_feature_ndim(node_ndim: int, batch_ndim: int) -> int:
     return max(node_ndim - batch_ndim, 0)
 
 
+def _broadcast_constant(constant: torch.Tensor, *, batch_ndim: int, bounded_ndim: int, node_ndim: int) -> torch.Tensor:
+    """Reshape ``constant`` to broadcast against ``A`` of shape ``(*batch, *bounded, *node)``.
+
+    Inserts ``bounded_ndim`` singleton dims between the constant's batch and
+    feature axes, then prepends extra singleton feature dims if the constant
+    has fewer feature axes than ``node_ndim`` (e.g. a scalar constant
+    multiplying a multi-feature node). This avoids assuming the constant has
+    the same rank as the node — scalars and partial-broadcast constants
+    were previously misclassified, leading to wrong-shape bias contributions.
+    """
+    if constant.ndim < batch_ndim:
+        raise ValueError(f"constant rank {constant.ndim} is smaller than batch rank {batch_ndim}")
+    feature_shape = tuple(constant.shape[batch_ndim:])
+    pad_for_features = node_ndim - len(feature_shape)
+    if pad_for_features < 0:
+        raise ValueError(f"constant feature rank {len(feature_shape)} exceeds input feature rank {node_ndim}")
+    new_shape = tuple(constant.shape[:batch_ndim]) + (1,) * bounded_ndim + (1,) * pad_for_features + feature_shape
+    return constant.reshape(new_shape)
+
+
 # ---------------------------------------------------------------------------
 # Relaxation dataclasses
 # ---------------------------------------------------------------------------
@@ -664,12 +684,14 @@ class ConstantAddRelaxation(BackwardRelaxation):
         A_lower_t = A_lower.to_dense().tensor
         A_upper_t = A_upper.to_dense().tensor
 
-        node_ndim = self.constant.ndim - batch_ndim
-        bounded_ndim = A_lower_t.ndim - self.constant.ndim
+        # Derive shape metadata from the operator (not the constant) so a
+        # scalar / partially-broadcast constant aligns with the propagated A's
+        # input axes correctly.
+        node_ndim = A_lower.input_ndim
+        bounded_ndim = A_lower.output_ndim - batch_ndim
 
-        c_bc = self.constant.reshape(
-            self.constant.shape[:batch_ndim] + (1,) * bounded_ndim + self.constant.shape[batch_ndim:]
-        )
+        # Reshape the constant to broadcast against ``(*batch, *bounded_out, *node)``.
+        c_bc = _broadcast_constant(self.constant, batch_ndim=batch_ndim, bounded_ndim=bounded_ndim, node_ndim=node_ndim)
 
         sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
         if sum_dims:
@@ -750,13 +772,17 @@ class ScaleRelaxation(BackwardRelaxation):
         A_lower_t = A_lower.to_dense().tensor
         A_upper_t = A_upper.to_dense().tensor
 
-        bounded_ndim = A_lower_t.ndim - self.scale.ndim
-        c = self.scale.reshape(self.scale.shape[:batch_ndim] + (1,) * bounded_ndim + self.scale.shape[batch_ndim:])
+        # Derive shape metadata from the operator (not the scale tensor) so a
+        # scalar / partially-broadcast scale aligns with the propagated A's
+        # input axes correctly.
+        node_ndim = A_lower.input_ndim
+        bounded_ndim = A_lower.output_ndim - batch_ndim
+
+        c = _broadcast_constant(self.scale, batch_ndim=batch_ndim, bounded_ndim=bounded_ndim, node_ndim=node_ndim)
 
         new_A_lower = A_lower_t * c
         new_A_upper = A_upper_t * c
 
-        node_ndim = self.scale.ndim - batch_ndim
         zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
         return BackwardContributions(
             a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),

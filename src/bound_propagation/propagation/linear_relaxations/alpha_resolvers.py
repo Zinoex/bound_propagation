@@ -248,6 +248,23 @@ def resolve_tan_alpha(
     return _resolve_single_midpoint_knob(provider, node, input_bounds, "tan_tangent_frac")
 
 
+def resolve_pow_alpha(
+    provider: AlphaProvider,
+    node: fx.Node,
+    input_bounds: IntervalBounds,
+) -> torch.Tensor | None:
+    """Resolve the pow lower-bound tangent-point fraction (default 0.5 = centered)."""
+    lower = input_bounds.lower
+    return provider.get(
+        node=node,
+        knob_name="pow_tangent_lower",
+        shape=lower.shape,
+        init=0.5,
+        device=lower.device,
+        dtype=lower.dtype,
+    )
+
+
 def resolve_exp_alpha(
     provider: AlphaProvider,
     node: fx.Node,

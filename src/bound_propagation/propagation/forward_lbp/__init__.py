@@ -12,6 +12,7 @@ from .elementwise import (
     ForwardLBPCos,
     ForwardLBPExp,
     ForwardLBPLog,
+    ForwardLBPPow,
     ForwardLBPReciprocal,
     ForwardLBPRelu,
     ForwardLBPSigmoid,
@@ -75,6 +76,7 @@ def create_default_forward_lbp_registry() -> TargetRegistry[ForwardLBPStrategy]:
     registry.register_many([torch.sin, torch.Tensor.sin], ForwardLBPSin())
     registry.register_many([torch.cos, torch.Tensor.cos], ForwardLBPCos())
     registry.register_many([torch.tan, torch.Tensor.tan], ForwardLBPTan())
+    registry.register_many([torch.pow, torch.Tensor.pow, operator.pow], ForwardLBPPow())
 
     # -- Linear / matmul ---------------------------------------------------
     linear = ForwardLBPLinear()

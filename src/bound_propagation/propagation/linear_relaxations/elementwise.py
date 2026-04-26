@@ -943,6 +943,85 @@ def compute_relu_relaxation(
     )
 
 
+def compute_pow_relaxation(
+    bounds: IntervalBounds,
+    power: int,
+    zero_threshold: float = 1e-8,
+    *,
+    alpha_pow_tangent: torch.Tensor | None = None,
+) -> ElementwiseParams:
+    """
+    Compute alpha/beta parameters for the linear relaxation of ``y = x ** power``.
+
+    Currently supports ``power == 2`` only. ``y = x²`` is convex everywhere,
+    so the standard relaxation is:
+
+    - **Upper bound (chord)** through ``(l, l²)`` and ``(u, u²)``:
+      ``y_upper = (l + u) * x - l*u``.
+    - **Lower bound (tangent)** at ``t ∈ [l, u]``:
+      ``y_lower = 2*t * x - t²``. Default ``t = (l + u) / 2``.
+
+    Parameters
+    ----------
+    bounds : IntervalBounds
+        Lower and upper bounds of the input.
+    power : int
+        Integer exponent. Must equal ``2``; other powers raise
+        ``NotImplementedError``.
+    zero_threshold : float
+        Threshold below which an interval is treated as zero-width.
+    alpha_pow_tangent : torch.Tensor | None
+        Optional alpha-CROWN override for the tangent point. Each fraction
+        ``alpha ∈ [0, 1]`` maps to ``t = l + alpha * (u - l)``. The default
+        ``alpha = 1/2`` gives the centered tangent.
+
+    Returns
+    -------
+    ElementwiseParams
+        The relaxation parameters.
+    """
+    if power != 2:
+        raise NotImplementedError(f"compute_pow_relaxation currently only supports power=2, got power={power}")
+
+    lower = bounds.lower
+    upper = bounds.upper
+
+    alpha_lower = torch.zeros_like(lower)
+    beta_lower = torch.zeros_like(lower)
+    alpha_upper = torch.zeros_like(lower)
+    beta_upper = torch.zeros_like(lower)
+
+    zero_width = torch.isclose(lower, upper, atol=zero_threshold)
+    nontrivial = ~zero_width
+
+    # Zero-width: both bounds equal x².
+    sq_lower = lower[zero_width] ** 2
+    beta_lower[zero_width] = sq_lower
+    beta_upper[zero_width] = sq_lower
+
+    # Upper bound: chord through endpoints.
+    l_nt = lower[nontrivial]
+    u_nt = upper[nontrivial]
+    alpha_upper[nontrivial] = u_nt + l_nt
+    beta_upper[nontrivial] = -l_nt * u_nt
+
+    # Lower bound: tangent at t.
+    if alpha_pow_tangent is not None:
+        alpha_clamped = alpha_pow_tangent.clamp(0.0, 1.0)
+        t = l_nt + alpha_clamped[nontrivial] * (u_nt - l_nt)
+    else:
+        t = (l_nt + u_nt) / 2
+    alpha_lower[nontrivial] = 2 * t
+    beta_lower[nontrivial] = -(t**2)
+
+    return ElementwiseParams(
+        alpha_lower=alpha_lower,
+        beta_lower=beta_lower,
+        alpha_upper=alpha_upper,
+        beta_upper=beta_upper,
+    )
+
+
 def compute_sigmoid_relaxation(
     bounds: IntervalBounds,
     zero_threshold: float = 1e-8,

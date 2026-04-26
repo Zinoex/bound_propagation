@@ -12,6 +12,7 @@ from .elementwise import (
     BackwardLBPCos,
     BackwardLBPExp,
     BackwardLBPLog,
+    BackwardLBPPow,
     BackwardLBPReciprocal,
     BackwardLBPRelu,
     BackwardLBPSigmoid,
@@ -85,6 +86,7 @@ def create_default_backward_lbp_registry() -> TargetRegistry[BackwardLBPStrategy
     registry.register_many([torch.sin, torch.Tensor.sin], BackwardLBPSin())
     registry.register_many([torch.cos, torch.Tensor.cos], BackwardLBPCos())
     registry.register_many([torch.tan, torch.Tensor.tan], BackwardLBPTan())
+    registry.register_many([torch.pow, torch.Tensor.pow, operator.pow], BackwardLBPPow())
 
     # -- Linear / affine ------------------------------------------------------
     registry.register_many([F.linear, nn.Linear], BackwardLBPLinear())
