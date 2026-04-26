@@ -6,8 +6,10 @@ from typing import TYPE_CHECKING, Protocol
 
 import torch
 import torch.fx as fx
+from plum import dispatch
 
 from ...bounds import IntervalBounds
+from ...linear_operators import DenseOperator, IdentityOperator, LinearOperator
 from ..strategy import BoundingStrategy
 
 if TYPE_CHECKING:
@@ -21,19 +23,43 @@ class BackwardContributions:
 
     Attributes
     ----------
-    a_terms : dict[fx.Node, tuple[torch.Tensor, torch.Tensor]]
-        Mapping from predecessor fx.Node to (delta_A_lower, delta_A_upper).
-        When the same predecessor appears multiple times (e.g. x * x),
-        contributions should be pre-accumulated before constructing this.
+    a_terms : dict[fx.Node, tuple[LinearOperator, LinearOperator]]
+        Mapping from predecessor fx.Node to (delta_A_lower, delta_A_upper) as
+        :class:`LinearOperator` instances. When the same predecessor appears
+        multiple times (e.g. x * x), contributions should be pre-accumulated
+        before constructing this.
     bias_lower : torch.Tensor
-        Bias contribution to the lower bound, shape (*batch, *bounded_out).
+        Bias contribution to the lower bound; shape broadcasts against the
+        A-operator's ``output_shape``.
     bias_upper : torch.Tensor
-        Bias contribution to the upper bound, shape (*batch, *bounded_out).
+        Bias contribution to the upper bound.
     """
 
-    a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]]
+    a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]]
     bias_lower: torch.Tensor
     bias_upper: torch.Tensor
+
+
+def _wrap_a_term_tensors(
+    a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]],
+    output_ndim: int,
+) -> dict[fx.Node, tuple[LinearOperator, LinearOperator]]:
+    """Wrap tensor a_terms in :class:`DenseOperator`.
+
+    ``output_ndim`` is the number of leading dims in each tensor that belong
+    to the A-matrix output shape (shared across all predecessors in a single
+    backward step). Trailing dims are the predecessor's input feature shape.
+    Using the actual tensor shape (rather than a frozen template) accommodates
+    ops that expand placeholder batch dims (e.g. McCormick matmul).
+    """
+    result: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
+    for node, (lower_t, upper_t) in a_terms.items():
+        output_shape = torch.Size(lower_t.shape[:output_ndim])
+        result[node] = (
+            DenseOperator(lower_t, output_shape=output_shape),
+            DenseOperator(upper_t, output_shape=output_shape),
+        )
+    return result
 
 
 class BackwardRelaxation(ABC):
@@ -54,25 +80,28 @@ class BackwardRelaxation(ABC):
     @abstractmethod
     def backward_through(
         self,
-        A_lower: torch.Tensor,
-        A_upper: torch.Tensor,
+        A_lower: LinearOperator,
+        A_upper: LinearOperator,
         batch_ndim: int,
     ) -> BackwardContributions:
         """Single-step backward: transform A-matrices for this operation.
 
         Parameters
         ----------
-        A_lower : torch.Tensor
-            Lower A-matrix, shape (*batch, *bounded_out, *node_dims).
-        A_upper : torch.Tensor
-            Upper A-matrix, shape (*batch, *bounded_out, *node_dims).
+        A_lower : LinearOperator
+            Lower A-matrix as a :class:`LinearOperator` with
+            ``output_shape = (*batch, *bounded_out)`` and
+            ``input_shape = (*node_dims,)``.
+        A_upper : LinearOperator
+            Upper A-matrix (same shape convention).
         batch_ndim : int
             Number of leading batch dimensions.
 
         Returns
         -------
         BackwardContributions
-            Contributions to predecessor nodes and bias deltas.
+            Contributions to predecessor nodes (as :class:`LinearOperator`)
+            and bias deltas (as :class:`torch.Tensor`).
         """
 
 
@@ -97,24 +126,25 @@ class IntervalLeafRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return []
 
+    @dispatch
     def backward_through(
         self,
-        A_lower: torch.Tensor,
-        A_upper: torch.Tensor,
+        A_lower: LinearOperator,
+        A_upper: LinearOperator,
         batch_ndim: int,
     ) -> BackwardContributions:
         """Sign decomposition on A, contract over node dims into bias."""
         node_ndim = self.lower.ndim - batch_ndim
-        bounded_ndim = A_lower.ndim - self.lower.ndim
+        bounded_ndim = A_lower.output_ndim + A_lower.input_ndim - self.lower.ndim
 
         def bc(t: torch.Tensor) -> torch.Tensor:
             """Broadcast (*batch, *node) -> (*batch, *bounded_out, *node)."""
             return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
 
-        A_l_pos = A_lower.clamp(min=0)
-        A_l_neg = A_lower.clamp(max=0)
-        A_u_pos = A_upper.clamp(min=0)
-        A_u_neg = A_upper.clamp(max=0)
+        A_l_pos = A_lower.clamp_min(0).to_dense().tensor
+        A_l_neg = A_lower.clamp_max(0).to_dense().tensor
+        A_u_pos = A_upper.clamp_min(0).to_dense().tensor
+        A_u_neg = A_upper.clamp_max(0).to_dense().tensor
 
         # Sign decomposition: positive A uses lower for lower bound, upper for upper bound
         bias_lower = A_l_pos * bc(self.lower) + A_l_neg * bc(self.upper)
@@ -127,6 +157,21 @@ class IntervalLeafRelaxation(BackwardRelaxation):
             bias_upper = bias_upper.sum(dim=sum_dims)
 
         return BackwardContributions(a_terms={}, bias_lower=bias_lower, bias_upper=bias_upper)
+
+    @dispatch
+    def backward_through(  # noqa: F811
+        self,
+        A_lower: IdentityOperator,
+        A_upper: IdentityOperator,
+        batch_ndim: int,  # noqa: ARG002
+    ) -> BackwardContributions:
+        """Identity at the leaf: bias is just ``self.lower`` / ``self.upper``.
+
+        No sign decomposition is needed because Identity is entrywise
+        non-negative, so ``A_pos = A`` and ``A_neg = 0`` and the contraction
+        against the interval bounds reduces to the bounds themselves.
+        """
+        return BackwardContributions(a_terms={}, bias_lower=self.lower, bias_upper=self.upper)
 
 
 class IntermediateBoundsProvider(Protocol):
@@ -252,29 +297,29 @@ class BackwardLBPStrategy(BoundingStrategy):
 
 
 def accumulate_a_terms(
-    a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]],
+    a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]],
     node: fx.Node,
-    delta_A_lower: torch.Tensor,
-    delta_A_upper: torch.Tensor,
+    delta_A_lower: LinearOperator,
+    delta_A_upper: LinearOperator,
 ) -> None:
     """Accumulate A-matrix contributions for a predecessor node.
 
     Handles the case where the same predecessor appears multiple times
-    (e.g. y = x * x) by summing contributions.
+    (e.g. y = x * x) by summing contributions via :meth:`LinearOperator.add`.
 
     Parameters
     ----------
-    a_terms : dict[fx.Node, tuple[torch.Tensor, torch.Tensor]]
+    a_terms : dict[fx.Node, tuple[LinearOperator, LinearOperator]]
         The a_terms dict to accumulate into (modified in-place).
     node : fx.Node
         The predecessor fx.Node.
-    delta_A_lower : torch.Tensor
+    delta_A_lower : LinearOperator
         Lower A-matrix contribution.
-    delta_A_upper : torch.Tensor
+    delta_A_upper : LinearOperator
         Upper A-matrix contribution.
     """
     if node in a_terms:
         old_l, old_u = a_terms[node]
-        a_terms[node] = (old_l + delta_A_lower, old_u + delta_A_upper)
+        a_terms[node] = (old_l.add(delta_A_lower), old_u.add(delta_A_upper))
     else:
         a_terms[node] = (delta_A_lower, delta_A_upper)

@@ -1,12 +1,13 @@
 """bound_propagation: neural network bound propagation via torch.fx."""
 
-from .bounds import AbstractBounds
+from .bounds import AbstractBounds, LinearCoefficient
 from .facade import BoundModel, Method, RegistryExtension
 from .linear_operators import (
     DenseOperator,
     IdentityOperator,
     LinearOperator,
     ReshapeOperator,
+    ZeroOperator,
 )
 from .propagation import (
     AlphaOptimizationConfig,
@@ -34,10 +35,12 @@ __all__ = [
     "HyperRectangle",
     "IBPPropagator",
     "IdentityOperator",
+    "LinearCoefficient",
     "LinearOperator",
     "Method",
     "ReshapeOperator",
     "RegistryExtension",
     "SimpleRegion",
     "TargetRegistry",
+    "ZeroOperator",
 ]

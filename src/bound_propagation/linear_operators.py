@@ -13,9 +13,7 @@ Shape conventions mirror ``LinearBounds``:
     input_shape  = (*input_dims,)                # trailing axes describing x
 
 A ``DenseOperator`` wraps a tensor of shape ``(*output_shape, *input_shape)``
-and is the baseline implementation. Other operators (convolution, pooling)
-will be added in later phases and may fall back to ``DenseOperator`` when an
-algebraic operation cannot be expressed natively.
+and is the baseline implementation.
 """
 
 from __future__ import annotations
@@ -123,12 +121,46 @@ class LinearOperator(ABC):
         Default: materialize both sides and add as dense tensors. Subclasses
         override when two structured operators of compatible form can be added
         without materialization (e.g. two convs with matching kernel/stride).
+
+        ``ZeroOperator`` is the additive identity: ``self.add(Zero) == self``
+        (subject to broadcast). Detected here so structured ``self`` survives
+        without materialization.
         """
+        if isinstance(other, ZeroOperator):
+            return _add_with_zero(self, other)
         return self.to_dense().add(other.to_dense())
 
     def sub(self, other: LinearOperator) -> LinearOperator:
         """Return operator representing ``self - other`` (default: ``self + other.neg()``)."""
         return self.add(other.neg())
+
+    # ------------------------------------------------------------------
+    # Sign-aware decomposition
+    #
+    # ``clamp_min`` / ``clamp_max`` are load-bearing: every backward-mode
+    # ``F_i`` that performs sign decomposition (auto_LiRPA equation 5)
+    # consumes ``A.clamp_min(0)`` and ``A.clamp_max(0)``. Subclasses MUST
+    # support these in their native representation when the structured form
+    # admits it; the dense fallback below is correct but materializes.
+    # ------------------------------------------------------------------
+
+    def clamp_min(self, value: float) -> LinearOperator:
+        """Return operator representing entrywise ``max(self, value)``.
+
+        Default: materialize to dense and clamp. Subclasses override when the
+        operation can be performed in the native representation (e.g.
+        ``DenseOperator`` clamps the stored tensor; ``IdentityOperator``
+        with ``value <= 0`` returns ``self``).
+        """
+        return self.to_dense().clamp_min(value)
+
+    def clamp_max(self, value: float) -> LinearOperator:
+        """Return operator representing entrywise ``min(self, value)``.
+
+        Default: materialize to dense and clamp. Subclasses override when the
+        operation can be performed in the native representation.
+        """
+        return self.to_dense().clamp_max(value)
 
     # ------------------------------------------------------------------
     # Output-axis shape operations (input axes preserved)
@@ -188,6 +220,35 @@ class LinearOperator(ABC):
 
     @abstractmethod
     def clone(self) -> LinearOperator: ...
+
+
+# ----------------------------------------------------------------------
+# Helpers
+# ----------------------------------------------------------------------
+
+
+def _add_with_zero(non_zero: LinearOperator, zero: LinearOperator) -> LinearOperator:
+    """Compute ``non_zero + zero`` while preserving structure when possible.
+
+    ``ZeroOperator`` is the additive identity, so the result is ``non_zero``
+    when shapes already match. If the broadcast widens the output shape, fall
+    back to dense so the wider shape is realized.
+    """
+    if non_zero.input_shape != zero.input_shape:
+        raise ValueError(
+            f"Cannot add operators with different input shapes: {tuple(non_zero.input_shape)} vs "
+            f"{tuple(zero.input_shape)}"
+        )
+    try:
+        merged = torch.broadcast_shapes(non_zero.output_shape, zero.output_shape)
+    except RuntimeError as exc:
+        raise ValueError(
+            f"Cannot add operators with incompatible output shapes: {tuple(non_zero.output_shape)} vs "
+            f"{tuple(zero.output_shape)}"
+        ) from exc
+    if torch.Size(merged) == non_zero.output_shape:
+        return non_zero
+    return non_zero.to_dense().add(zero.to_dense())
 
 
 # ----------------------------------------------------------------------
@@ -303,29 +364,30 @@ class DenseOperator(LinearOperator):
         return DenseOperator(self._tensor * factor_bc, self._output_shape)
 
     def add(self, other: LinearOperator) -> LinearOperator:
-        if self.output_shape != other.output_shape:
-            raise ValueError(
-                f"Cannot add operators with different output shapes: {tuple(self.output_shape)} vs "
-                f"{tuple(other.output_shape)}"
-            )
+        if isinstance(other, ZeroOperator):
+            return _add_with_zero(self, other)
         if self.input_shape != other.input_shape:
             raise ValueError(
                 f"Cannot add operators with different input shapes: {tuple(self.input_shape)} vs "
                 f"{tuple(other.input_shape)}"
             )
+        try:
+            merged_output_shape = torch.broadcast_shapes(self.output_shape, other.output_shape)
+        except RuntimeError as exc:
+            raise ValueError(
+                f"Cannot add operators with incompatible output shapes: {tuple(self.output_shape)} vs "
+                f"{tuple(other.output_shape)}"
+            ) from exc
         other_dense = other if isinstance(other, DenseOperator) else other.to_dense()
-        return DenseOperator(self._tensor + other_dense.tensor, self._output_shape)
+        # Full tensor sum broadcasts across both output and input axes.
+        summed = self._tensor + other_dense.tensor
+        return DenseOperator(summed, torch.Size(merged_output_shape))
 
-    # ------------------------------------------------------------------
-    # Composition with a dense linear layer
-    # ------------------------------------------------------------------
+    def clamp_min(self, value: float) -> DenseOperator:
+        return DenseOperator(self._tensor.clamp(min=value), self._output_shape)
 
-    def compose_with_linear_left(self, weight_pos: torch.Tensor, weight_neg: torch.Tensor) -> DenseOperator:
-        raise NotImplementedError(
-            "compose_with_linear_left is intentionally unimplemented: linear/matmul strategies use "
-            "apply_weight_to_bounds on a pair of (lower, upper) operators. See "
-            "apply_weight_to_bounds_pair."
-        )
+    def clamp_max(self, value: float) -> DenseOperator:
+        return DenseOperator(self._tensor.clamp(max=value), self._output_shape)
 
     # ------------------------------------------------------------------
     # Output-axis shape operations
@@ -592,101 +654,6 @@ def stack_output(operators: Sequence[LinearOperator], dim: int) -> LinearOperato
 
 
 # ----------------------------------------------------------------------
-# Signed composition helper used by forward-LBP linear / matmul strategies.
-#
-# The typical forward-LBP composition over a linear layer is
-#
-#     new_lower = weight_pos * op_lower + weight_neg * op_upper
-#     new_upper = weight_pos * op_upper + weight_neg * op_lower
-#
-# where ``weight_pos = weight.clamp(min=0)`` / ``weight_neg = weight.clamp(max=0)``
-# act on the trailing feature axis of the output space. Structured operators can
-# override this to avoid materializing to dense; the baseline implementation
-# falls back to dense einsum.
-# ----------------------------------------------------------------------
-
-
-def apply_weight_to_bounds_pair(
-    op_lower: LinearOperator,
-    op_upper: LinearOperator,
-    weight_pos: torch.Tensor,
-    weight_neg: torch.Tensor,
-    *,
-    upper: bool,
-    left: bool = True,
-) -> LinearOperator:
-    """
-    Apply a (signed) weight matrix on the feature axis of two paired operators.
-
-    ``left=True`` corresponds to ``y = W @ x`` (nn.Linear / ``F.linear`` /
-    ``x @ W`` with W on the right of the reduction, because the convention
-    puts the reduction axis last). ``left=False`` corresponds to ``y = x @ W``
-    with W treated as a right-multiplied weight whose ``shape[0]`` is the
-    reduction axis.
-
-    The default implementation materializes ``op_lower`` / ``op_upper`` to
-    dense tensors and performs the einsum in dense space. Structured operators
-    can implement their own fast path via duck typing (see Phase 4).
-    """
-    lower = op_lower.to_dense().tensor
-    upper_tensor = op_upper.to_dense().tensor
-    output_ndim = op_lower.output_ndim
-    output_shape = op_lower.output_shape
-
-    input_axes = lower.shape[output_ndim:]
-    batch_shape = lower.shape[: output_ndim - 1]
-    feature_dim = lower.shape[output_ndim - 1]
-
-    lower_flat = lower.reshape(*batch_shape, feature_dim, -1)
-    upper_flat = upper_tensor.reshape(*batch_shape, feature_dim, -1)
-
-    if weight_pos.shape != weight_neg.shape:
-        raise ValueError(
-            f"weight_pos and weight_neg must share shape, got {tuple(weight_pos.shape)} vs {tuple(weight_neg.shape)}"
-        )
-
-    if weight_pos.ndim == 2:
-        if left:
-            pos_expr = "ok,...kd->...od"
-            out_feature = weight_pos.shape[0]
-        else:
-            pos_expr = "...kd,ko->...od"
-            out_feature = weight_pos.shape[1]
-        if upper:
-            transformed_flat = torch.einsum(pos_expr, weight_pos, upper_flat) + torch.einsum(
-                pos_expr, weight_neg, lower_flat
-            )
-        else:
-            transformed_flat = torch.einsum(pos_expr, weight_pos, lower_flat) + torch.einsum(
-                pos_expr, weight_neg, upper_flat
-            )
-        new_output_shape = torch.Size((*output_shape[:-1], out_feature))
-        new_tensor = transformed_flat.reshape(*batch_shape, out_feature, *input_axes)
-    elif weight_pos.ndim == 1:
-        # 1D weight: dot product reduction; no new feature axis.
-        if upper:
-            transformed_flat = torch.einsum("k,...kd->...d", weight_pos, upper_flat) + torch.einsum(
-                "k,...kd->...d", weight_neg, lower_flat
-            )
-        else:
-            transformed_flat = torch.einsum("k,...kd->...d", weight_pos, lower_flat) + torch.einsum(
-                "k,...kd->...d", weight_neg, upper_flat
-            )
-        new_output_shape = torch.Size(output_shape[:-1])
-        new_tensor = transformed_flat.reshape(*batch_shape, *input_axes)
-    else:
-        raise ValueError(f"weight must be 1D or 2D, got shape {tuple(weight_pos.shape)}")
-
-    # Correct the einsum expression when ``left=False`` + weight is 2D:
-    # weight right-multiplies, so the out feature comes from weight.shape[1].
-    if not left and weight_pos.ndim == 2:
-        # pos_expr was built correctly above ("...kd,ko->...od").
-        pass
-
-    return DenseOperator(new_tensor, new_output_shape)
-
-
-# ----------------------------------------------------------------------
 # Identity operator
 # ----------------------------------------------------------------------
 
@@ -777,10 +744,12 @@ class IdentityOperator(LinearOperator):
         return y.reshape(*leading, *self._feature_shape)
 
     def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
-        return _identity_concretize(region, self, mode="min")  # ty:ignore[invalid-argument-type]
+        lower, _ = region.aabb()
+        return lower
 
     def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
-        return _identity_concretize(region, self, mode="max")  # ty:ignore[invalid-argument-type]
+        _, upper = region.aabb()
+        return upper
 
     # ------------------------------------------------------------------
     # Algebra
@@ -789,6 +758,28 @@ class IdentityOperator(LinearOperator):
     def neg(self) -> LinearOperator:
         # No "-identity" structured type; materialize.
         return self.to_dense().neg()
+
+    def clamp_min(self, value: float) -> LinearOperator:
+        # Identity entries are 0 or 1; clamping from below at any non-positive
+        # value leaves them unchanged.
+        if value <= 0:
+            return self
+        return self.to_dense().clamp_min(value)
+
+    def clamp_max(self, value: float) -> LinearOperator:
+        # Symmetric fast path: clamping from above at >=1 leaves identity unchanged.
+        if value >= 1:
+            return self
+        if value == 0:
+            # Identity entries clamp to 0 → all-zero map; surface as ``ZeroOperator``
+            # so downstream ``add`` short-circuits without dense materialization.
+            return ZeroOperator(
+                output_shape=self.output_shape,
+                input_shape=self._feature_shape,
+                dtype=self._dtype,
+                device=self._device,
+            )
+        return self.to_dense().clamp_max(value)
 
     # ------------------------------------------------------------------
     # Materialization + housekeeping
@@ -821,25 +812,224 @@ class IdentityOperator(LinearOperator):
         )
 
 
-@dispatch
-def _identity_concretize(region: SimpleRegion, op: IdentityOperator, *, mode: str) -> torch.Tensor:  # noqa: ARG001
-    raise NotImplementedError(f"IdentityOperator concretization not implemented for region {type(region).__name__}")
+# ----------------------------------------------------------------------
+# Zero operator
+# ----------------------------------------------------------------------
 
 
-@dispatch
-def _identity_concretize(  # noqa: F811
-    region: HyperRectangle, op: IdentityOperator, *, mode: str
-) -> torch.Tensor:
-    source = region.lower if mode == "min" else region.upper
-    target = op.output_shape
-    if source.shape == target:
-        return source
-    # Reshape / broadcast — a HyperRectangle's tensor shape may differ from
-    # output_shape only in singleton leading dims (from batch_shape inference).
-    try:
-        return source.reshape(target)
-    except RuntimeError:
-        return source.expand(target)
+class ZeroOperator(LinearOperator):
+    """The zero linear map ``y = 0`` of fixed ``output_shape`` and ``input_shape``.
+
+    Used to represent absent contributions and to short-circuit subgraphs
+    whose accumulated A-matrix has been zeroed out (e.g. via
+    ``IdentityOperator.clamp_max(0)``). Acts as the additive identity under
+    :meth:`add` and as the absorbing element under :meth:`scale` and
+    :meth:`neg`.
+
+    No tensor is allocated until :meth:`to_dense` is called.
+    """
+
+    def __init__(
+        self,
+        output_shape: tuple[int, ...] | torch.Size,
+        input_shape: tuple[int, ...] | torch.Size,
+        *,
+        dtype: torch.dtype,
+        device: torch.device,
+    ) -> None:
+        self._output_shape = torch.Size(output_shape)
+        self._input_shape = torch.Size(input_shape)
+        self._dtype = dtype
+        self._device = device
+
+    # ------------------------------------------------------------------
+    # Shape / metadata
+    # ------------------------------------------------------------------
+
+    @property
+    def output_shape(self) -> torch.Size:
+        return self._output_shape
+
+    @property
+    def input_shape(self) -> torch.Size:
+        return self._input_shape
+
+    @property
+    def dtype(self) -> torch.dtype:
+        return self._dtype
+
+    @property
+    def device(self) -> torch.device:
+        return self._device
+
+    # ------------------------------------------------------------------
+    # Core linear-map operations
+    # ------------------------------------------------------------------
+
+    def apply(self, x: torch.Tensor) -> torch.Tensor:
+        if self.input_ndim > 0 and tuple(x.shape[-self.input_ndim :]) != tuple(self._input_shape):
+            raise ValueError(
+                f"ZeroOperator.apply: x trailing shape {tuple(x.shape[-self.input_ndim :])} "
+                f"does not match input_shape {tuple(self._input_shape)}"
+            )
+        return torch.zeros(self._output_shape, dtype=self._dtype, device=self._device)
+
+    def apply_transpose(self, y: torch.Tensor) -> torch.Tensor:
+        if self.output_ndim > 0 and tuple(y.shape[-self.output_ndim :]) != tuple(self._output_shape):
+            raise ValueError(
+                f"ZeroOperator.apply_transpose: y trailing shape {tuple(y.shape[-self.output_ndim :])} "
+                f"does not match output_shape {tuple(self._output_shape)}"
+            )
+        leading = y.shape[: y.ndim - self.output_ndim] if self.output_ndim > 0 else y.shape
+        return torch.zeros((*leading, *self._input_shape), dtype=self._dtype, device=self._device)
+
+    def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
+        return torch.zeros(self._output_shape, dtype=self._dtype, device=self._device)
+
+    def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
+        return torch.zeros(self._output_shape, dtype=self._dtype, device=self._device)
+
+    # ------------------------------------------------------------------
+    # Algebra
+    # ------------------------------------------------------------------
+
+    def neg(self) -> ZeroOperator:
+        return self
+
+    def scale(self, factor: torch.Tensor) -> ZeroOperator:
+        return self
+
+    def add(self, other: LinearOperator) -> LinearOperator:
+        if isinstance(other, ZeroOperator):
+            # Zero + Zero = Zero, taking the broadcast output shape.
+            if self._input_shape != other.input_shape:
+                raise ValueError(
+                    f"Cannot add operators with different input shapes: {tuple(self._input_shape)} vs "
+                    f"{tuple(other.input_shape)}"
+                )
+            try:
+                merged = torch.broadcast_shapes(self._output_shape, other.output_shape)
+            except RuntimeError as exc:
+                raise ValueError(
+                    f"Cannot add operators with incompatible output shapes: {tuple(self._output_shape)} vs "
+                    f"{tuple(other.output_shape)}"
+                ) from exc
+            return ZeroOperator(
+                output_shape=tuple(merged), input_shape=self._input_shape, dtype=self._dtype, device=self._device
+            )
+        # Symmetric to non-Zero ``add(self)``: identity behavior preserves ``other``'s structure.
+        return _add_with_zero(other, self)
+
+    def clamp_min(self, value: float) -> LinearOperator:
+        # Zero entries are 0; clamp_min(value <= 0) leaves them; clamp_min(value > 0)
+        # makes every entry ``value`` (a constant operator).
+        if value <= 0:
+            return self
+        return self.to_dense().clamp_min(value)
+
+    def clamp_max(self, value: float) -> LinearOperator:
+        if value >= 0:
+            return self
+        return self.to_dense().clamp_max(value)
+
+    # ------------------------------------------------------------------
+    # Output-axis shape operations — produce another ``ZeroOperator``.
+    # ------------------------------------------------------------------
+
+    def reshape_output(self, shape: tuple[int, ...]) -> ZeroOperator:
+        new_shape = torch.Size(shape)
+        if new_shape.numel() != self._output_shape.numel():
+            raise ValueError(
+                f"reshape_output cannot change total size: {tuple(self._output_shape)} "
+                f"(numel={self._output_shape.numel()}) → {tuple(new_shape)} (numel={new_shape.numel()})"
+            )
+        return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+
+    def view_output(self, shape: tuple[int, ...]) -> ZeroOperator:
+        return self.reshape_output(shape)
+
+    def flatten_output(self, start_dim: int, end_dim: int) -> ZeroOperator:
+        start = _normalize_output_dim(start_dim, self.output_ndim, inclusive_end=False)
+        end = _normalize_output_dim(end_dim, self.output_ndim, inclusive_end=False)
+        if end < start:
+            raise ValueError(f"flatten_output end_dim {end} must be >= start_dim {start}")
+        collapsed = 1
+        for s in self._output_shape[start : end + 1]:
+            collapsed *= int(s)
+        new_shape = (*self._output_shape[:start], collapsed, *self._output_shape[end + 1 :])
+        return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+
+    def squeeze_output(self, dim: int | None = None) -> ZeroOperator:
+        if dim is None:
+            new_shape = tuple(s for s in self._output_shape if s != 1)
+            return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+        dim = _normalize_output_dim(dim, self.output_ndim, inclusive_end=False)
+        if self._output_shape[dim] != 1:
+            return self.clone()
+        new_shape = (*self._output_shape[:dim], *self._output_shape[dim + 1 :])
+        return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+
+    def unsqueeze_output(self, dim: int) -> ZeroOperator:
+        dim = _normalize_output_dim(dim, self.output_ndim, inclusive_end=True)
+        new_shape = (*self._output_shape[:dim], 1, *self._output_shape[dim:])
+        return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+
+    def transpose_output(self, dim0: int, dim1: int) -> ZeroOperator:
+        dim0 = _normalize_output_dim(dim0, self.output_ndim, inclusive_end=False)
+        dim1 = _normalize_output_dim(dim1, self.output_ndim, inclusive_end=False)
+        new_list = list(self._output_shape)
+        new_list[dim0], new_list[dim1] = new_list[dim1], new_list[dim0]
+        return ZeroOperator(torch.Size(new_list), self._input_shape, dtype=self._dtype, device=self._device)
+
+    def permute_output(self, dims: tuple[int, ...]) -> ZeroOperator:
+        if len(dims) != self.output_ndim:
+            raise ValueError(f"permute_output expects {self.output_ndim} dims, got {len(dims)}")
+        normalized = tuple(_normalize_output_dim(d, self.output_ndim, inclusive_end=False) for d in dims)
+        if sorted(normalized) != list(range(self.output_ndim)):
+            raise ValueError(f"invalid permutation: {normalized}")
+        new_shape = torch.Size(self._output_shape[d] for d in normalized)
+        return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+
+    def select_output(self, dim: int, index: int) -> ZeroOperator:
+        dim = _normalize_output_dim(dim, self.output_ndim, inclusive_end=False)
+        new_shape = (*self._output_shape[:dim], *self._output_shape[dim + 1 :])
+        return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+
+    def sum_output(self, dim: int | tuple[int, ...] | None, keepdim: bool) -> ZeroOperator:
+        normalized_dim = _normalize_reduction_dim(dim, self.output_ndim)
+        new_shape = _apply_reduction_to_shape(self._output_shape, normalized_dim, keepdim)
+        return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
+
+    def mean_output(self, dim: int | tuple[int, ...] | None, keepdim: bool) -> ZeroOperator:
+        return self.sum_output(dim, keepdim)
+
+    # ------------------------------------------------------------------
+    # Materialization + housekeeping
+    # ------------------------------------------------------------------
+
+    def to_dense(self) -> DenseOperator:
+        zero_tensor = torch.zeros(
+            tuple(self._output_shape) + tuple(self._input_shape),
+            dtype=self._dtype,
+            device=self._device,
+        )
+        return DenseOperator(zero_tensor, self._output_shape)
+
+    def to(self, device: str | torch.device) -> ZeroOperator:
+        return ZeroOperator(
+            output_shape=tuple(self._output_shape),
+            input_shape=tuple(self._input_shape),
+            dtype=self._dtype,
+            device=torch.device(device) if isinstance(device, str) else device,
+        )
+
+    def clone(self) -> ZeroOperator:
+        return ZeroOperator(
+            output_shape=tuple(self._output_shape),
+            input_shape=tuple(self._input_shape),
+            dtype=self._dtype,
+            device=self._device,
+        )
 
 
 # ----------------------------------------------------------------------
@@ -915,7 +1105,8 @@ class ReshapeOperator(LinearOperator):
     # ------------------------------------------------------------------
 
     def apply(self, x: torch.Tensor) -> torch.Tensor:
-        return self._inner.apply(x).reshape(self._output_shape)
+        inner_result = self._inner.apply(x)
+        return self._reshape_to_output(inner_result)
 
     def apply_transpose(self, y: torch.Tensor) -> torch.Tensor:
         out_ndim = len(self._output_shape)
@@ -926,14 +1117,31 @@ class ReshapeOperator(LinearOperator):
                 f"{tuple(self._output_shape)}"
             )
         leading = y.shape[: y.ndim - out_ndim]
-        reshaped = y.reshape(*leading, *self._inner.output_shape)
+        reshaped = y.reshape((*leading, *self._inner.output_shape))
         return self._inner.apply_transpose(reshaped)
 
     def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
-        return self._inner.concretize_min(region).reshape(self._output_shape)
+        try:
+            return self._reshape_to_output(self._inner.concretize_min(region))
+        except RuntimeError:
+            return self.to_dense().concretize_min(region)
 
     def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
-        return self._inner.concretize_max(region).reshape(self._output_shape)
+        try:
+            return self._reshape_to_output(self._inner.concretize_max(region))
+        except RuntimeError:
+            return self.to_dense().concretize_max(region)
+
+    def _reshape_to_output(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Reshape the inner result (which may have batch-broadcast leading dims
+        or placeholder-replacement in the middle) to this operator's output_shape.
+        Preserves *extra* leading dims that don't fit into ``inner.output_shape``.
+        """
+        inner_ndim = len(self._inner.output_shape)
+        if tensor.ndim > inner_ndim:
+            leading = tuple(tensor.shape[: tensor.ndim - inner_ndim])
+            return tensor.reshape((*leading, *self._output_shape))
+        return tensor.reshape(self._output_shape)
 
     # ------------------------------------------------------------------
     # Algebra
@@ -951,6 +1159,8 @@ class ReshapeOperator(LinearOperator):
         return self.to_dense().scale(factor)
 
     def add(self, other: LinearOperator) -> LinearOperator:
+        if isinstance(other, ZeroOperator):
+            return _add_with_zero(self, other)
         if (
             isinstance(other, ReshapeOperator)
             and other._output_shape == self._output_shape
@@ -960,6 +1170,13 @@ class ReshapeOperator(LinearOperator):
             combined_inner = self._inner.add(other._inner)
             return ReshapeOperator(combined_inner, self._output_shape)
         return self.to_dense().add(other.to_dense())
+
+    def clamp_min(self, value: float) -> LinearOperator:
+        # Reshape preserves entries; clamping commutes through.
+        return ReshapeOperator(self._inner.clamp_min(value), self._output_shape)
+
+    def clamp_max(self, value: float) -> LinearOperator:
+        return ReshapeOperator(self._inner.clamp_max(value), self._output_shape)
 
     # ------------------------------------------------------------------
     # Output-axis shape operations — compose with the wrapped reshape.

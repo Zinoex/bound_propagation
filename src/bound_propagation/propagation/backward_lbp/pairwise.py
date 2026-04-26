@@ -10,6 +10,7 @@ import torch.fx as fx
 from beartype.typing import final
 
 from ...bounds import IntervalBounds
+from ...linear_operators import DenseOperator, LinearOperator
 from ..linear_relaxations.alpha_resolvers import (
     resolve_div_etas,
     resolve_max_etas,
@@ -59,36 +60,23 @@ class PairedBackwardRelaxation(BackwardRelaxation):
         """Return predecessor nodes, deduplicated for the x*x case."""
         return list(dict.fromkeys([self.left_node, self.right_node]))
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        """Backward-propagate A-matrices through this pairwise relaxation.
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        """Backward-propagate A-matrices through this pairwise relaxation."""
+        output_shape = A_lower.output_shape
 
-        Uses sign decomposition to maintain sound lower/upper bounds.
-
-        Parameters
-        ----------
-        A_lower : torch.Tensor
-            Lower A-matrix from downstream, shape ``(*batch, *bounded_out, *node)``.
-        A_upper : torch.Tensor
-            Upper A-matrix from downstream, shape ``(*batch, *bounded_out, *node)``.
-        batch_ndim : int
-            Number of leading batch dimensions in the A-matrices.
-
-        Returns
-        -------
-        BackwardContributions
-            Contributions to predecessor nodes and bias terms.
-        """
         p = self.params
         node_ndim = p.alpha_lower_a.ndim - batch_ndim
-        bounded_ndim = A_lower.ndim - p.alpha_lower_a.ndim
+        bounded_ndim = A_lower.output_ndim + A_lower.input_ndim - p.alpha_lower_a.ndim
 
         def bc(t: torch.Tensor) -> torch.Tensor:
             return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
 
-        A_l_pos = A_lower.clamp(min=0)
-        A_l_neg = A_lower.clamp(max=0)
-        A_u_pos = A_upper.clamp(min=0)
-        A_u_neg = A_upper.clamp(max=0)
+        A_l_pos = A_lower.clamp_min(0).to_dense().tensor
+        A_l_neg = A_lower.clamp_max(0).to_dense().tensor
+        A_u_pos = A_upper.clamp_min(0).to_dense().tensor
+        A_u_neg = A_upper.clamp_max(0).to_dense().tensor
 
         # Left input coefficients
         new_A_lower_left = A_l_pos * bc(p.alpha_lower_a) + A_l_neg * bc(p.alpha_upper_a)
@@ -107,9 +95,20 @@ class PairedBackwardRelaxation(BackwardRelaxation):
             delta_bias_upper = delta_bias_upper.sum(dim=sum_dims)
 
         # Build a_terms with accumulation for same-node case (x*x)
-        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
-        accumulate_a_terms(a_terms, self.left_node, new_A_lower_left, new_A_upper_left)
-        accumulate_a_terms(a_terms, self.right_node, new_A_lower_right, new_A_upper_right)
+        out_ndim = len(output_shape)
+        a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
+        accumulate_a_terms(
+            a_terms,
+            self.left_node,
+            DenseOperator(new_A_lower_left, output_shape=torch.Size(new_A_lower_left.shape[:out_ndim])),
+            DenseOperator(new_A_upper_left, output_shape=torch.Size(new_A_upper_left.shape[:out_ndim])),
+        )
+        accumulate_a_terms(
+            a_terms,
+            self.right_node,
+            DenseOperator(new_A_lower_right, output_shape=torch.Size(new_A_lower_right.shape[:out_ndim])),
+            DenseOperator(new_A_upper_right, output_shape=torch.Size(new_A_upper_right.shape[:out_ndim])),
+        )
 
         return BackwardContributions(a_terms=a_terms, bias_lower=delta_bias_lower, bias_upper=delta_bias_upper)
 

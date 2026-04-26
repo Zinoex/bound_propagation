@@ -9,12 +9,14 @@ import torch
 import torch.fx as fx
 from beartype.typing import final
 
+from ...linear_operators import DenseOperator, LinearOperator
 from .base import (
     BackwardContributions,
     BackwardLBPStrategy,
     BackwardRelaxation,
     IntermediateBoundsProvider,
     IntervalLeafRelaxation,
+    _wrap_a_term_tensors,
 )
 
 if TYPE_CHECKING:
@@ -38,18 +40,24 @@ class SumRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        output_shape = A_lower.output_shape
+        A_lower_t = A_lower.to_dense().tensor
+        A_upper_t = A_upper.to_dense().tensor
+
         source_features = self.source_shape[batch_ndim:]
 
         if self.dim is None:
             # Full reduction: A has no node dims, expand to source features
-            new_A_lower = A_lower
-            new_A_upper = A_upper
+            new_A_lower = A_lower_t
+            new_A_upper = A_upper_t
             for _ in source_features:
                 new_A_lower = new_A_lower.unsqueeze(-1)
                 new_A_upper = new_A_upper.unsqueeze(-1)
-            new_A_lower = new_A_lower.expand(*A_lower.shape, *source_features)
-            new_A_upper = new_A_upper.expand(*A_upper.shape, *source_features)
+            new_A_lower = new_A_lower.expand(*A_lower_t.shape, *source_features)
+            new_A_upper = new_A_upper.expand(*A_upper_t.shape, *source_features)
         else:
             dims = (self.dim,) if isinstance(self.dim, int) else self.dim
             norm_dims = tuple(d if d >= 0 else d + len(self.source_shape) for d in dims)
@@ -59,18 +67,18 @@ class SumRelaxation(BackwardRelaxation):
                 node_ndim = len(source_features)
             else:
                 node_ndim = len(source_features) - len(node_dims)
-            bounded_ndim = A_lower.ndim - batch_ndim - node_ndim
+            bounded_ndim = A_lower_t.ndim - batch_ndim - node_ndim
 
             if not self.keepdim:
-                new_A_lower = A_lower
-                new_A_upper = A_upper
+                new_A_lower = A_lower_t
+                new_A_upper = A_upper_t
                 for d in sorted(node_dims):
                     a_d = batch_ndim + bounded_ndim + d
                     new_A_lower = new_A_lower.unsqueeze(a_d)
                     new_A_upper = new_A_upper.unsqueeze(a_d)
             else:
-                new_A_lower = A_lower
-                new_A_upper = A_upper
+                new_A_lower = A_lower_t
+                new_A_upper = A_upper_t
 
             expand_shape = list(new_A_lower.shape)
             for d in node_dims:
@@ -81,10 +89,10 @@ class SumRelaxation(BackwardRelaxation):
         # Bias shape is everything except the source node dimensions
         source_node_ndim = len(source_features)
         bias_shape = new_A_lower.shape[: new_A_lower.ndim - source_node_ndim]
-        zero = torch.zeros(bias_shape, dtype=A_lower.dtype, device=A_lower.device)
+        zero = torch.zeros(bias_shape, dtype=A_lower_t.dtype, device=A_lower_t.device)
 
         return BackwardContributions(
-            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
             bias_lower=zero,
             bias_upper=zero,
         )
@@ -107,7 +115,13 @@ class MeanRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        output_shape = A_lower.output_shape
+        A_lower_t = A_lower.to_dense().tensor
+        A_upper_t = A_upper.to_dense().tensor
+
         if self.dim is None:
             count = 1
             for d in self.source_shape[batch_ndim:]:
@@ -125,7 +139,11 @@ class MeanRelaxation(BackwardRelaxation):
             source_shape=self.source_shape,
             input_node=self.input_node,
         )
-        return sum_relaxation.backward_through(A_lower / count, A_upper / count, batch_ndim)
+        return sum_relaxation.backward_through(
+            DenseOperator(A_lower_t / count, output_shape=output_shape),
+            DenseOperator(A_upper_t / count, output_shape=output_shape),
+            batch_ndim,
+        )
 
 
 class BackwardLBPSum(BackwardLBPStrategy):

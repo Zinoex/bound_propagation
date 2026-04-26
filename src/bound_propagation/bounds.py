@@ -7,7 +7,8 @@ Defines the interface that all bound types must implement.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Literal
 
 import torch
@@ -15,6 +16,54 @@ from plum import dispatch
 
 from .linear_operators import DenseOperator, LinearOperator
 from .regions import AbstractRegion, SimpleRegion
+
+
+@dataclass(frozen=True)
+class LinearCoefficient:
+    """Per-input coefficient block in a multi-input linear bound.
+
+    Bundles one input region with its lower / upper coefficient operators.
+    The coefficients are *linear* maps from the input's feature axes to the
+    bounded value's feature axes — the bias lives at the
+    :class:`LinearBounds` level.
+
+    The ``is_exact`` property is ``True`` iff ``lower is upper`` (same Python
+    object), which holds for purely affine layers where lower and upper bounds
+    coincide. Strategies can use this as a fast path to skip redundant work.
+
+    Attributes
+    ----------
+    region : SimpleRegion
+        The perturbation set on this input.
+    lower : LinearOperator
+        Lower-bound coefficient ``A_i^L`` mapping input features to output features.
+    upper : LinearOperator
+        Upper-bound coefficient ``A_i^U`` mapping input features to output features.
+    """
+
+    region: SimpleRegion
+    lower: LinearOperator
+    upper: LinearOperator
+
+    def __post_init__(self) -> None:
+        if self.lower.input_shape != self.upper.input_shape:
+            raise ValueError(
+                f"LinearCoefficient: lower and upper input shapes must match: "
+                f"{tuple(self.lower.input_shape)} vs {tuple(self.upper.input_shape)}"
+            )
+        if self.lower.output_shape != self.upper.output_shape:
+            try:
+                torch.broadcast_shapes(self.lower.output_shape, self.upper.output_shape)
+            except RuntimeError as exc:
+                raise ValueError(
+                    f"LinearCoefficient: lower and upper output shapes must broadcast: "
+                    f"{tuple(self.lower.output_shape)} vs {tuple(self.upper.output_shape)}"
+                ) from exc
+
+    @property
+    def is_exact(self) -> bool:
+        """Whether ``lower is upper`` — set by affine ops where bounds coincide."""
+        return self.lower is self.upper
 
 
 class AbstractBounds(ABC):
@@ -338,28 +387,63 @@ class LinearBounds(AbstractBounds):
         regions: SimpleRegion | Sequence[SimpleRegion] | None = None,
         input_ids: int | Sequence[int] | None = None,
         *,
+        coefficients: Mapping[int, LinearCoefficient] | None = None,
         batch_ndim: int = 0,
     ) -> None:
         """
         Initialize linear bounds.
 
-        Linear coefficients may be provided as raw tensors (auto-wrapped into
-        ``DenseOperator``) or as ``LinearOperator`` instances directly.
+        There are two equivalent construction paths:
+
+        - **Dict path** (preferred): pass ``coefficients={input_id: LinearCoefficient(...)}``
+          to provide pre-built per-input blocks directly. ``linear_lower``,
+          ``linear_upper``, ``regions``, and ``input_ids`` must be ``None``.
+        - **Parallel-list path** (legacy / convenience): pass ``regions``,
+          ``linear_lower``, ``linear_upper``, and ``input_ids`` as parallel
+          sequences. Linear coefficients may be raw tensors (auto-wrapped into
+          ``DenseOperator``) or ``LinearOperator`` instances.
+
+        Internally, both paths produce a ``dict[input_id, LinearCoefficient]``
+        used by all accessors and downstream methods.
 
         Args:
-            regions: Input regions, one for each affine coefficient term
-            linear_lower: Linear coefficients for lower bound (can be empty for constant bounds)
             bias_lower: Bias for lower bound, shape ``(*batch_dims, *feature_dims)``.
-            linear_upper: Linear coefficients for upper bound (can be empty for constant bounds)
-            bias_upper: Bias for upper bound
-            input_ids: Optional list of input node IDs
+            bias_upper: Bias for upper bound, same shape as ``bias_lower``.
+            linear_lower: Linear coefficients for lower bound (parallel-list path).
+            linear_upper: Linear coefficients for upper bound (parallel-list path).
+            regions: Input regions, one per affine term (parallel-list path).
+            input_ids: Input node IDs, one per affine term (parallel-list path).
+            coefficients: Pre-built ``{input_id: LinearCoefficient}`` mapping (dict path).
             batch_ndim: Number of leading batch dimensions of ``bias_lower``/``bias_upper``.
                 Must satisfy ``0 <= batch_ndim <= bias_lower.ndim``. Defaults to ``0``.
         """
-        normalized_regions = self._normalize_regions(regions)
-        normalized_linear_lower = self._normalize_linear_terms(linear_lower, bias_lower.shape, "linear_lower")
-        normalized_linear_upper = self._normalize_linear_terms(linear_upper, bias_upper.shape, "linear_upper")
-        normalized_input_ids = self._normalize_input_ids(input_ids)
+        if coefficients is not None:
+            if any(arg is not None for arg in (linear_lower, linear_upper, regions, input_ids)):
+                raise ValueError(
+                    "Pass either the dict path (coefficients=...) or the parallel-list path "
+                    "(linear_lower/linear_upper/regions/input_ids), not both."
+                )
+            normalized_coefficients = self._normalize_coefficients_dict(coefficients)
+        else:
+            normalized_regions = self._normalize_regions(regions)
+            normalized_linear_lower = self._normalize_linear_terms(linear_lower, bias_lower.shape, "linear_lower")
+            normalized_linear_upper = self._normalize_linear_terms(linear_upper, bias_upper.shape, "linear_upper")
+            normalized_input_ids = self._normalize_input_ids(input_ids)
+
+            self._check_uniformity(
+                normalized_regions, normalized_linear_lower, normalized_linear_upper, normalized_input_ids
+            )
+
+            normalized_coefficients = {
+                input_id: LinearCoefficient(region=region, lower=lower, upper=upper)
+                for input_id, region, lower, upper in zip(
+                    normalized_input_ids,
+                    normalized_regions,
+                    normalized_linear_lower,
+                    normalized_linear_upper,
+                    strict=True,
+                )
+            }
 
         if batch_ndim < 0 or batch_ndim > bias_lower.ndim:
             raise ValueError(
@@ -367,24 +451,30 @@ class LinearBounds(AbstractBounds):
                 f"got {batch_ndim}"
             )
 
-        self._check_uniformity(
-            normalized_regions, normalized_linear_lower, normalized_linear_upper, normalized_input_ids
-        )
-
-        self._check_shapes(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
-        self._check_gap(normalized_regions, normalized_linear_lower, bias_lower, normalized_linear_upper, bias_upper)
+        self._check_shapes_dict(normalized_coefficients, bias_lower, bias_upper)
+        self._check_gap_dict(normalized_coefficients, bias_lower, bias_upper)
 
         self._bias_lower = bias_lower
         self._bias_upper = bias_upper
-        self._linear_lower = normalized_linear_lower
-        self._linear_upper = normalized_linear_upper
-        self._regions = normalized_regions
-        self._input_ids = normalized_input_ids
+        self._coefficients: dict[int, LinearCoefficient] = normalized_coefficients
         self._batch_ndim = batch_ndim
 
     def has_linear_terms(self) -> bool:
         """Whether these bounds include linear terms (as opposed to being purely constant)."""
-        return self._linear_lower is not None and self._linear_upper is not None
+        return bool(self._coefficients)
+
+    @staticmethod
+    def _normalize_coefficients_dict(
+        coefficients: Mapping[int, LinearCoefficient],
+    ) -> dict[int, LinearCoefficient]:
+        normalized: dict[int, LinearCoefficient] = {}
+        for input_id, coeff in coefficients.items():
+            if not isinstance(input_id, int):
+                raise TypeError(f"coefficients keys must be int input ids, got {type(input_id).__name__}")
+            if not isinstance(coeff, LinearCoefficient):
+                raise TypeError(f"coefficients values must be LinearCoefficient instances, got {type(coeff).__name__}")
+            normalized[input_id] = coeff
+        return normalized
 
     @staticmethod
     def _normalize_regions(regions: SimpleRegion | Sequence[SimpleRegion] | None) -> list[SimpleRegion]:
@@ -462,36 +552,6 @@ class LinearBounds(AbstractBounds):
 
         return region_shape[:batch_ndim], region_shape[batch_ndim:]
 
-    def _check_shapes(
-        self,
-        regions: list[SimpleRegion],
-        linear_lower: list[LinearOperator],
-        bias_lower: torch.Tensor,
-        linear_upper: list[LinearOperator],
-        bias_upper: torch.Tensor,
-    ) -> None:
-        if bias_lower.shape != bias_upper.shape:
-            raise ValueError(
-                f"bias_lower and bias_upper must have the same shape: {bias_lower.shape} vs {bias_upper.shape}"
-            )
-
-        for name, ops in (("linear_lower", linear_lower), ("linear_upper", linear_upper)):
-            for op, region in zip(ops, regions, strict=True):
-                if op.output_shape != bias_lower.shape:
-                    raise ValueError(
-                        f"{name} output shape must match bias shape: {tuple(op.output_shape)} vs "
-                        f"{tuple(bias_lower.shape)}"
-                    )
-
-                region_shape = torch.Size(region.shape)
-                _, input_shape = self._split_region_shape(region_shape, bias_lower.shape, op.input_shape)
-                if op.input_shape != input_shape:
-                    raise ValueError(
-                        f"{name} input axes must match input shape {tuple(input_shape)} "
-                        f"(derived from region shape {tuple(region_shape)} and bias shape {tuple(bias_lower.shape)}), "
-                        f"got {tuple(op.input_shape)}"
-                    )
-
     @staticmethod
     def _check_uniformity(
         regions: list[SimpleRegion],
@@ -499,6 +559,7 @@ class LinearBounds(AbstractBounds):
         linear_upper: list[LinearOperator],
         input_ids: list[int],
     ) -> None:
+        """Validate the parallel-list constructor path before lifting into the dict."""
         if bool(linear_lower) != bool(linear_upper):
             raise ValueError("linear_lower and linear_upper must either both be provided or both be empty")
 
@@ -515,19 +576,53 @@ class LinearBounds(AbstractBounds):
         if len(input_ids) != len(regions):
             raise ValueError(f"input_ids must have the same length as regions: {len(input_ids)} vs {len(regions)}")
 
-    def _check_gap(
+    def _check_shapes_dict(
         self,
-        regions: list[SimpleRegion],
-        linear_lower: list[LinearOperator],
+        coefficients: dict[int, LinearCoefficient],
         bias_lower: torch.Tensor,
-        linear_upper: list[LinearOperator],
+        bias_upper: torch.Tensor,
+    ) -> None:
+        if bias_lower.shape != bias_upper.shape:
+            raise ValueError(
+                f"bias_lower and bias_upper must have the same shape: {bias_lower.shape} vs {bias_upper.shape}"
+            )
+
+        for input_id, coeff in coefficients.items():
+            for name, op in (("lower", coeff.lower), ("upper", coeff.upper)):
+                # Operator output_shape only needs to be broadcast-compatible
+                # with bias shape — they represent the same abstract output
+                # axes but different allocations may have trailing-1 placeholders
+                # the other does not.
+                try:
+                    torch.broadcast_shapes(op.output_shape, bias_lower.shape)
+                except RuntimeError as exc:
+                    raise ValueError(
+                        f"coefficient[{input_id}].{name} output shape must broadcast with bias shape: "
+                        f"{tuple(op.output_shape)} vs {tuple(bias_lower.shape)}"
+                    ) from exc
+
+                region_shape = torch.Size(coeff.region.shape)
+                _, input_shape = self._split_region_shape(region_shape, bias_lower.shape, op.input_shape)
+                if op.input_shape != input_shape:
+                    raise ValueError(
+                        f"coefficient[{input_id}].{name} input axes must match input shape "
+                        f"{tuple(input_shape)} (derived from region shape {tuple(region_shape)} and bias shape "
+                        f"{tuple(bias_lower.shape)}), got {tuple(op.input_shape)}"
+                    )
+
+    def _check_gap_dict(
+        self,
+        coefficients: dict[int, LinearCoefficient],
+        bias_lower: torch.Tensor,
         bias_upper: torch.Tensor,
     ) -> None:
         min_gap = bias_upper - bias_lower
 
-        for region, lower_op, upper_op in zip(regions, linear_lower, linear_upper, strict=True):
-            diff_op = upper_op.sub(lower_op)
-            min_gap = min_gap + diff_op.concretize_min(region)
+        for coeff in coefficients.values():
+            if coeff.is_exact:
+                continue
+            diff_op = coeff.upper.sub(coeff.lower)
+            min_gap = min_gap + diff_op.concretize_min(coeff.region)
 
         if torch.any(min_gap < -1e-6):
             num_violations = torch.sum(min_gap < -1e-6).item()
@@ -540,15 +635,15 @@ class LinearBounds(AbstractBounds):
         """
         Merge affine contributions from multiple ``LinearBounds`` keyed by ``input_id``.
 
-        Returns a triple of ``(regions, operators, input_ids)``. The operators
-        carry the accumulated coefficient structure (dense by default).
+        Returns a triple of ``(regions, operators, input_ids)`` in
+        first-encounter order. The operators carry the accumulated coefficient
+        structure (dense by default).
         """
         merged: dict[int, tuple[SimpleRegion, LinearOperator]] = {}
-        ordered_input_ids: list[int] = []
 
         for bounds, bound_side, scale in components:
-            ops = bounds.linear_lowers_op if bound_side == "lower" else bounds.linear_uppers_op
-            for input_id, region, op in zip(bounds.input_ids, bounds.regions, ops, strict=True):
+            for input_id, coeff in bounds._coefficients.items():
+                op = coeff.lower if bound_side == "lower" else coeff.upper
                 if scale == 1:
                     contribution = op
                 elif scale == -1:
@@ -559,44 +654,76 @@ class LinearBounds(AbstractBounds):
 
                 if input_id in merged:
                     existing_region, existing_op = merged[input_id]
-                    if existing_region.shape != region.shape:
+                    if existing_region.shape != coeff.region.shape:
                         raise ValueError(
                             "Cannot merge input_id "
                             f"{input_id}: region shapes differ "
-                            f"{existing_region.shape} vs {region.shape}"
+                            f"{existing_region.shape} vs {coeff.region.shape}"
                         )
                     merged[input_id] = (existing_region, existing_op.add(contribution))
                 else:
-                    ordered_input_ids.append(input_id)
-                    merged[input_id] = (region, contribution)
+                    merged[input_id] = (coeff.region, contribution)
 
+        ordered_input_ids = list(merged.keys())
         regions = [merged[input_id][0] for input_id in ordered_input_ids]
         linear_terms = [merged[input_id][1] for input_id in ordered_input_ids]
         return regions, linear_terms, ordered_input_ids
 
     @property
+    def is_exact(self) -> bool:
+        """Whether these bounds are pure-affine — every coefficient and bias coincides.
+
+        ``True`` iff every :class:`LinearCoefficient` has ``lower is upper`` AND
+        the lower / upper biases are the same Python object. Strategies use this
+        as a fast path to skip the upper-side computation when both the
+        accumulated bound and the local relaxation are exact.
+
+        Identity is by Python ``is`` (not value equality) — the affine
+        construction sites are responsible for sharing the same operator /
+        tensor for both sides, which is cheap and avoids a value comparison
+        on every property access.
+        """
+        if self._bias_lower is not self._bias_upper:
+            return False
+        return all(c.is_exact for c in self._coefficients.values())
+
+    @property
+    def coefficients(self) -> dict[int, LinearCoefficient]:
+        """Per-input ``{input_id: LinearCoefficient}`` mapping (defensive copy)."""
+        return dict(self._coefficients)
+
+    @property
+    def coefficient(self) -> LinearCoefficient:
+        """The single ``LinearCoefficient`` in the single-input case."""
+        if len(self._coefficients) != 1:
+            raise ValueError(
+                f"LinearBounds has {len(self._coefficients)} coefficients; use coefficients instead of coefficient"
+            )
+        return next(iter(self._coefficients.values()))
+
+    @property
     def regions(self) -> list[SimpleRegion]:
-        """Get input regions associated with these bounds."""
-        return self._regions.copy()
+        """Get input regions associated with these bounds, in input-id order."""
+        return [c.region for c in self._coefficients.values()]
 
     @property
     def region(self) -> AbstractRegion:
         """Get the single input region associated with these bounds."""
-        if len(self._regions) != 1:
-            raise ValueError(f"LinearBounds has {len(self._regions)} regions; use regions instead of region")
-        return self._regions[0]
+        if len(self._coefficients) != 1:
+            raise ValueError(f"LinearBounds has {len(self._coefficients)} regions; use regions instead of region")
+        return next(iter(self._coefficients.values())).region
 
     @property
     def input_ids(self) -> list[int]:
         """Get input IDs associated with the affine terms."""
-        return self._input_ids.copy()
+        return list(self._coefficients.keys())
 
     @property
     def input_id(self) -> int:
         """Get the single input ID associated with these bounds."""
-        if len(self._input_ids) != 1:
-            raise ValueError(f"LinearBounds has {len(self._input_ids)} input IDs; use input_ids instead of input_id")
-        return self._input_ids[0]
+        if len(self._coefficients) != 1:
+            raise ValueError(f"LinearBounds has {len(self._coefficients)} input IDs; use input_ids instead of input_id")
+        return next(iter(self._coefficients.keys()))
 
     @property
     def linear_lowers(self) -> list[torch.Tensor]:
@@ -606,34 +733,34 @@ class LinearBounds(AbstractBounds):
         :attr:`linear_lowers_op` to access the underlying ``LinearOperator``
         instances directly (avoids materializing structured operators).
         """
-        return [op.to_dense().tensor for op in self._linear_lower]
+        return [c.lower.to_dense().tensor for c in self._coefficients.values()]
 
     @property
     def linear_lower(self) -> torch.Tensor | None:
         """Get linear coefficients for the lower bound (dense) in the single-input case."""
-        if not self._linear_lower:
+        if not self._coefficients:
             return None
-        if len(self._linear_lower) != 1:
+        if len(self._coefficients) != 1:
             raise ValueError(
-                f"LinearBounds has {len(self._linear_lower)} lower coefficient terms; use linear_lowers instead"
+                f"LinearBounds has {len(self._coefficients)} lower coefficient terms; use linear_lowers instead"
             )
-        return self._linear_lower[0].to_dense().tensor
+        return next(iter(self._coefficients.values())).lower.to_dense().tensor
 
     @property
     def linear_lowers_op(self) -> list[LinearOperator]:
         """Get lower-bound coefficients as ``LinearOperator`` instances."""
-        return self._linear_lower.copy()
+        return [c.lower for c in self._coefficients.values()]
 
     @property
     def linear_lower_op(self) -> LinearOperator | None:
         """Get lower-bound coefficient ``LinearOperator`` in the single-input case."""
-        if not self._linear_lower:
+        if not self._coefficients:
             return None
-        if len(self._linear_lower) != 1:
+        if len(self._coefficients) != 1:
             raise ValueError(
-                f"LinearBounds has {len(self._linear_lower)} lower coefficient terms; use linear_lowers_op instead"
+                f"LinearBounds has {len(self._coefficients)} lower coefficient terms; use linear_lowers_op instead"
             )
-        return self._linear_lower[0]
+        return next(iter(self._coefficients.values())).lower
 
     @property
     def bias_lower(self) -> torch.Tensor:
@@ -648,34 +775,34 @@ class LinearBounds(AbstractBounds):
         :attr:`linear_uppers_op` to access the underlying ``LinearOperator``
         instances directly.
         """
-        return [op.to_dense().tensor for op in self._linear_upper]
+        return [c.upper.to_dense().tensor for c in self._coefficients.values()]
 
     @property
     def linear_upper(self) -> torch.Tensor | None:
         """Get linear coefficients for the upper bound (dense) in the single-input case."""
-        if not self._linear_upper:
+        if not self._coefficients:
             return None
-        if len(self._linear_upper) != 1:
+        if len(self._coefficients) != 1:
             raise ValueError(
-                f"LinearBounds has {len(self._linear_upper)} upper coefficient terms; use linear_uppers instead"
+                f"LinearBounds has {len(self._coefficients)} upper coefficient terms; use linear_uppers instead"
             )
-        return self._linear_upper[0].to_dense().tensor
+        return next(iter(self._coefficients.values())).upper.to_dense().tensor
 
     @property
     def linear_uppers_op(self) -> list[LinearOperator]:
         """Get upper-bound coefficients as ``LinearOperator`` instances."""
-        return self._linear_upper.copy()
+        return [c.upper for c in self._coefficients.values()]
 
     @property
     def linear_upper_op(self) -> LinearOperator | None:
         """Get upper-bound coefficient ``LinearOperator`` in the single-input case."""
-        if not self._linear_upper:
+        if not self._coefficients:
             return None
-        if len(self._linear_upper) != 1:
+        if len(self._coefficients) != 1:
             raise ValueError(
-                f"LinearBounds has {len(self._linear_upper)} upper coefficient terms; use linear_uppers_op instead"
+                f"LinearBounds has {len(self._coefficients)} upper coefficient terms; use linear_uppers_op instead"
             )
-        return self._linear_upper[0]
+        return next(iter(self._coefficients.values())).upper
 
     @property
     def bias_upper(self) -> torch.Tensor:
@@ -700,23 +827,23 @@ class LinearBounds(AbstractBounds):
     @property
     def input_shapes(self) -> list[tuple[int, ...]]:
         """Get shapes of input tensors corresponding to each region."""
-        return [tuple(op.input_shape) for op in self._linear_lower]
+        return [tuple(c.lower.input_shape) for c in self._coefficients.values()]
 
     @property
     def input_dim(self) -> int:
         """Get input dimensions of linear bounds."""
-        if not self._linear_lower:
+        if not self._coefficients:
             return 0
 
         return sum(
             torch.Size(
                 self._split_region_shape(
-                    torch.Size(region.shape),
+                    torch.Size(c.region.shape),
                     self.bias_lower.shape,
-                    op.input_shape,
+                    c.lower.input_shape,
                 )[1]
             ).numel()
-            for region, op in zip(self._regions, self._linear_lower, strict=True)
+            for c in self._coefficients.values()
         )
 
     @staticmethod
@@ -733,13 +860,18 @@ class LinearBounds(AbstractBounds):
 
     def to(self, device: str | torch.device) -> LinearBounds:
         """Move bounds to a device."""
+        moved_coefficients = {
+            input_id: LinearCoefficient(
+                region=self._move_region(c.region, device),
+                lower=c.lower.to(device),
+                upper=c.upper.to(device),
+            )
+            for input_id, c in self._coefficients.items()
+        }
         return LinearBounds(
-            regions=[self._move_region(region, device) for region in self._regions],
-            linear_lower=[op.to(device) for op in self._linear_lower],
             bias_lower=self.bias_lower.to(device),
-            linear_upper=[op.to(device) for op in self._linear_upper],
             bias_upper=self.bias_upper.to(device),
-            input_ids=self._input_ids.copy() if self._input_ids else None,
+            coefficients=moved_coefficients,
             batch_ndim=self._batch_ndim,
         )
 
@@ -747,13 +879,18 @@ class LinearBounds(AbstractBounds):
         """Slice/index the bounds over the output (batch) axes; input axes are preserved."""
         sliced_bias_lower = self.bias_lower[item]
         new_batch_ndim = min(self._batch_ndim, sliced_bias_lower.ndim)
+        sliced_coefficients = {
+            input_id: LinearCoefficient(
+                region=c.region,
+                lower=c.lower.getitem_output(item),
+                upper=c.upper.getitem_output(item),
+            )
+            for input_id, c in self._coefficients.items()
+        }
         return LinearBounds(
-            regions=self._regions,
-            linear_lower=[op.getitem_output(item) for op in self._linear_lower],
             bias_lower=sliced_bias_lower,
-            linear_upper=[op.getitem_output(item) for op in self._linear_upper],
             bias_upper=self.bias_upper[item],
-            input_ids=self._input_ids.copy() if self._input_ids else None,
+            coefficients=sliced_coefficients,
             batch_ndim=new_batch_ndim,
         )
 
@@ -771,22 +908,25 @@ class LinearBounds(AbstractBounds):
         lower_result = self.bias_lower.clone()
         upper_result = self.bias_upper.clone()
 
-        for region, lower_op in zip(self._regions, self._linear_lower, strict=True):
-            lower_result = lower_result + lower_op.concretize_min(region)
-
-        for region, upper_op in zip(self._regions, self._linear_upper, strict=True):
-            upper_result = upper_result + upper_op.concretize_max(region)
+        for c in self._coefficients.values():
+            lower_result = lower_result + c.lower.concretize_min(c.region)
+            upper_result = upper_result + c.upper.concretize_max(c.region)
 
         return IntervalBounds(lower=lower_result, upper=upper_result, batch_ndim=self._batch_ndim)
 
     def clone(self) -> LinearBounds:
         """Create a deep copy."""
+        cloned_coefficients = {
+            input_id: LinearCoefficient(
+                region=c.region,
+                lower=c.lower.clone(),
+                upper=c.upper.clone(),
+            )
+            for input_id, c in self._coefficients.items()
+        }
         return LinearBounds(
-            regions=self._regions,
-            linear_lower=[op.clone() for op in self._linear_lower],
             bias_lower=self.bias_lower.clone(),
-            linear_upper=[op.clone() for op in self._linear_upper],
             bias_upper=self.bias_upper.clone(),
-            input_ids=self._input_ids,
+            coefficients=cloned_coefficients,
             batch_ndim=self._batch_ndim,
         )

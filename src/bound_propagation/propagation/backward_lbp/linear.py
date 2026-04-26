@@ -8,8 +8,10 @@ from typing import TYPE_CHECKING
 import torch
 import torch.fx as fx
 from beartype.typing import final
+from plum import dispatch
 
 from ...bounds import IntervalBounds
+from ...linear_operators import DenseOperator, IdentityOperator, LinearOperator
 from ..linear_relaxations.alpha_resolvers import resolve_matmul_etas
 from ..linear_relaxations.pairwise import PairedParams, compute_mul_relaxation
 from .base import (
@@ -17,6 +19,7 @@ from .base import (
     BackwardLBPStrategy,
     BackwardRelaxation,
     IntermediateBoundsProvider,
+    _wrap_a_term_tensors,
     accumulate_a_terms,
 )
 
@@ -284,35 +287,89 @@ class LinearBackwardRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+    @dispatch
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        output_shape = A_lower.output_shape
+        A_lower_t = A_lower.to_dense().tensor
+        A_upper_t = A_upper.to_dense().tensor
+
         if self.weight.ndim == 2:
             # A: (*batch, *bounded_out, out_features)
             # weight: (out_features, in_features) -> A @ weight gives (..., in_features)
-            new_A_lower = A_lower @ self.weight
-            new_A_upper = A_upper @ self.weight
+            new_A_lower = A_lower_t @ self.weight
+            new_A_upper = A_upper_t @ self.weight
             node_ndim = 1
             if self.bias is not None:
-                bias_lower = A_lower @ self.bias
-                bias_upper = A_upper @ self.bias
+                bias_lower = A_lower_t @ self.bias
+                bias_upper = A_upper_t @ self.bias
         else:
             # 1D weight: y = (x * w).sum(-1). Output has no feature dim, so
             # A_lower has shape (*batch, *bounded_out); multiplying in a new
             # trailing dim against ``weight`` gives the predecessor A of shape
             # (*batch, *bounded_out, in_features).
-            new_A_lower = A_lower.unsqueeze(-1) * self.weight
-            new_A_upper = A_upper.unsqueeze(-1) * self.weight
+            new_A_lower = A_lower_t.unsqueeze(-1) * self.weight
+            new_A_upper = A_upper_t.unsqueeze(-1) * self.weight
             node_ndim = 0
             if self.bias is not None:
-                bias_lower = A_lower * self.bias
-                bias_upper = A_upper * self.bias
+                bias_lower = A_lower_t * self.bias
+                bias_upper = A_upper_t * self.bias
 
         if self.bias is None:
-            zero = _zero_bias(A_lower, node_ndim=node_ndim)
+            zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
             bias_lower = zero
             bias_upper = zero
 
         return BackwardContributions(
-            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
+            bias_lower=bias_lower,
+            bias_upper=bias_upper,
+        )
+
+    @dispatch
+    def backward_through(  # noqa: F811
+        self, A_lower: IdentityOperator, A_upper: IdentityOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        """Identity @ Linear = the weight itself, reshaped into A's output axes.
+
+        Avoids materializing any ``eye(numel)``: the resulting A is simply
+        ``weight`` (or ``weight^T`` for a 1D reduction) broadcast to the
+        caller's batch axes; the bias contribution is ``bias`` broadcast the
+        same way.
+        """
+        output_shape = A_lower.output_shape
+        batch_shape = A_lower.batch_shape
+        leading_ones = (1,) * len(batch_shape)
+
+        if self.weight.ndim == 2:
+            out_features, in_features = self.weight.shape
+            # Weight reshaped to (*batch_ones, out_features, in_features); output_shape
+            # leads are (*batch_shape, out_features) so the dense op holds Identity@weight.
+            weight_tensor = self.weight.reshape(*leading_ones, out_features, in_features)
+            new_A_op: LinearOperator = DenseOperator(weight_tensor, output_shape=output_shape)
+            if self.bias is not None:
+                bias_tensor = self.bias.reshape(*leading_ones, out_features).expand(output_shape)
+                bias_lower: torch.Tensor = bias_tensor
+                bias_upper: torch.Tensor = bias_tensor
+            else:
+                bias_lower = torch.zeros(output_shape, dtype=self.weight.dtype, device=self.weight.device)
+                bias_upper = bias_lower
+        else:
+            # 1D weight: linear reduces last feature dim. Feature_shape must be () at A.
+            (in_features,) = self.weight.shape
+            weight_tensor = self.weight.reshape(*leading_ones, in_features)
+            new_A_op = DenseOperator(weight_tensor, output_shape=output_shape)
+            if self.bias is not None:
+                bias_scalar = self.bias.reshape(*leading_ones).expand(output_shape)
+                bias_lower = bias_scalar
+                bias_upper = bias_scalar
+            else:
+                bias_lower = torch.zeros(output_shape, dtype=self.weight.dtype, device=self.weight.device)
+                bias_upper = bias_lower
+
+        return BackwardContributions(
+            a_terms={self.input_node: (new_A_op, new_A_op)},
             bias_lower=bias_lower,
             bias_upper=bias_upper,
         )
@@ -337,13 +394,19 @@ class MatmulRightConstantRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        new_A_lower = A_lower @ self.weight.T
-        new_A_upper = A_upper @ self.weight.T
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        output_shape = A_lower.output_shape
+        A_lower_t = A_lower.to_dense().tensor
+        A_upper_t = A_upper.to_dense().tensor
 
-        zero = _zero_bias(A_lower, node_ndim=1)
+        new_A_lower = A_lower_t @ self.weight.T
+        new_A_upper = A_upper_t @ self.weight.T
+
+        zero = _zero_bias(A_lower_t, node_ndim=1)
         return BackwardContributions(
-            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
             bias_lower=zero,
             bias_upper=zero,
         )
@@ -377,40 +440,29 @@ class MatmulBothAbstractRelaxation(BackwardRelaxation):
 
     def backward_through(
         self,
-        A_lower: torch.Tensor,
-        A_upper: torch.Tensor,
+        A_lower: LinearOperator,
+        A_upper: LinearOperator,
         batch_ndim: int,
     ) -> BackwardContributions:
-        """Sign-decompose downstream A-matrices against per-bilinear-term params.
+        """Sign-decompose downstream A-matrices against per-bilinear-term params."""
+        output_shape = A_lower.output_shape
 
-        ``A_lower``, ``A_upper`` carry shape ``(*batch, *bounded_out, M, N)``
-        and the params carry shape ``(*batch, M, K, N)``. We broadcast to the
-        joint shape ``(*batch, *bounded_out, M, K, N)`` by inserting a ``K``
-        singleton into the A-matrices and bounded-out singletons into the
-        params, then contract the result toward each predecessor's natural
-        feature layout (``(M, K)`` for ``a``, ``(K, N)`` for ``b``).
-        """
         p = self.params
-        # Params carry the matmul node's full feature layout (*op_batch, M, K, N).
-        # bounded_ndim is what sits between the tape's ``batch_ndim`` and the
-        # node feature; A_lower ends with (*op_batch, M, N), i.e. all of the
-        # node's feature dims except the K reduction axis.
         params_feature_ndim = p.alpha_lower_a.ndim - batch_ndim
         a_feature_ndim = params_feature_ndim - 1  # (*op_batch, M, N)
-        bounded_ndim = A_lower.ndim - batch_ndim - a_feature_ndim
+        bounded_ndim = A_lower.output_ndim + A_lower.input_ndim - batch_ndim - a_feature_ndim
 
         def bc_params(t: torch.Tensor) -> torch.Tensor:
             """Insert ``bounded_out`` singletons between batch and params feature dims."""
             return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
 
         # Insert K axis as singleton into A: (*batch, *bounded_out, M, 1, N).
-        A_low_k = A_lower.unsqueeze(-2)
-        A_up_k = A_upper.unsqueeze(-2)
-
-        A_l_pos = A_low_k.clamp(min=0)
-        A_l_neg = A_low_k.clamp(max=0)
-        A_u_pos = A_up_k.clamp(min=0)
-        A_u_neg = A_up_k.clamp(max=0)
+        # Clamp commutes with unsqueeze, so route the sign decomposition through the
+        # operator API (lets structured A's specialize) and then unsqueeze the result.
+        A_l_pos = A_lower.clamp_min(0).to_dense().tensor.unsqueeze(-2)
+        A_l_neg = A_lower.clamp_max(0).to_dense().tensor.unsqueeze(-2)
+        A_u_pos = A_upper.clamp_min(0).to_dense().tensor.unsqueeze(-2)
+        A_u_neg = A_upper.clamp_max(0).to_dense().tensor.unsqueeze(-2)
 
         alpha_la = bc_params(p.alpha_lower_a)
         alpha_ua = bc_params(p.alpha_upper_a)
@@ -419,23 +471,30 @@ class MatmulBothAbstractRelaxation(BackwardRelaxation):
         gamma_l = bc_params(p.bias_lower)
         gamma_u = bc_params(p.bias_upper)
 
-        # Predecessor A for a: (*batch, *bounded_out, M, K). Sum over N (dim -1).
         new_A_low_a = (A_l_pos * alpha_la + A_l_neg * alpha_ua).sum(dim=-1)
         new_A_up_a = (A_u_pos * alpha_ua + A_u_neg * alpha_la).sum(dim=-1)
 
-        # Predecessor A for b: (*batch, *bounded_out, K, N). Sum over M
-        # (dim -3 in the joint (*, M, K, N) shape).
         new_A_low_b = (A_l_pos * alpha_lb + A_l_neg * alpha_ub).sum(dim=-3)
         new_A_up_b = (A_u_pos * alpha_ub + A_u_neg * alpha_lb).sum(dim=-3)
 
-        # Bias delta: sum over M, K, N.
         sum_dims = tuple(range(-params_feature_ndim, 0))
         delta_bias_lower = (A_l_pos * gamma_l + A_l_neg * gamma_u).sum(dim=sum_dims)
         delta_bias_upper = (A_u_pos * gamma_u + A_u_neg * gamma_l).sum(dim=sum_dims)
 
-        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
-        accumulate_a_terms(a_terms, self.left_node, new_A_low_a, new_A_up_a)
-        accumulate_a_terms(a_terms, self.right_node, new_A_low_b, new_A_up_b)
+        out_ndim = len(output_shape)
+        a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
+        accumulate_a_terms(
+            a_terms,
+            self.left_node,
+            DenseOperator(new_A_low_a, output_shape=torch.Size(new_A_low_a.shape[:out_ndim])),
+            DenseOperator(new_A_up_a, output_shape=torch.Size(new_A_up_a.shape[:out_ndim])),
+        )
+        accumulate_a_terms(
+            a_terms,
+            self.right_node,
+            DenseOperator(new_A_low_b, output_shape=torch.Size(new_A_low_b.shape[:out_ndim])),
+            DenseOperator(new_A_up_b, output_shape=torch.Size(new_A_up_b.shape[:out_ndim])),
+        )
 
         return BackwardContributions(
             a_terms=a_terms,
@@ -463,13 +522,19 @@ class MatmulLeftConstantRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        new_A_lower = A_lower @ self.weight
-        new_A_upper = A_upper @ self.weight
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        output_shape = A_lower.output_shape
+        A_lower_t = A_lower.to_dense().tensor
+        A_upper_t = A_upper.to_dense().tensor
 
-        zero = _zero_bias(A_lower, node_ndim=1)
+        new_A_lower = A_lower_t @ self.weight
+        new_A_upper = A_upper_t @ self.weight
+
+        zero = _zero_bias(A_lower_t, node_ndim=1)
         return BackwardContributions(
-            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
             bias_lower=zero,
             bias_upper=zero,
         )
@@ -499,13 +564,36 @@ class AddRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return list({self.left_node, self.right_node})
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
+    @dispatch
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        A_lower_t = A_lower.to_dense().tensor
+
+        a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
         accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
         accumulate_a_terms(a_terms, self.right_node, A_lower, A_upper)
 
         node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
-        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
+        return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
+
+    @dispatch
+    def backward_through(  # noqa: F811
+        self, A_lower: IdentityOperator, A_upper: IdentityOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        """Identity passes through Add unchanged for each distinct predecessor.
+
+        Skips the :meth:`to_dense` materialization needed to compute the zero
+        bias shape (we use ``A_lower.output_shape`` directly, which is
+        invariant through this relaxation).
+        """
+        del batch_ndim
+        a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
+        accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
+        accumulate_a_terms(a_terms, self.right_node, A_lower, A_upper)
+
+        zero = torch.zeros(A_lower.output_shape, dtype=A_lower.dtype, device=A_lower.device)
         return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
 
 
@@ -531,13 +619,17 @@ class SubRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return list({self.left_node, self.right_node})
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        a_terms: dict[fx.Node, tuple[torch.Tensor, torch.Tensor]] = {}
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        A_lower_t = A_lower.to_dense().tensor
+
+        a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
         accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
-        accumulate_a_terms(a_terms, self.right_node, -A_lower, -A_upper)
+        accumulate_a_terms(a_terms, self.right_node, A_lower.neg(), A_upper.neg())
 
         node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
-        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
         return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
 
 
@@ -566,9 +658,14 @@ class ConstantAddRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        A_lower_t = A_lower.to_dense().tensor
+        A_upper_t = A_upper.to_dense().tensor
+
         node_ndim = self.constant.ndim - batch_ndim
-        bounded_ndim = A_lower.ndim - self.constant.ndim
+        bounded_ndim = A_lower_t.ndim - self.constant.ndim
 
         c_bc = self.constant.reshape(
             self.constant.shape[:batch_ndim] + (1,) * bounded_ndim + self.constant.shape[batch_ndim:]
@@ -576,14 +673,14 @@ class ConstantAddRelaxation(BackwardRelaxation):
 
         sum_dims = tuple(range(-node_ndim, 0)) if node_ndim > 0 else ()
         if sum_dims:
-            delta_lower = (A_lower * c_bc).sum(dim=sum_dims)
-            delta_upper = (A_upper * c_bc).sum(dim=sum_dims)
+            delta_lower = (A_lower_t * c_bc).sum(dim=sum_dims)
+            delta_upper = (A_upper_t * c_bc).sum(dim=sum_dims)
         else:
-            delta_lower = A_lower * c_bc
-            delta_upper = A_upper * c_bc
+            delta_lower = A_lower_t * c_bc
+            delta_upper = A_upper_t * c_bc
 
         if self.negate_input:
-            pred_A_lower, pred_A_upper = -A_lower, -A_upper
+            pred_A_lower, pred_A_upper = A_lower.neg(), A_upper.neg()
         else:
             pred_A_lower, pred_A_upper = A_lower, A_upper
 
@@ -613,11 +710,15 @@ class NegRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        A_lower_t = A_lower.to_dense().tensor
+
         node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
-        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
         return BackwardContributions(
-            a_terms={self.input_node: (-A_lower, -A_upper)},
+            a_terms={self.input_node: (A_lower.neg(), A_upper.neg())},
             bias_lower=zero,
             bias_upper=zero,
         )
@@ -642,17 +743,23 @@ class ScaleRelaxation(BackwardRelaxation):
     def predecessor_nodes(self) -> list[fx.Node]:
         return [self.input_node]
 
-    def backward_through(self, A_lower: torch.Tensor, A_upper: torch.Tensor, batch_ndim: int) -> BackwardContributions:
-        bounded_ndim = A_lower.ndim - self.scale.ndim
+    def backward_through(
+        self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
+    ) -> BackwardContributions:
+        output_shape = A_lower.output_shape
+        A_lower_t = A_lower.to_dense().tensor
+        A_upper_t = A_upper.to_dense().tensor
+
+        bounded_ndim = A_lower_t.ndim - self.scale.ndim
         c = self.scale.reshape(self.scale.shape[:batch_ndim] + (1,) * bounded_ndim + self.scale.shape[batch_ndim:])
 
-        new_A_lower = A_lower * c
-        new_A_upper = A_upper * c
+        new_A_lower = A_lower_t * c
+        new_A_upper = A_upper_t * c
 
         node_ndim = self.scale.ndim - batch_ndim
-        zero = _zero_bias(A_lower, node_ndim=node_ndim)
+        zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
         return BackwardContributions(
-            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
             bias_lower=zero,
             bias_upper=zero,
         )

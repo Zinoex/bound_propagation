@@ -8,7 +8,8 @@ import torch
 from bound_propagation.linear_operators import (
     DenseOperator,
     IdentityOperator,
-    apply_weight_to_bounds_pair,
+    ReshapeOperator,
+    ZeroOperator,
     cat_output,
     stack_output,
 )
@@ -267,53 +268,14 @@ class TestCatStack:
         assert torch.equal(result.to_dense().tensor, torch.stack([a, b], dim=0))
 
 
-class TestApplyWeightToBoundsPair:
-    def test_2d_left(self) -> None:
-        torch.manual_seed(10)
-        # Simulates nn.Linear where the current output feature axis is last.
-        lin_low = torch.randn(1, 4, 5)  # output_shape=(1, 4), input=(5,)
-        lin_up = lin_low + 0.1
-        op_lower = DenseOperator(lin_low, output_shape=(1, 4))
-        op_upper = DenseOperator(lin_up, output_shape=(1, 4))
-        weight = torch.randn(7, 4)
-        weight_pos = weight.clamp(min=0)
-        weight_neg = weight.clamp(max=0)
-
-        got = apply_weight_to_bounds_pair(op_lower, op_upper, weight_pos, weight_neg, upper=False, left=True)
-        assert got.output_shape == torch.Size((1, 7))
-        expected = torch.einsum("ok,...kd->...od", weight_pos, lin_low.reshape(1, 4, 5)) + torch.einsum(
-            "ok,...kd->...od", weight_neg, lin_up.reshape(1, 4, 5)
-        )
-        assert torch.allclose(got.tensor.reshape(1, 7, 5), expected)
-
-    def test_1d_left_dot_product(self) -> None:
-        torch.manual_seed(11)
-        lin_low = torch.randn(4, 5)  # output_shape=(4,), input=(5,)
-        lin_up = lin_low + 0.1
-        op_lower = DenseOperator(lin_low, output_shape=(4,))
-        op_upper = DenseOperator(lin_up, output_shape=(4,))
-        weight = torch.randn(4)
-        weight_pos = weight.clamp(min=0)
-        weight_neg = weight.clamp(max=0)
-
-        got = apply_weight_to_bounds_pair(op_lower, op_upper, weight_pos, weight_neg, upper=False, left=True)
-        assert got.output_shape == torch.Size(())
-        expected = (weight_pos[:, None] * lin_low + weight_neg[:, None] * lin_up).sum(dim=0)
-        assert torch.allclose(got.tensor, expected)
-
-
 class TestIdentityOperator:
     def test_basic_3d(self) -> None:
-        op = IdentityOperator(
-            feature_shape=(2, 4, 4), dtype=torch.float32, device=torch.device("cpu")
-        )
+        op = IdentityOperator(feature_shape=(2, 4, 4), dtype=torch.float32, device=torch.device("cpu"))
         assert op.output_shape == torch.Size((2, 4, 4))
         assert op.input_shape == torch.Size((2, 4, 4))
 
     def test_with_batch_ones(self) -> None:
-        op = IdentityOperator(
-            feature_shape=(3, 4), dtype=torch.float32, device=torch.device("cpu"), batch_shape=(1,)
-        )
+        op = IdentityOperator(feature_shape=(3, 4), dtype=torch.float32, device=torch.device("cpu"), batch_shape=(1,))
         assert op.output_shape == torch.Size((1, 3, 4))
         assert op.input_shape == torch.Size((3, 4))
 
@@ -335,9 +297,7 @@ class TestIdentityOperator:
         assert torch.allclose(dense.tensor, expected)
 
     def test_to_dense_with_batch_shape(self) -> None:
-        op = IdentityOperator(
-            feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"), batch_shape=(1,)
-        )
+        op = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"), batch_shape=(1,))
         dense = op.to_dense()
         assert dense.output_shape == torch.Size((1, 3))
         assert dense.input_shape == torch.Size((3,))
@@ -348,6 +308,231 @@ class TestIdentityOperator:
         cloned = op.clone()
         assert isinstance(cloned, IdentityOperator)
         assert cloned.feature_shape == op.feature_shape
+
+
+class TestClampDecomposition:
+    """``clamp_min`` / ``clamp_max`` are load-bearing for backward sign decomposition."""
+
+    def test_dense_clamp_min_matches_tensor(self) -> None:
+        torch.manual_seed(0)
+        tensor = torch.randn(3, 4, 5)
+        op = DenseOperator(tensor, output_shape=(3, 4))
+        clamped = op.clamp_min(0.0)
+        assert isinstance(clamped, DenseOperator)
+        assert torch.equal(clamped.tensor, tensor.clamp(min=0.0))
+        assert clamped.output_shape == op.output_shape
+
+    def test_dense_clamp_max_matches_tensor(self) -> None:
+        torch.manual_seed(0)
+        tensor = torch.randn(3, 4, 5)
+        op = DenseOperator(tensor, output_shape=(3, 4))
+        clamped = op.clamp_max(0.0)
+        assert isinstance(clamped, DenseOperator)
+        assert torch.equal(clamped.tensor, tensor.clamp(max=0.0))
+
+    def test_dense_clamp_min_nonzero_value(self) -> None:
+        torch.manual_seed(1)
+        tensor = torch.randn(2, 3)
+        op = DenseOperator(tensor, output_shape=(2,))
+        clamped = op.clamp_min(0.5)
+        assert torch.equal(clamped.tensor, tensor.clamp(min=0.5))
+
+    def test_identity_clamp_min_zero_returns_self(self) -> None:
+        op = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"))
+        result = op.clamp_min(0.0)
+        assert result is op
+
+    def test_identity_clamp_min_negative_returns_self(self) -> None:
+        # Identity entries are 0 or 1; any non-positive lower clamp leaves them unchanged.
+        op = IdentityOperator(feature_shape=(2, 3), dtype=torch.float32, device=torch.device("cpu"))
+        result = op.clamp_min(-1.5)
+        assert result is op
+
+    def test_identity_clamp_max_above_one_returns_self(self) -> None:
+        op = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"))
+        result = op.clamp_max(2.0)
+        assert result is op
+
+    def test_identity_clamp_max_zero_is_all_zeros(self) -> None:
+        op = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"))
+        result = op.clamp_max(0.0)
+        dense = result.to_dense()
+        assert dense.output_shape == op.output_shape
+        assert dense.input_shape == op.input_shape
+        assert torch.equal(dense.tensor, torch.zeros_like(dense.tensor))
+
+    def test_identity_clamp_min_intermediate_falls_back_to_dense(self) -> None:
+        op = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"))
+        # 0 < 0.5 < 1 — neither fast path applies; should yield a dense matrix
+        # whose zeros became 0.5 and whose ones stayed.
+        result = op.clamp_min(0.5)
+        dense = result.to_dense()
+        expected = torch.eye(3).clamp(min=0.5)
+        assert torch.allclose(dense.tensor, expected)
+
+    def test_reshape_clamp_delegates_and_preserves_shape(self) -> None:
+        torch.manual_seed(2)
+        tensor = torch.randn(6, 5)
+        inner = DenseOperator(tensor, output_shape=(6,))
+        op = ReshapeOperator(inner, output_shape=(2, 3))
+
+        clamped_min = op.clamp_min(0.0)
+        assert isinstance(clamped_min, ReshapeOperator)
+        assert clamped_min.output_shape == torch.Size((2, 3))
+        assert torch.equal(
+            clamped_min.to_dense().tensor,
+            tensor.clamp(min=0.0).reshape(2, 3, 5),
+        )
+
+        clamped_max = op.clamp_max(0.0)
+        assert isinstance(clamped_max, ReshapeOperator)
+        assert torch.equal(
+            clamped_max.to_dense().tensor,
+            tensor.clamp(max=0.0).reshape(2, 3, 5),
+        )
+
+    def test_clamp_default_falls_back_to_dense(self) -> None:
+        # Verify the ABC default produces correct dense output via to_dense.
+        # Use IdentityOperator + non-fast-path value to exercise the default.
+        op = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"))
+        result = op.clamp_max(0.5)
+        dense = result.to_dense()
+        expected = torch.eye(3).clamp(max=0.5)
+        assert torch.allclose(dense.tensor, expected)
+
+
+class TestZeroOperator:
+    """``ZeroOperator`` is the additive identity and absorbing under ``scale``/``neg``."""
+
+    def _zero(self, output_shape: tuple[int, ...] = (3,), input_shape: tuple[int, ...] = (4,)) -> ZeroOperator:
+        return ZeroOperator(
+            output_shape=output_shape, input_shape=input_shape, dtype=torch.float32, device=torch.device("cpu")
+        )
+
+    def test_metadata(self) -> None:
+        op = self._zero(output_shape=(2, 3), input_shape=(4,))
+        assert op.output_shape == torch.Size((2, 3))
+        assert op.input_shape == torch.Size((4,))
+        assert op.dtype == torch.float32
+
+    def test_apply_returns_zeros(self) -> None:
+        op = self._zero(output_shape=(3,), input_shape=(4,))
+        x = torch.randn(4)
+        result = op.apply(x)
+        assert torch.equal(result, torch.zeros(3))
+
+    def test_apply_transpose_returns_zeros_with_leading(self) -> None:
+        op = self._zero(output_shape=(3,), input_shape=(4,))
+        y = torch.randn(7, 3)
+        result = op.apply_transpose(y)
+        assert result.shape == torch.Size((7, 4))
+        assert torch.all(result == 0)
+
+    def test_concretize_is_zero(self) -> None:
+        op = self._zero(output_shape=(3,), input_shape=(4,))
+        region = _make_region((4,))
+        assert torch.equal(op.concretize_min(region), torch.zeros(3))
+        assert torch.equal(op.concretize_max(region), torch.zeros(3))
+
+    def test_neg_is_self(self) -> None:
+        op = self._zero()
+        assert op.neg() is op
+
+    def test_scale_is_self(self) -> None:
+        op = self._zero()
+        assert op.scale(torch.tensor(2.5)) is op
+
+    def test_clamp_min_zero_is_self(self) -> None:
+        op = self._zero()
+        assert op.clamp_min(0.0) is op
+        assert op.clamp_min(-3.0) is op
+
+    def test_clamp_max_zero_is_self(self) -> None:
+        op = self._zero()
+        assert op.clamp_max(0.0) is op
+        assert op.clamp_max(2.5) is op
+
+    def test_clamp_min_positive_falls_back_to_dense(self) -> None:
+        op = self._zero(output_shape=(3,), input_shape=(2,))
+        result = op.clamp_min(1.0)
+        dense = result.to_dense()
+        # Every entry of the zero map clamped up to 1.0 is 1.0.
+        assert torch.allclose(dense.tensor, torch.ones(3, 2))
+
+    def test_add_zero_to_dense_returns_dense_unchanged(self) -> None:
+        torch.manual_seed(0)
+        tensor = torch.randn(3, 4)
+        dense = DenseOperator(tensor, output_shape=(3,))
+        zero = self._zero(output_shape=(3,), input_shape=(4,))
+        result = dense.add(zero)
+        # Returns the same dense object — no materialization, no allocation.
+        assert result is dense
+
+    def test_add_zero_to_identity_returns_identity_unchanged(self) -> None:
+        # IdentityOperator uses the ABC default ``add``; verify the zero
+        # short-circuit works through the default path without materializing eye.
+        identity = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"))
+        zero = ZeroOperator(
+            output_shape=identity.output_shape,
+            input_shape=identity.input_shape,
+            dtype=torch.float32,
+            device=torch.device("cpu"),
+        )
+        result = identity.add(zero)
+        assert result is identity
+
+    def test_add_zero_to_reshape_returns_reshape_unchanged(self) -> None:
+        torch.manual_seed(2)
+        tensor = torch.randn(6, 5)
+        inner = DenseOperator(tensor, output_shape=(6,))
+        reshape = ReshapeOperator(inner, output_shape=(2, 3))
+        zero = self._zero(output_shape=(2, 3), input_shape=(5,))
+        result = reshape.add(zero)
+        assert result is reshape
+
+    def test_zero_add_other_returns_other(self) -> None:
+        torch.manual_seed(3)
+        tensor = torch.randn(3, 4)
+        dense = DenseOperator(tensor, output_shape=(3,))
+        zero = self._zero(output_shape=(3,), input_shape=(4,))
+        result = zero.add(dense)
+        assert result is dense
+
+    def test_zero_add_zero_stays_zero(self) -> None:
+        a = self._zero(output_shape=(3,), input_shape=(4,))
+        b = self._zero(output_shape=(3,), input_shape=(4,))
+        result = a.add(b)
+        assert isinstance(result, ZeroOperator)
+        assert result.output_shape == torch.Size((3,))
+        assert result.input_shape == torch.Size((4,))
+
+    def test_to_dense_matches_zeros(self) -> None:
+        op = self._zero(output_shape=(2, 3), input_shape=(4,))
+        dense = op.to_dense()
+        assert dense.output_shape == torch.Size((2, 3))
+        assert dense.input_shape == torch.Size((4,))
+        assert torch.equal(dense.tensor, torch.zeros(2, 3, 4))
+
+    def test_shape_ops_stay_zero(self) -> None:
+        op = self._zero(output_shape=(2, 3), input_shape=(4,))
+        flat = op.flatten_output(0, 1)
+        assert isinstance(flat, ZeroOperator)
+        assert flat.output_shape == torch.Size((6,))
+
+        unsq = op.unsqueeze_output(0)
+        assert isinstance(unsq, ZeroOperator)
+        assert unsq.output_shape == torch.Size((1, 2, 3))
+
+        summed = op.sum_output(dim=0, keepdim=False)
+        assert isinstance(summed, ZeroOperator)
+        assert summed.output_shape == torch.Size((3,))
+
+    def test_identity_clamp_max_zero_returns_zero_operator(self) -> None:
+        identity = IdentityOperator(feature_shape=(3,), dtype=torch.float32, device=torch.device("cpu"))
+        result = identity.clamp_max(0.0)
+        assert isinstance(result, ZeroOperator)
+        assert result.output_shape == identity.output_shape
+        assert result.input_shape == identity.input_shape
 
 
 class TestRoundTrip:

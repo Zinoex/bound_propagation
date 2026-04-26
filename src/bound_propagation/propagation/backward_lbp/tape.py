@@ -6,7 +6,6 @@ algorithm via BFS with A-matrix accumulation to produce LinearBounds.
 
 from __future__ import annotations
 
-import math
 from collections import deque
 from typing import Any
 
@@ -14,6 +13,7 @@ import torch
 import torch.fx as fx
 
 from ...bounds import IntervalBounds, LinearBounds
+from ...linear_operators import IdentityOperator, LinearOperator
 from ...regions import SimpleRegion
 from ..alpha_optimization import AlphaProvider, NullAlphaProvider
 from .base import BackwardRelaxation
@@ -250,27 +250,32 @@ class BackwardTape:
         subgraph = self._backward_subgraph(node)
         pending = self._compute_pending(subgraph)
 
-        # Build identity A-matrix for the start node
+        # Build identity A-matrix for the start node. We use :class:`IdentityOperator`
+        # as a pure type marker so relaxation ``backward_through`` specializations can
+        # dispatch on it and skip materializing an ``eye`` tensor.
         shape = self.shape_of(node)
-        feature_shape = shape[batch_ndim:]
-        numel = math.prod(feature_shape)
+        feature_shape = tuple(shape[batch_ndim:])
         dtype = self.dtype_of(node)
         device = self._infer_device()
 
         batch_ones = (1,) * batch_ndim
-        identity_shape = (*batch_ones, *feature_shape, *feature_shape) if feature_shape else (*batch_ones, 1)
-        identity = torch.eye(numel, dtype=dtype, device=device).reshape(identity_shape)
+        identity_op: LinearOperator = IdentityOperator(
+            feature_shape=feature_shape,
+            batch_shape=batch_ones,
+            dtype=dtype,
+            device=device,
+        )
+        output_shape_template = identity_op.output_shape
 
-        # Initialize accumulated A-matrices and bias
-        accumulated_A: dict[str, tuple[torch.Tensor, torch.Tensor]] = {
-            node.name: (identity, identity),
+        # Initialize accumulated A-matrices and bias (shape matches output_shape_template).
+        accumulated_A: dict[str, tuple[LinearOperator, LinearOperator]] = {
+            node.name: (identity_op, identity_op),
         }
-        bias_shape = (*batch_ones, *feature_shape)
-        bias_lower = torch.zeros(bias_shape, dtype=dtype, device=device)
-        bias_upper = torch.zeros(bias_shape, dtype=dtype, device=device)
+        bias_lower = torch.zeros(output_shape_template, dtype=dtype, device=device)
+        bias_upper = torch.zeros(output_shape_template, dtype=dtype, device=device)
 
         # Collect input A-matrices
-        input_A: dict[str, tuple[torch.Tensor, torch.Tensor]] = {}
+        input_A: dict[str, tuple[LinearOperator, LinearOperator]] = {}
 
         # BFS backward
         queue: deque[fx.Node] = deque([node])
@@ -300,7 +305,7 @@ class BackwardTape:
                 pred_name = pred_node.name
                 if pred_name in accumulated_A:
                     old_l, old_u = accumulated_A[pred_name]
-                    accumulated_A[pred_name] = (old_l + delta_A_l, old_u + delta_A_u)
+                    accumulated_A[pred_name] = (old_l.add(delta_A_l), old_u.add(delta_A_u))
                 else:
                     accumulated_A[pred_name] = (delta_A_l, delta_A_u)
 
@@ -310,8 +315,8 @@ class BackwardTape:
 
         # Collect input A-matrices in placeholder order
         regions: list[SimpleRegion] = []
-        linear_lower: list[torch.Tensor] = []
-        linear_upper: list[torch.Tensor] = []
+        linear_lower: list[LinearOperator] = []
+        linear_upper: list[LinearOperator] = []
         input_ids: list[int] = []
 
         for ph_node in self._placeholder_nodes():

@@ -5,7 +5,8 @@ from typing import TYPE_CHECKING
 import torch
 import torch.fx as fx
 
-from ...bounds import LinearBounds
+from ...bounds import LinearBounds, LinearCoefficient
+from ...linear_operators import DenseOperator
 from .base import ForwardLBPStrategy
 from .utils import combine_linear_terms
 
@@ -98,9 +99,16 @@ class ForwardLBPLinear(ForwardLBPStrategy):
                 f"weight reduction dim {reduce_dim}"
             )
 
+        output_ndim = bounds.bias_lower.ndim
+
+        if bounds.is_exact:
+            # Affine fast path: lower == upper everywhere, so sign decomposition
+            # collapses to ``weight_pos · A + weight_neg · A = weight · A``.
+            # Compute once and share lower / upper to preserve ``is_exact``.
+            return self._propagate_exact(bounds, weight, bias, output_ndim)
+
         weight_pos = weight.clamp(min=0)
         weight_neg = weight.clamp(max=0)
-        output_ndim = bounds.bias_lower.ndim
 
         # Lower bound: weight_pos @ lower_coeffs + weight_neg @ upper_coeffs
         linear_lower = self._apply_weight_to_linear_terms(
@@ -145,6 +153,55 @@ class ForwardLBPLinear(ForwardLBPStrategy):
             linear_upper=linear_upper,
             bias_upper=bias_upper,
             input_ids=bounds.input_ids,
+        )
+
+    @staticmethod
+    def _propagate_exact(
+        bounds: LinearBounds,
+        weight: torch.Tensor,
+        bias: torch.Tensor | None,
+        output_ndim: int,
+    ) -> LinearBounds:
+        """Affine fast path for ``ForwardLBPLinear`` when ``bounds.is_exact``.
+
+        Computes ``weight @ A`` and ``weight @ b + bias`` once and shares the
+        resulting operator and bias tensor between lower and upper so the
+        produced bound is itself ``is_exact``.
+        """
+        # Use the lower-side terms (== upper since exact) and compute weight @ A once.
+        transformed_terms: list[torch.Tensor] = []
+        for linear in bounds.linear_lowers:
+            input_axes = linear.shape[output_ndim:]
+            batch_shape = linear.shape[: output_ndim - 1]
+            feature_dim = linear.shape[output_ndim - 1]
+            flat = linear.reshape(*batch_shape, feature_dim, -1)
+            if weight.ndim == 2:
+                transformed_flat = torch.einsum("ok,...kd->...od", weight, flat)
+                out_feature_shape: tuple[int, ...] = (weight.shape[0],)
+            else:
+                transformed_flat = torch.einsum("k,...kd->...d", weight, flat)
+                out_feature_shape = ()
+            transformed_terms.append(transformed_flat.reshape(*batch_shape, *out_feature_shape, *input_axes))
+
+        if weight.ndim == 2:
+            new_bias = torch.einsum("ok,...k->...o", weight, bounds.bias_lower)
+        else:
+            new_bias = (weight * bounds.bias_lower).sum(-1)
+        if bias is not None:
+            new_bias = new_bias + bias
+
+        # Wrap each tensor in a single ``DenseOperator`` and share between
+        # lower and upper so ``LinearCoefficient.is_exact`` is True.
+        coefficients: dict[int, LinearCoefficient] = {}
+        for input_id, region, term in zip(bounds.input_ids, bounds.regions, transformed_terms, strict=True):
+            op = DenseOperator(term, output_shape=new_bias.shape)
+            coefficients[input_id] = LinearCoefficient(region=region, lower=op, upper=op)
+
+        return LinearBounds(
+            bias_lower=new_bias,
+            bias_upper=new_bias,
+            coefficients=coefficients,
+            batch_ndim=bounds.batch_ndim,
         )
 
 

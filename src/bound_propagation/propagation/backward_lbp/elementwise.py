@@ -15,6 +15,7 @@ import torch
 import torch.fx as fx
 from beartype.typing import final
 
+from ...linear_operators import LinearOperator
 from ..linear_relaxations.alpha_resolvers import (
     resolve_abs_alpha,
     resolve_clamp_alphas,
@@ -44,7 +45,13 @@ from ..linear_relaxations.elementwise import (
     compute_tan_relaxation,
     compute_tanh_relaxation,
 )
-from .base import BackwardContributions, BackwardLBPStrategy, BackwardRelaxation, IntermediateBoundsProvider
+from .base import (
+    BackwardContributions,
+    BackwardLBPStrategy,
+    BackwardRelaxation,
+    IntermediateBoundsProvider,
+    _wrap_a_term_tensors,
+)
 
 if TYPE_CHECKING:
     from ...bounds import IntervalBounds
@@ -76,40 +83,28 @@ class ElementwiseBackwardRelaxation(BackwardRelaxation):
 
     def backward_through(
         self,
-        A_lower: torch.Tensor,
-        A_upper: torch.Tensor,
+        A_lower: LinearOperator,
+        A_upper: LinearOperator,
         batch_ndim: int,
     ) -> BackwardContributions:
         """Propagate A-matrices backward through this element-wise relaxation.
 
         Uses sign decomposition: where A > 0, use same-side relaxation;
         where A < 0, use opposite-side relaxation.
-
-        Parameters
-        ----------
-        A_lower : torch.Tensor
-            Lower A-matrix from the output, shape ``(*batch, *bounded_out, *node)``.
-        A_upper : torch.Tensor
-            Upper A-matrix from the output, shape ``(*batch, *bounded_out, *node)``.
-        batch_ndim : int
-            Number of leading batch dimensions in the A-matrices.
-
-        Returns
-        -------
-        BackwardContributions
-            The propagated A-terms for the input node and bias contributions.
         """
+        output_shape = A_lower.output_shape
+
         node_ndim = self.params.alpha_lower.ndim - batch_ndim
-        bounded_ndim = A_lower.ndim - self.params.alpha_lower.ndim
+        bounded_ndim = A_lower.output_ndim + A_lower.input_ndim - self.params.alpha_lower.ndim
 
         def bc(t: torch.Tensor) -> torch.Tensor:
             """Broadcast ``(*batch, *node)`` to ``(*batch, *bounded_out, *node)``."""
             return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
 
-        A_l_pos = A_lower.clamp(min=0)
-        A_l_neg = A_lower.clamp(max=0)
-        A_u_pos = A_upper.clamp(min=0)
-        A_u_neg = A_upper.clamp(max=0)
+        A_l_pos = A_lower.clamp_min(0).to_dense().tensor
+        A_l_neg = A_lower.clamp_max(0).to_dense().tensor
+        A_u_pos = A_upper.clamp_min(0).to_dense().tensor
+        A_u_neg = A_upper.clamp_max(0).to_dense().tensor
 
         # Sign decomposition on alpha coefficients.
         new_A_lower = A_l_pos * bc(self.params.alpha_lower) + A_l_neg * bc(self.params.alpha_upper)
@@ -124,7 +119,7 @@ class ElementwiseBackwardRelaxation(BackwardRelaxation):
             delta_bias_upper = delta_bias_upper.sum(dim=sum_dims)
 
         return BackwardContributions(
-            a_terms={self.input_node: (new_A_lower, new_A_upper)},
+            a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
             bias_lower=delta_bias_lower,
             bias_upper=delta_bias_upper,
         )
