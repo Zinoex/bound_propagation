@@ -172,7 +172,9 @@ class BackwardLBPAdd(BackwardLBPStrategy):
             return AddRelaxation(
                 left_node=node.args[0],
                 right_node=node.args[1],
-                input_ndim=len(tape.shape_of(node.args[0])),
+                left_shape=tuple(tape.shape_of(node.args[0])),  # ty:ignore[invalid-argument-type]
+                right_shape=tuple(tape.shape_of(node.args[1])),  # ty:ignore[invalid-argument-type]
+                input_ndim=len(tape.shape_of(node)),
             )
 
         if isinstance(left, BackwardRelaxation):
@@ -201,7 +203,9 @@ class BackwardLBPSub(BackwardLBPStrategy):
             return SubRelaxation(
                 left_node=node.args[0],
                 right_node=node.args[1],
-                input_ndim=len(tape.shape_of(node.args[0])),
+                left_shape=tuple(tape.shape_of(node.args[0])),  # ty:ignore[invalid-argument-type]
+                right_shape=tuple(tape.shape_of(node.args[1])),  # ty:ignore[invalid-argument-type]
+                input_ndim=len(tape.shape_of(node)),
             )
 
         if isinstance(left, BackwardRelaxation):
@@ -254,6 +258,48 @@ def _node_feature_ndim(node_ndim: int, batch_ndim: int) -> int:
     """Number of non-batch feature dimensions for a relaxation whose output
     has ``node_ndim`` total dimensions (captured at build time)."""
     return max(node_ndim - batch_ndim, 0)
+
+
+def _reduce_input_to_shape(op: LinearOperator, target_shape: tuple[int, ...] | torch.Size) -> LinearOperator:
+    """Sum / squeeze ``op``'s input axes so ``input_shape`` becomes ``target_shape``.
+
+    Backward-LBP correctness for broadcast operations (``y = a + b`` with
+    ``a.shape != b.shape``): the upstream A has ``input_shape == y.shape``,
+    but each predecessor's accumulated A must have ``input_shape == predecessor.shape``.
+    Where the predecessor had a size-1 axis (or no axis at all) that was
+    broadcast to a larger axis in ``y``, A's contribution to that predecessor
+    is the *sum* of A across that broadcast axis.
+
+    Currently materializes to dense and reduces; future structured operators
+    (e.g. ``Patches``) can override this without changing the call sites.
+    """
+    source_shape = tuple(op.input_shape)
+    target = tuple(target_shape)
+    if source_shape == target:
+        return op
+
+    ndim_diff = len(source_shape) - len(target)
+    if ndim_diff < 0:
+        raise ValueError(f"_reduce_input_to_shape: cannot grow input rank from {source_shape} to {target}")
+    padded_target = (1,) * ndim_diff + target
+
+    sum_axes: list[int] = []
+    for i, (s, p) in enumerate(zip(source_shape, padded_target, strict=True)):
+        if s != p:
+            if p != 1:
+                raise ValueError(
+                    f"_reduce_input_to_shape: source {source_shape} not broadcast-compatible "
+                    f"with target {target} (axis {i}: {s} vs {p})"
+                )
+            sum_axes.append(op.output_ndim + i)
+
+    tensor = op.to_dense().tensor
+    if sum_axes:
+        tensor = tensor.sum(dim=sum_axes, keepdim=True)
+    if ndim_diff > 0:
+        leading_output = tensor.shape[: op.output_ndim]
+        tensor = tensor.reshape(*leading_output, *target)
+    return DenseOperator(tensor, output_shape=op.output_shape)
 
 
 def _broadcast_constant(constant: torch.Tensor, *, batch_ndim: int, bounded_ndim: int, node_ndim: int) -> torch.Tensor:
@@ -567,18 +613,23 @@ class AddRelaxation(BackwardRelaxation):
 
     Parameters
     ----------
-    left_node : fx.Node
-        The fx graph node for the left operand.
-    right_node : fx.Node
-        The fx graph node for the right operand.
+    left_node, right_node : fx.Node
+        The fx graph nodes for the operands.
+    left_shape, right_shape : tuple[int, ...]
+        Operand shapes captured at build time. Needed to reduce A across
+        broadcast axes when ``left.shape != right.shape`` — A on the
+        upstream side has ``input_shape == result.shape``, but each
+        predecessor's accumulated A must have ``input_shape == predecessor.shape``.
     input_ndim : int
-        Rank of the (broadcast) operand tensor, captured at build time so the
+        Rank of the broadcast result tensor, captured at build time so the
         backward pass can compute the per-node feature-dim count without
         touching ``node.meta``.
     """
 
     left_node: fx.Node
     right_node: fx.Node
+    left_shape: tuple[int, ...]
+    right_shape: tuple[int, ...]
     input_ndim: int
 
     def predecessor_nodes(self) -> list[fx.Node]:
@@ -591,8 +642,13 @@ class AddRelaxation(BackwardRelaxation):
         A_lower_t = A_lower.to_dense().tensor
 
         a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
-        accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
-        accumulate_a_terms(a_terms, self.right_node, A_lower, A_upper)
+        # Reduce A to each predecessor's shape (handles broadcast via sum).
+        left_lower = _reduce_input_to_shape(A_lower, self.left_shape[batch_ndim:])
+        left_upper = _reduce_input_to_shape(A_upper, self.left_shape[batch_ndim:])
+        right_lower = _reduce_input_to_shape(A_lower, self.right_shape[batch_ndim:])
+        right_upper = _reduce_input_to_shape(A_upper, self.right_shape[batch_ndim:])
+        accumulate_a_terms(a_terms, self.left_node, left_lower, left_upper)
+        accumulate_a_terms(a_terms, self.right_node, right_lower, right_upper)
 
         node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
         zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
@@ -602,16 +658,20 @@ class AddRelaxation(BackwardRelaxation):
     def backward_through(  # noqa: F811
         self, A_lower: IdentityOperator, A_upper: IdentityOperator, batch_ndim: int
     ) -> BackwardContributions:
-        """Identity passes through Add unchanged for each distinct predecessor.
+        """Identity passes through Add for each distinct predecessor, with
+        broadcast-reduction when operand shapes differ.
 
         Skips the :meth:`to_dense` materialization needed to compute the zero
         bias shape (we use ``A_lower.output_shape`` directly, which is
         invariant through this relaxation).
         """
-        del batch_ndim
         a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
-        accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
-        accumulate_a_terms(a_terms, self.right_node, A_lower, A_upper)
+        left_lower = _reduce_input_to_shape(A_lower, self.left_shape[batch_ndim:])
+        left_upper = _reduce_input_to_shape(A_upper, self.left_shape[batch_ndim:])
+        right_lower = _reduce_input_to_shape(A_lower, self.right_shape[batch_ndim:])
+        right_upper = _reduce_input_to_shape(A_upper, self.right_shape[batch_ndim:])
+        accumulate_a_terms(a_terms, self.left_node, left_lower, left_upper)
+        accumulate_a_terms(a_terms, self.right_node, right_lower, right_upper)
 
         zero = torch.zeros(A_lower.output_shape, dtype=A_lower.dtype, device=A_lower.device)
         return BackwardContributions(a_terms=a_terms, bias_lower=zero, bias_upper=zero)
@@ -624,16 +684,18 @@ class SubRelaxation(BackwardRelaxation):
 
     Parameters
     ----------
-    left_node : fx.Node
-        The fx graph node for the left operand.
-    right_node : fx.Node
-        The fx graph node for the right operand.
+    left_node, right_node : fx.Node
+        The fx graph nodes for the operands.
+    left_shape, right_shape : tuple[int, ...]
+        Operand shapes captured at build time (see :class:`AddRelaxation`).
     input_ndim : int
-        Rank of the (broadcast) operand tensor, captured at build time.
+        Rank of the broadcast result tensor, captured at build time.
     """
 
     left_node: fx.Node
     right_node: fx.Node
+    left_shape: tuple[int, ...]
+    right_shape: tuple[int, ...]
     input_ndim: int
 
     def predecessor_nodes(self) -> list[fx.Node]:
@@ -645,8 +707,14 @@ class SubRelaxation(BackwardRelaxation):
         A_lower_t = A_lower.to_dense().tensor
 
         a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
-        accumulate_a_terms(a_terms, self.left_node, A_lower, A_upper)
-        accumulate_a_terms(a_terms, self.right_node, A_lower.neg(), A_upper.neg())
+        # Reduce A to each predecessor's shape (handles broadcast via sum).
+        # Right operand contributes ``-A``: negate after reduction (commutes with sum).
+        left_lower = _reduce_input_to_shape(A_lower, self.left_shape[batch_ndim:])
+        left_upper = _reduce_input_to_shape(A_upper, self.left_shape[batch_ndim:])
+        right_lower = _reduce_input_to_shape(A_lower, self.right_shape[batch_ndim:]).neg()
+        right_upper = _reduce_input_to_shape(A_upper, self.right_shape[batch_ndim:]).neg()
+        accumulate_a_terms(a_terms, self.left_node, left_lower, left_upper)
+        accumulate_a_terms(a_terms, self.right_node, right_lower, right_upper)
 
         node_ndim = _node_feature_ndim(self.input_ndim, batch_ndim)
         zero = _zero_bias(A_lower_t, node_ndim=node_ndim)

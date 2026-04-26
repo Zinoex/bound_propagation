@@ -27,7 +27,12 @@ import torch
 
 from .bounds import AbstractBounds, IntervalBounds, LinearBounds
 from .facade import BoundModel, Method
+from .propagation import AlphaOptimizationConfig
 from .regions import HyperRectangle
+
+# A "method spec" is either a method name, or a (method, alpha_config) tuple
+# requesting alpha-CROWN optimization for that method.
+MethodSpec = Method | tuple[Method, AlphaOptimizationConfig]
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -47,6 +52,15 @@ _METHOD_COLORS: dict[Method, str] = {
     "crown_ibp": "tab:orange",
 }
 
+# Alpha-optimized variants reuse the base method's color but desaturated.
+_ALPHA_COLORS: dict[Method, str] = {
+    "ibp": "darkred",
+    "forward_lbp": "navy",
+    "backward_lbp": "darkgreen",
+    "forward_backward_lbp": "indigo",
+    "crown_ibp": "saddlebrown",
+}
+
 
 def _require_matplotlib() -> Any:
     try:
@@ -63,7 +77,7 @@ def plot_bounds(
     fn: Callable[..., torch.Tensor] | torch.nn.Module,
     region: HyperRectangle,
     *,
-    methods: Sequence[Method] = DEFAULT_METHODS,
+    methods: Sequence[MethodSpec] = DEFAULT_METHODS,
     num_samples: int = 200,
     output_index: int = 0,
     title: str | None = None,
@@ -77,10 +91,12 @@ def plot_bounds(
         The function under test. Must accept a 1D tensor input of shape ``(1,)``.
     region : HyperRectangle
         Input region. ``region.shape`` must be ``(1,)``.
-    methods : sequence of Method
-        Which bound-propagation methods to plot. Defaults to all three single-
-        registry methods. Methods that fail on this op are reported in-axes
-        and the others still render.
+    methods : sequence of method specs
+        Each entry is either a method name (e.g. ``"backward_lbp"``) or a
+        ``(method, AlphaOptimizationConfig)`` tuple to enable alpha-CROWN
+        optimization for that method. Methods that fail on this op are
+        reported in-axes and the others still render. Defaults to all three
+        single-registry methods without alpha.
     num_samples : int
         Number of x-samples used to draw the true function curve.
     output_index : int
@@ -122,15 +138,16 @@ def plot_bounds(
     ax.plot(xs.numpy(), true_ys.numpy(), color="black", linewidth=2.0, label="f(x)", zorder=10)
 
     dummy = torch.zeros(1)
-    for method in methods:
-        color = _METHOD_COLORS.get(method, None)
+    for spec in methods:
+        method, alpha_config = _normalize_method_spec(spec)
+        label, color = _label_and_color(method, alpha_config)
         try:
-            model = BoundModel(fn, dummy_inputs=(dummy,), method=method)
+            model = BoundModel(fn, dummy_inputs=(dummy,), method=method, alpha=alpha_config)
             bounds = model.propagate(region)
         except Exception as exc:  # noqa: BLE001
-            _annotate_failure(ax, method, exc, color=color)
+            _annotate_failure(ax, label, exc, color=color)
             continue
-        _draw_bound(ax, bounds, xs, output_index=output_index, label=method, color=color)
+        _draw_bound(ax, bounds, xs, output_index=output_index, label=label, color=color)
 
     ax.set_xlabel("x")
     ax.set_ylabel("y")
@@ -139,6 +156,19 @@ def plot_bounds(
     ax.legend(loc="best", fontsize="small")
     ax.grid(True, alpha=0.25)
     return fig  # ty:ignore[invalid-return-type]
+
+
+def _normalize_method_spec(spec: MethodSpec) -> tuple[Method, AlphaOptimizationConfig | None]:
+    if isinstance(spec, tuple):
+        method, alpha_config = spec
+        return method, alpha_config
+    return spec, None
+
+
+def _label_and_color(method: Method, alpha_config: AlphaOptimizationConfig | None) -> tuple[str, str | None]:
+    if alpha_config is not None and alpha_config.enabled:
+        return f"{method}+α", _ALPHA_COLORS.get(method, _METHOD_COLORS.get(method))
+    return method, _METHOD_COLORS.get(method)
 
 
 # ---------------------------------------------------------------------------
