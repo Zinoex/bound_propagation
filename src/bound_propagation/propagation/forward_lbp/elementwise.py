@@ -1,39 +1,34 @@
+"""Forward LBP element-wise strategies — driven by :class:`ElementwiseSpec`.
+
+Every element-wise activation wires the same forward composition: concretize
+the input ``LinearBounds`` to an interval, compute slopes/biases via the
+spec's ``compute_*_relaxation``, then re-compose with the input via signed
+clamping in :class:`ElementwiseForwardRelaxation`. The 13 supported ops differ
+only in which compute function and α-resolver feed the spec.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, final
 
 from ...bounds import LinearBounds
-from ..linear_relaxations.alpha_resolvers import (
-    resolve_abs_alpha,
-    resolve_clamp_alphas,
-    resolve_cos_alpha,
-    resolve_exp_alpha,
-    resolve_log_alpha,
-    resolve_pow_alpha,
-    resolve_reciprocal_alphas,
-    resolve_relu_alpha,
-    resolve_sigmoid_alphas,
-    resolve_sin_alpha,
-    resolve_sqrt_alpha,
-    resolve_tan_alpha,
-    resolve_tanh_alphas,
-)
-from ..linear_relaxations.elementwise import (
-    ElementwiseParams,
-    compute_abs_relaxation,
-    compute_clamp_relaxation,
-    compute_cos_relaxation,
-    compute_exp_relaxation,
-    compute_log_relaxation,
-    compute_pow_relaxation,
-    compute_reciprocal_relaxation,
-    compute_relu_relaxation,
-    compute_sigmoid_relaxation,
-    compute_sin_relaxation,
-    compute_sqrt_relaxation,
-    compute_tan_relaxation,
-    compute_tanh_relaxation,
+from ..linear_relaxations.elementwise import ElementwiseParams
+from ..linear_relaxations.elementwise_specs import (
+    ABS_SPEC,
+    CLAMP_SPEC,
+    COS_SPEC,
+    EXP_SPEC,
+    LOG_SPEC,
+    POW_SPEC,
+    RECIPROCAL_SPEC,
+    RELU_SPEC,
+    SIGMOID_SPEC,
+    SIN_SPEC,
+    SQRT_SPEC,
+    TAN_SPEC,
+    TANH_SPEC,
+    ElementwiseSpec,
 )
 from .base import ForwardLBPStrategy
 
@@ -46,59 +41,40 @@ if TYPE_CHECKING:
 @final
 @dataclass
 class ElementwiseForwardRelaxation:
-    """
-    Element-wise linear relaxation for unary operations y = f(x).
+    """Element-wise linear relaxation ``y = α x + β`` composed forward.
 
     Stores four element-wise tensors (same shape as x / y):
+
         y_lower >= alpha_lower * x + beta_lower
         y_upper <= alpha_upper * x + beta_upper
 
-    The abstract dimension convention for LinearBounds linear terms is
-    (*batch_dims, *output_dims, *input_dims).  alpha and beta live in
-    (*batch_dims, *output_dims); forward appends the input trailing
-    axes via broadcasting.
-
-    Attributes:
-        alpha_lower: Element-wise slopes for the lower bound.
-        beta_lower:  Element-wise biases for the lower bound.
-        alpha_upper: Element-wise slopes for the upper bound.
-        beta_upper:  Element-wise biases for the upper bound.
+    The abstract dimension convention for ``LinearBounds`` linear terms is
+    ``(*batch_dims, *output_dims, *input_dims)``. ``alpha`` / ``beta`` live in
+    ``(*batch_dims, *output_dims)``; forward composition appends the input
+    trailing axes via broadcasting.
     """
 
     params: ElementwiseParams
 
-    # ------------------------------------------------------------------
-    # Forward composition
-    # ------------------------------------------------------------------
-
     def forward(self, input_bounds: LinearBounds) -> LinearBounds:
+        """Compose ``y = α x + β`` with ``x = W x0 + b`` → ``y = W' x0 + b'``.
+
+        Sign decomposition on α: positive coefficients pair with the same-side
+        running operator, negatives with the opposite side. Uses
+        :class:`LinearOperator` algebra (``.scale``/``.add``) so structured
+        operators stay structured when the operations support it.
         """
-        Compose: y = alpha * x + beta  composed with  x = W @ x0 + b  →  y = W_new @ x0 + b_new.
-
-        Linear terms have shape (*batch_dims, *output_dims, *input_dims).
-        alpha/beta have shape (*batch_dims, *output_dims); trailing input axes are
-        broadcast by appending ones.
-
-        Handles signed alpha via positive/negative clamping so the result is always
-        a valid lower/upper bound. Uses the ``LinearOperator`` algebra
-        (``.scale`` + ``.add``) rather than raw tensor ops — structured inputs
-        stay structured when the operations permit (the default dense fallback
-        reproduces the previous raw-tensor behavior for DenseOperator inputs).
-        """
-
         al_pos = self.params.alpha_lower.clamp(min=0)
         al_neg = self.params.alpha_lower.clamp(max=0)
         au_pos = self.params.alpha_upper.clamp(min=0)
         au_neg = self.params.alpha_upper.clamp(max=0)
 
-        # Lower bound: alpha_lower_pos * W_lower  +  alpha_lower_neg * W_upper
         linear_lower_ops = [
             lower_op.scale(al_pos).add(upper_op.scale(al_neg))
             for lower_op, upper_op in zip(input_bounds.linear_lowers_op, input_bounds.linear_uppers_op, strict=True)
         ]
         bias_lower = al_pos * input_bounds.bias_lower + al_neg * input_bounds.bias_upper + self.params.beta_lower
 
-        # Upper bound: alpha_upper_pos * W_upper  +  alpha_upper_neg * W_lower
         linear_upper_ops = [
             upper_op.scale(au_pos).add(lower_op.scale(au_neg))
             for lower_op, upper_op in zip(input_bounds.linear_lowers_op, input_bounds.linear_uppers_op, strict=True)
@@ -115,303 +91,98 @@ class ElementwiseForwardRelaxation:
         )
 
 
-class ForwardLBPAbs(ForwardLBPStrategy):
-    """Forward LBP strategy for abs using linear relaxation."""
+class ForwardLBPElementwise(ForwardLBPStrategy):
+    """Generic forward-LBP strategy for element-wise nonlinear ops.
 
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPAbs requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_abs_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_abs_relaxation(concrete_bounds, alpha_abs_lower=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPClamp(ForwardLBPStrategy):
-    """Forward LBP strategy for clamp using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPClamp requires input to be LinearBounds")
-
-        min_val = args[1] if len(args) > 1 else kwargs.get("min")
-        max_val = args[2] if len(args) > 2 else kwargs.get("max")
-
-        concrete_bounds = bounds.concretize()
-        alpha_cm_lower, alpha_cmx_upper = resolve_clamp_alphas(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_clamp_relaxation(
-            concrete_bounds,
-            min_val,
-            max_val,
-            alpha_clamp_crosses_min_lower=alpha_cm_lower,
-            alpha_clamp_crosses_max_upper=alpha_cmx_upper,
-        )
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPCos(ForwardLBPStrategy):
-    """Forward LBP strategy for cos using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPCos requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_cos_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_cos_relaxation(concrete_bounds, alpha_cos_tangent_frac=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPExp(ForwardLBPStrategy):
-    """Forward LBP strategy for exp using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPExp requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_exp_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_exp_relaxation(concrete_bounds, alpha_exp_tangent_lower=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPLog(ForwardLBPStrategy):
-    """Forward LBP strategy for log using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPLog requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_log_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_log_relaxation(concrete_bounds, alpha_log_tangent_upper=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPReciprocal(ForwardLBPStrategy):
-    """Forward LBP strategy for reciprocal using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPReciprocal requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha_lo, alpha_up = resolve_reciprocal_alphas(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_reciprocal_relaxation(
-            concrete_bounds,
-            alpha_reciprocal_tangent_lower=alpha_lo,
-            alpha_reciprocal_tangent_upper=alpha_up,
-        )
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPRelu(ForwardLBPStrategy):
-    """Forward LBP strategy for ReLU using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPRelu requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_relu_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_relu_relaxation(concrete_bounds, adaptive=False, alpha_relu_lower=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPSigmoid(ForwardLBPStrategy):
-    """Forward LBP strategy for sigmoid using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPSigmoid requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha_lo, alpha_up = resolve_sigmoid_alphas(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_sigmoid_relaxation(
-            concrete_bounds,
-            alpha_sigmoid_tangent_lower=alpha_lo,
-            alpha_sigmoid_tangent_upper=alpha_up,
-        )
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPSin(ForwardLBPStrategy):
-    """Forward LBP strategy for sin using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPSin requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_sin_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_sin_relaxation(concrete_bounds, alpha_sin_tangent_frac=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPSqrt(ForwardLBPStrategy):
-    """Forward LBP strategy for sqrt using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPSqrt requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_sqrt_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_sqrt_relaxation(concrete_bounds, alpha_sqrt_tangent_upper=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPTan(ForwardLBPStrategy):
-    """Forward LBP strategy for tan using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPTan requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha = resolve_tan_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_tan_relaxation(concrete_bounds, alpha_tan_tangent_frac=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPTanh(ForwardLBPStrategy):
-    """Forward LBP strategy for tanh using linear relaxation."""
-
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, kwargs = ctx.resolve_args(node)
-        bounds = args[0]
-
-        if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPTanh requires input to be LinearBounds")
-
-        concrete_bounds = bounds.concretize()
-        alpha_lo, alpha_up = resolve_tanh_alphas(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_tanh_relaxation(
-            concrete_bounds,
-            alpha_tanh_tangent_lower=alpha_lo,
-            alpha_tanh_tangent_upper=alpha_up,
-        )
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
-
-
-class ForwardLBPPow(ForwardLBPStrategy):
-    """Forward LBP strategy for ``pow(x, n)`` using linear relaxation.
-
-    Currently supports integer exponent ``n == 2`` (the case produced by the
-    ``x*x → pow(x, 2)`` simplification rewrite). Other powers raise
-    ``NotImplementedError`` from the underlying relaxation.
+    Configured by an :class:`ElementwiseSpec` — see
+    :mod:`propagation.linear_relaxations.elementwise_specs`.
     """
 
-    def propagate_forward(
-        self,
-        node: fx.Node,
-        ctx: PropagationContext,
-    ) -> LinearBounds:
-        args, _ = ctx.resolve_args(node)
-        bounds = args[0]
-        power = args[1]
+    def __init__(self, spec: ElementwiseSpec) -> None:
+        self._spec = spec
 
+    @property
+    def spec(self) -> ElementwiseSpec:
+        return self._spec
+
+    def propagate_forward(self, node: fx.Node, ctx: PropagationContext) -> LinearBounds:
+        args, kwargs = ctx.resolve_args(node)
+        bounds = args[0]
         if not isinstance(bounds, LinearBounds):
-            raise TypeError("ForwardLBPPow requires input to be LinearBounds")
-        if not isinstance(power, int):
-            raise TypeError(f"ForwardLBPPow requires an int exponent, got {type(power).__name__}")
+            raise TypeError(f"ForwardLBPElementwise[{self._spec.name}] requires input to be LinearBounds")
 
         concrete_bounds = bounds.concretize()
-        alpha = resolve_pow_alpha(ctx.alpha_provider, node, concrete_bounds)
-        params = compute_pow_relaxation(concrete_bounds, power=power, alpha_pow_tangent=alpha)
-        relaxation = ElementwiseForwardRelaxation(params=params)
-        return relaxation.forward(bounds)
+        params = self._spec.build_params(concrete_bounds, node, ctx.alpha_provider, args, kwargs)
+        return ElementwiseForwardRelaxation(params=params).forward(bounds)
+
+
+# ---------------------------------------------------------------------------
+# Per-op strategy classes. Each is a 3-line wrapper that bakes its spec into
+# the generic strategy. Kept as classes (not instances) so call sites can
+# instantiate with ``ForwardLBPRelu()`` per the existing public surface.
+# ---------------------------------------------------------------------------
+
+
+class ForwardLBPRelu(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(RELU_SPEC)
+
+
+class ForwardLBPAbs(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(ABS_SPEC)
+
+
+class ForwardLBPClamp(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(CLAMP_SPEC)
+
+
+class ForwardLBPCos(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(COS_SPEC)
+
+
+class ForwardLBPExp(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(EXP_SPEC)
+
+
+class ForwardLBPLog(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(LOG_SPEC)
+
+
+class ForwardLBPReciprocal(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(RECIPROCAL_SPEC)
+
+
+class ForwardLBPSigmoid(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(SIGMOID_SPEC)
+
+
+class ForwardLBPSin(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(SIN_SPEC)
+
+
+class ForwardLBPSqrt(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(SQRT_SPEC)
+
+
+class ForwardLBPTan(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(TAN_SPEC)
+
+
+class ForwardLBPTanh(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(TANH_SPEC)
+
+
+class ForwardLBPPow(ForwardLBPElementwise):
+    def __init__(self) -> None:
+        super().__init__(POW_SPEC)

@@ -203,6 +203,30 @@ class TestBackwardLBPTan:
 
 
 # ---------------------------------------------------------------------------
+# Pow
+# ---------------------------------------------------------------------------
+
+
+class TestBackwardLBPPow:
+    """``BackwardLBPPow`` only supports integer ``n == 2`` today (produced
+    by the ``x*x -> pow(x, 2)`` rewrite). Both crossing and non-crossing
+    regimes must produce sound bounds."""
+
+    def test_sound_positive(self):
+        assert_sound(lambda x: x**2, region([1.0, 2.0], [3.0, 4.0]))
+
+    def test_sound_negative(self):
+        assert_sound(lambda x: x**2, region([-3.0, -2.0], [-1.0, -0.5]))
+
+    def test_sound_crossing_zero(self):
+        assert_sound(lambda x: x**2, region([-2.0, -1.0], [2.0, 1.0]))
+
+    def test_narrow_interval(self):
+        lower, upper = assert_sound(lambda x: x**2, region([1.0], [1.01]))
+        assert (upper - lower).item() < 0.1
+
+
+# ---------------------------------------------------------------------------
 # Clamp
 # ---------------------------------------------------------------------------
 

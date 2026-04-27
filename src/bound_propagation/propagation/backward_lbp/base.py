@@ -1,3 +1,29 @@
+"""Backward LBP (CROWN) base abstractions: relaxations, tape, and providers.
+
+Backward LBP propagates a per-output linear bound back through the graph.
+The running coefficient ``A`` (the "A-matrix") starts as the identity at the
+output and is left-multiplied by each operation's local Jacobian relaxation
+on the way to the inputs:
+
+.. math::
+
+    A^{(k)}_L = \\big[ A^{(k+1)}_L \\big]^+ J^{(k)}_L
+              + \\big[ A^{(k+1)}_L \\big]^- J^{(k)}_U
+    \\quad\\text{(symmetric for } A_U\\text{)}
+
+This is **sign decomposition** (Zhang et al. 2018, "CROWN"): the upper
+relaxation is multiplied where the running A is negative, the lower where it
+is positive. It is load-bearing across every nonlinear backward step (here in
+:class:`IntervalLeafRelaxation`, and in
+:mod:`propagation.backward_lbp.elementwise`,
+:mod:`propagation.backward_lbp.pairwise`,
+:mod:`propagation.backward_lbp.linear`).
+
+The graph is recorded onto a :class:`BackwardTape` (a Wengert list) during
+the forward walk; the tape replays the recorded relaxations in reverse BFS
+order to build the final :class:`LinearBounds`.
+"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -8,7 +34,7 @@ import torch
 import torch.fx as fx
 from plum import dispatch
 
-from ...bounds import IntervalBounds
+from ...bounds import IntervalBounds, LinearBounds
 from ...linear_operators import DenseOperator, IdentityOperator, LinearOperator
 from ..strategy import BoundingStrategy
 
@@ -45,6 +71,10 @@ def _wrap_a_term_tensors(
     output_ndim: int,
 ) -> dict[fx.Node, tuple[LinearOperator, LinearOperator]]:
     """Wrap tensor a_terms in :class:`DenseOperator`.
+
+    Convenience for strategies that compute the new A-matrix as a raw tensor
+    via einsum (e.g. ``A^{(k)} = A^{(k+1)} · J^{(k)}`` rendered as a contraction)
+    and need to hand the result back as a :class:`LinearOperator`.
 
     ``output_ndim`` is the number of leading dims in each tensor that belong
     to the A-matrix output shape (shared across all predecessors in a single
@@ -254,6 +284,41 @@ class _ContextBoundsProvider(PrecomputedBoundsProvider):
         if not isinstance(value, IntervalBounds):
             raise TypeError(f"Expected IntervalBounds for node {node.name!r}, got {type(value).__name__}")
         return value
+
+
+class ForwardLBPBoundsProvider:
+    """Bounds provider backed by a forward LBP context (Forward-Backward LBP).
+
+    The forward LBP context stores :class:`LinearBounds` for abstract nodes
+    and :class:`torch.Tensor` for concrete nodes (``get_attr`` or
+    non-abstract calls). This provider returns :class:`IntervalBounds` by
+    concretizing linear bounds and by wrapping tensors as degenerate
+    intervals. Concretizations are cached per fx.Node name so each
+    intermediate node is concretized at most once per backward sweep.
+    """
+
+    def __init__(self, ctx: PropagationContext[LinearBounds]) -> None:
+        self._ctx = ctx
+        self._cache: dict[str, IntervalBounds] = {}
+
+    def __call__(self, node: fx.Node) -> IntervalBounds:
+        if node.name in self._cache:
+            return self._cache[node.name]
+
+        value = self._ctx.resolve(node)
+        if isinstance(value, LinearBounds):
+            result = value.concretize()
+        elif isinstance(value, IntervalBounds):
+            result = value
+        elif isinstance(value, torch.Tensor):
+            result = IntervalBounds(value, value)
+        else:
+            raise TypeError(
+                f"Cannot convert value of type {type(value).__name__} for node {node.name!r} to IntervalBounds"
+            )
+
+        self._cache[node.name] = result
+        return result
 
 
 class BackwardLBPStrategy(BoundingStrategy):

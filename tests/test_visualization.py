@@ -14,7 +14,12 @@ matplotlib = pytest.importorskip("matplotlib")
 matplotlib.use("Agg")  # noqa: E402 — must precede any pyplot use, even indirectly.
 
 from bound_propagation import HyperRectangle  # noqa: E402
-from bound_propagation.visualization import DEFAULT_METHODS, plot_bounds  # noqa: E402
+from bound_propagation.visualization import (  # noqa: E402
+    DEFAULT_METHODS,
+    BoundsGridEntry,
+    plot_bounds,
+    plot_bounds_grid,
+)
 
 
 def _region(lo: float, hi: float) -> HyperRectangle:
@@ -79,3 +84,49 @@ class TestPlotBoundsBasic:
         fig = plot_bounds(layer, _region(-1.0, 1.0), output_index=1, num_samples=20)
         # Just need it to render without error.
         assert fig is not None
+
+
+class TestPlotBoundsGrid:
+    def test_renders_one_panel_per_entry(self) -> None:
+        entries = [
+            BoundsGridEntry(fn=torch.relu, region=_region(-1.0, 1.0), title="relu"),
+            BoundsGridEntry(fn=torch.tanh, region=_region(-2.0, 2.0), title="tanh"),
+            BoundsGridEntry(fn=torch.sigmoid, region=_region(-3.0, 3.0), title="sigmoid"),
+        ]
+        fig = plot_bounds_grid(entries, cols=2, num_samples=20)
+        # rows = ceil(3 / 2) = 2, total axes = rows * cols = 4 (one hidden).
+        assert len(fig.axes) == 4
+        active_titles = [ax.get_title() for ax in fig.axes if ax.get_title()]
+        assert active_titles == ["relu", "tanh", "sigmoid"]
+
+    def test_hides_trailing_axes_when_grid_underfilled(self) -> None:
+        entries = [BoundsGridEntry(fn=torch.relu, region=_region(-1.0, 1.0), title="relu")]
+        fig = plot_bounds_grid(entries, cols=3, num_samples=10)
+        # cols clamps to len(entries) so no underfill — exactly one axes.
+        assert len(fig.axes) == 1
+
+    def test_clamps_cols_to_entry_count(self) -> None:
+        entries = [
+            BoundsGridEntry(fn=torch.relu, region=_region(-1.0, 1.0)),
+            BoundsGridEntry(fn=torch.tanh, region=_region(-1.0, 1.0)),
+        ]
+        fig = plot_bounds_grid(entries, cols=10, num_samples=10)
+        # cols clamped to 2 → 1 row.
+        assert len(fig.axes) == 2
+
+    def test_suptitle_is_set(self) -> None:
+        entries = [BoundsGridEntry(fn=torch.relu, region=_region(-1.0, 1.0))]
+        fig = plot_bounds_grid(entries, suptitle="my title", num_samples=10)
+        assert fig._suptitle is not None
+        assert fig._suptitle.get_text() == "my title"
+
+    def test_rejects_empty_entries(self) -> None:
+        with pytest.raises(ValueError, match="at least one entry"):
+            plot_bounds_grid([])
+
+    def test_propagates_methods_argument(self) -> None:
+        entries = [BoundsGridEntry(fn=torch.relu, region=_region(-1.0, 1.0), title="relu")]
+        fig = plot_bounds_grid(entries, methods=("ibp",), num_samples=10)
+        labels = [text.get_text() for text in fig.axes[0].get_legend().get_texts()]
+        assert any("ibp" in label for label in labels)
+        assert not any("forward_lbp" in label for label in labels)

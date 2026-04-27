@@ -1,19 +1,43 @@
-"""
-Structured linear operators for affine bound coefficients.
+"""Structured linear operators for affine bound coefficients.
 
-``LinearOperator`` represents an abstract linear map ``W`` such that a
-``LinearBounds`` affine term can be evaluated as ``y = W @ x + b`` without
+:class:`LinearOperator` represents an abstract linear map ``W`` such that a
+:class:`LinearBounds` affine term evaluates as ``y = W @ x + b`` without
 necessarily materializing ``W`` as a dense ``(*output_shape, *input_shape)``
-tensor. This enables structured representations (convolutions, pooling) to
-carry their algebraic structure through the bound-propagation pipeline.
+tensor. This lets structured representations (identity passes, reshapes,
+convolutions, pooling) carry their algebraic structure through propagation
+instead of immediately densifying.
 
-Shape conventions mirror ``LinearBounds``:
+Shape conventions
+-----------------
+Mirrors :class:`LinearBounds`::
 
     output_shape = (*batch_dims, *output_dims)   # matches bias tensor shape
     input_shape  = (*input_dims,)                # trailing axes describing x
 
-A ``DenseOperator`` wraps a tensor of shape ``(*output_shape, *input_shape)``
-and is the baseline implementation.
+A region's tensor shape may have leading batch dims that are absorbed into
+``output_shape`` via :func:`_split_region_shape`; the region's trailing axes
+are the actual ``input_shape`` that the operator maps from.
+
+Concretization (interval evaluation)
+------------------------------------
+For a ``HyperRectangle`` region ``[l, u]``, the per-axis sign rule (Mirman
+et al. 2018, IBP) gives::
+
+    min_x (W x) = Σ max(W, 0) · l + Σ min(W, 0) · u
+    max_x (W x) = Σ max(W, 0) · u + Σ min(W, 0) · l
+
+i.e. positive weights pair with the same-sign endpoint and negative weights
+with the opposite endpoint. This is implemented for the dense baseline in
+:func:`_hyperrectangle_concretize` and dispatched per-region-type via
+:func:`_dense_concretize_min` / ``_max``.
+
+Subclasses
+----------
+- :class:`DenseOperator` — baseline, wraps the full coefficient tensor.
+- :class:`IdentityOperator` — no allocation; ``y = x`` (with batch broadcast).
+- :class:`ZeroOperator` — additive identity; produced by
+  ``IdentityOperator.clamp_max(0)`` and other absorption paths.
+- :class:`ReshapeOperator` — defers shape rearrangement until densification.
 """
 
 from __future__ import annotations
@@ -525,6 +549,19 @@ def _dense_concretize_max(  # noqa: F811
 def _hyperrectangle_concretize(
     region: HyperRectangle, linear: torch.Tensor, output_shape: torch.Size, *, mode: str
 ) -> torch.Tensor:
+    """Per-axis sign-aware min/max of ``W x`` over a box region.
+
+    For ``x ∈ [l, u]``, separability gives
+    ``min_x (W x) = Σ_i max(W_i, 0) · l_i + Σ_i min(W_i, 0) · u_i``
+    and the symmetric formula for the maximum (l ↔ u). Implemented per
+    element via :func:`torch.where` on the sign of the coefficient: positive
+    weights pair with the same-sign endpoint, negative weights with the
+    opposite endpoint.
+
+    Reduction is over the trailing ``input_ndim`` axes; the leading
+    ``output_ndim`` axes (which may include batch dims absorbed from the
+    region) are preserved.
+    """
     input_lower = region.lower
     input_upper = region.upper
 
@@ -544,8 +581,10 @@ def _hyperrectangle_concretize(
     expanded_lower = input_lower.reshape(expanded_shape)
     expanded_upper = input_upper.reshape(expanded_shape)
     if mode == "min":
+        # min over [l, u] of w·x: take l where w>0, u where w<=0.
         contributions = torch.where(linear > 0, linear * expanded_lower, linear * expanded_upper)
     elif mode == "max":
+        # max over [l, u] of w·x: take u where w>0, l where w<=0.
         contributions = torch.where(linear > 0, linear * expanded_upper, linear * expanded_lower)
     else:
         raise ValueError(f"Invalid concretize mode {mode!r}")
@@ -946,7 +985,9 @@ class ZeroOperator(LinearOperator):
         return ZeroOperator(new_shape, self._input_shape, dtype=self._dtype, device=self._device)
 
     def view_output(self, shape: tuple[int, ...]) -> ZeroOperator:
-        return self.reshape_output(shape)
+        return self.reshape_output(
+            shape
+        )  # Same shape checks and new operator as reshape_output; also semantically identical for a zero map.
 
     def flatten_output(self, start_dim: int, end_dim: int) -> ZeroOperator:
         start = _normalize_output_dim(start_dim, self.output_ndim, inclusive_end=False)

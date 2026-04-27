@@ -16,10 +16,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import torch
 import torch.fx as fx
 
-from ...bounds import IntervalBounds, LinearBounds
+from ...bounds import LinearBounds
 from ...regions import SimpleRegion
 from ..alpha_optimization import (
     AlphaOptimizationConfig,
@@ -27,48 +26,18 @@ from ..alpha_optimization import (
     NullAlphaProvider,
     run_alpha_optimization,
 )
-from ..backward_lbp import create_default_backward_lbp_registry
-from ..backward_lbp.base import BackwardLBPStrategy, IntermediateBoundsProvider
+from ..backward_lbp import (
+    ForwardLBPBoundsProvider,
+    IntermediateBoundsProvider,
+    create_default_backward_lbp_registry,
+)
+from ..backward_lbp.base import BackwardLBPStrategy
 from ..backward_lbp.tape import BackwardTape
 from ..context import PropagationContext
 from ..forward_lbp import ForwardLBPStrategy, create_default_forward_lbp_registry
 from ..forward_lbp.utils import create_identity_bounds
 from ..registry import TargetRegistry
 from .base import BoundPropagator
-
-
-class _ForwardLBPBoundsProvider:
-    """``IntermediateBoundsProvider`` backed by a forward LBP context.
-
-    The forward LBP context stores :class:`LinearBounds` for abstract nodes
-    and :class:`torch.Tensor` for concrete nodes (``get_attr`` or
-    non-abstract calls). This provider returns :class:`IntervalBounds` by
-    concretizing linear bounds and by wrapping tensors as degenerate
-    intervals. Concretizations are cached per fx.Node name.
-    """
-
-    def __init__(self, ctx: PropagationContext[LinearBounds]) -> None:
-        self._ctx = ctx
-        self._cache: dict[str, IntervalBounds] = {}
-
-    def __call__(self, node: fx.Node) -> IntervalBounds:
-        if node.name in self._cache:
-            return self._cache[node.name]
-
-        value = self._ctx.resolve(node)
-        if isinstance(value, LinearBounds):
-            result = value.concretize()
-        elif isinstance(value, IntervalBounds):
-            result = value
-        elif isinstance(value, torch.Tensor):
-            result = IntervalBounds(value, value)
-        else:
-            raise TypeError(
-                f"Cannot convert value of type {type(value).__name__} for node {node.name!r} to IntervalBounds"
-            )
-
-        self._cache[node.name] = result
-        return result
 
 
 class ForwardBackwardLBPPropagator(BoundPropagator):
@@ -148,7 +117,7 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
         ctx.alpha_provider = alpha_provider
         tape = BackwardTape(self._graph_module, input_regions)
         tape.alpha_provider = alpha_provider
-        provider = _ForwardLBPBoundsProvider(ctx)
+        provider = ForwardLBPBoundsProvider(ctx)
 
         # Seed placeholder forward LBP bounds as identities over each region.
         for idx, (ph, region) in enumerate(zip(placeholders, input_regions, strict=True)):
@@ -199,16 +168,3 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
         if not isinstance(output_arg, fx.Node):
             raise TypeError(f"Expected output to be an fx.Node, got {type(output_arg)}")
         return tape.backward_from(output_arg, batch_ndim=batch_ndim)
-
-    @staticmethod
-    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[LinearBounds]) -> torch.Tensor:
-        args, kwargs = ctx.resolve_args(node)
-        target = node.target
-        if node.op == "call_function":
-            return target(*args, **kwargs)  # ty:ignore[call-non-callable]
-        if node.op == "call_method":
-            return getattr(args[0], target)(*args[1:], **kwargs)  # ty:ignore[invalid-argument-type]
-        if node.op == "call_module":
-            module = ctx.get_module(target)  # ty:ignore[invalid-argument-type]
-            return module(*args, **kwargs)
-        raise ValueError(f"Cannot evaluate node op={node.op!r}")

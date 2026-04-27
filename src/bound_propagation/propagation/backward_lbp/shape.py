@@ -97,6 +97,39 @@ def _zero_bias(A: torch.Tensor, node_ndim: int) -> torch.Tensor:
     return torch.zeros(A.shape[:bias_ndim], dtype=A.dtype, device=A.device)
 
 
+def _identity_through_shape(
+    A_lower: IdentityOperator,
+    *,
+    transform_features: tuple[int, ...],
+    input_node: fx.Node,
+) -> BackwardContributions:
+    """Identity fast-path for shape ops: rewrap as ``ReshapeOperator(IdentityOperator)``.
+
+    Shape ops (reshape, unsqueeze, squeeze) preserve the identity through the
+    transformation: the running A is still semantically the identity, just
+    with a re-arranged feature shape. The inner :class:`IdentityOperator`
+    takes the predecessor's feature shape (``transform_features``); the outer
+    :class:`ReshapeOperator` exposes the original ``A_lower.output_shape`` so
+    callers see no shape change.
+
+    Used by the three shape relaxations whose Identity-Identity overloads were
+    previously near-duplicates (Reshape, Unsqueeze, Squeeze).
+    """
+    inner_identity = IdentityOperator(
+        feature_shape=transform_features,
+        batch_shape=tuple(A_lower.batch_shape),
+        dtype=A_lower.dtype,
+        device=A_lower.device,
+    )
+    new_op: LinearOperator = ReshapeOperator(inner_identity, A_lower.output_shape)
+    zero_bias = torch.zeros(A_lower.output_shape, dtype=A_lower.dtype, device=A_lower.device)
+    return BackwardContributions(
+        a_terms={input_node: (new_op, new_op)},
+        bias_lower=zero_bias,
+        bias_upper=zero_bias,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Relaxation dataclasses
 # ---------------------------------------------------------------------------
@@ -149,22 +182,11 @@ class ReshapeRelaxation(BackwardRelaxation):
         A_upper: IdentityOperator,  # noqa: ARG002
         batch_ndim: int,
     ) -> BackwardContributions:
-        """Identity through a pure reshape: stays Identity semantically, wrapped
-        in :class:`ReshapeOperator` to present the caller's output_shape while
-        the inner identity's feature_shape matches the predecessor's input."""
-        source_features = tuple(self.source_shape[batch_ndim:])
-        inner_identity = IdentityOperator(
-            feature_shape=source_features,
-            batch_shape=tuple(A_lower.batch_shape),
-            dtype=A_lower.dtype,
-            device=A_lower.device,
-        )
-        new_op: LinearOperator = ReshapeOperator(inner_identity, A_lower.output_shape)
-        zero_bias = torch.zeros(A_lower.output_shape, dtype=A_lower.dtype, device=A_lower.device)
-        return BackwardContributions(
-            a_terms={self.input_node: (new_op, new_op)},
-            bias_lower=zero_bias,
-            bias_upper=zero_bias,
+        """Identity preserved through a pure reshape — see :func:`_identity_through_shape`."""
+        return _identity_through_shape(
+            A_lower,
+            transform_features=tuple(self.source_shape[batch_ndim:]),
+            input_node=self.input_node,
         )
 
 
@@ -210,24 +232,13 @@ class UnsqueezeRelaxation(BackwardRelaxation):
         A_upper: IdentityOperator,  # noqa: ARG002
         batch_ndim: int,
     ) -> BackwardContributions:
-        """Identity preserved through unsqueeze: inner identity's feature_shape
-        drops the unsqueezed dim; outer :class:`ReshapeOperator` exposes the
-        output_shape with the size-1 dim inserted."""
+        """Identity through unsqueeze — drop the inserted size-1 feature dim. See :func:`_identity_through_shape`."""
         feature_dim = self.dim - batch_ndim
         output_features = tuple(A_lower.feature_shape)
-        source_features = output_features[:feature_dim] + output_features[feature_dim + 1 :]
-        inner_identity = IdentityOperator(
-            feature_shape=source_features,
-            batch_shape=tuple(A_lower.batch_shape),
-            dtype=A_lower.dtype,
-            device=A_lower.device,
-        )
-        new_op: LinearOperator = ReshapeOperator(inner_identity, A_lower.output_shape)
-        zero_bias = torch.zeros(A_lower.output_shape, dtype=A_lower.dtype, device=A_lower.device)
-        return BackwardContributions(
-            a_terms={self.input_node: (new_op, new_op)},
-            bias_lower=zero_bias,
-            bias_upper=zero_bias,
+        return _identity_through_shape(
+            A_lower,
+            transform_features=output_features[:feature_dim] + output_features[feature_dim + 1 :],
+            input_node=self.input_node,
         )
 
 
@@ -278,24 +289,13 @@ class SqueezeRelaxation(BackwardRelaxation):
         A_upper: IdentityOperator,  # noqa: ARG002
         batch_ndim: int,
     ) -> BackwardContributions:
-        """Identity preserved through squeeze: inner identity's feature_shape
-        inserts a size-1 dim at the squeezed position; outer
-        :class:`ReshapeOperator` exposes the post-squeeze output_shape."""
+        """Identity through squeeze — insert the squeezed size-1 dim back. See :func:`_identity_through_shape`."""
         feature_dim = self.dim - batch_ndim
         output_features = tuple(A_lower.feature_shape)
-        source_features = output_features[:feature_dim] + (1,) + output_features[feature_dim:]
-        inner_identity = IdentityOperator(
-            feature_shape=source_features,
-            batch_shape=tuple(A_lower.batch_shape),
-            dtype=A_lower.dtype,
-            device=A_lower.device,
-        )
-        new_op: LinearOperator = ReshapeOperator(inner_identity, A_lower.output_shape)
-        zero_bias = torch.zeros(A_lower.output_shape, dtype=A_lower.dtype, device=A_lower.device)
-        return BackwardContributions(
-            a_terms={self.input_node: (new_op, new_op)},
-            bias_lower=zero_bias,
-            bias_upper=zero_bias,
+        return _identity_through_shape(
+            A_lower,
+            transform_features=output_features[:feature_dim] + (1,) + output_features[feature_dim:],
+            input_node=self.input_node,
         )
 
 

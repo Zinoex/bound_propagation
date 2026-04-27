@@ -62,7 +62,7 @@ def create_default_forward_lbp_registry() -> TargetRegistry[ForwardLBPStrategy]:
 
     registry.register_many([torch.matmul, operator.matmul], ForwardLBPMatmul())
 
-    # -- Element-wise activations ------------------------------------------
+    # -- Element-wise activations (spec-driven via ElementwiseSpec) ----------
     registry.register_many([torch.relu, F.relu, nn.ReLU], ForwardLBPRelu())
     registry.register_many([torch.sigmoid, F.sigmoid, nn.Sigmoid], ForwardLBPSigmoid())
     registry.register_many([torch.tanh, F.tanh, nn.Tanh], ForwardLBPTanh())

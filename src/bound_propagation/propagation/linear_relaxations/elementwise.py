@@ -1,3 +1,41 @@
+"""Element-wise linear relaxations ``y = f(x)`` for unary activations.
+
+Each ``compute_*_relaxation`` produces an :class:`ElementwiseParams` of slopes
+and biases ``(α_lower, β_lower, α_upper, β_upper)`` such that, on the input
+interval ``[l, u]``,
+
+.. math::
+
+    α_L \\, x + β_L \\;\\le\\; f(x) \\;\\le\\; α_U \\, x + β_U
+    \\quad \\forall x \\in [l, u].
+
+The relaxation is method-agnostic: IBP concretizes immediately, forward LBP
+composes the slopes into running ``LinearBounds``, backward LBP attaches
+them to the A-matrix recurrence in :mod:`backward_lbp`.
+
+Citation table
+--------------
+- ReLU (relu): Zhang et al. 2018 "CROWN", Eq. 16. Lower slope ∈ [0, 1] is
+  optimizable per α-CROWN; upper is always the secant.
+- Sigmoid / tanh: auto-LiRPA §3.2 (Xu et al. 2020), tangent-line construction
+  with a free tangent point per side on the inflection-crossing regime.
+- Exp / log / sqrt / pow / reciprocal: standard convex/concave envelope
+  reasoning — secant on the convex/concave side, tangent on the other; the
+  tangent-point fraction is a free α-knob.
+- Abs / clamp / ReLU crossing: piecewise-linear envelopes parameterized by
+  the in-regime slope or corner-crossing slopes.
+- Sin / cos / tan: regime detection (critical points, asymptotes for tan)
+  followed by per-regime envelope; tangent-point fraction is a free α-knob
+  on subregimes without critical points / asymptotes.
+
+α-knob conventions
+------------------
+Every free knob is parameterized as ``α ∈ [0, 1]`` and the resolver
+(:mod:`alpha_resolvers`) maps the fraction to the underlying geometric
+quantity (slope, tangent point, eta). This keeps the optimizer's projection
+trivial (clip to ``[0, 1]``); ops are responsible for the geometric mapping.
+"""
+
 from __future__ import annotations
 
 import math

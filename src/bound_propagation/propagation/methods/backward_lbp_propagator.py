@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
@@ -26,7 +25,6 @@ from ..alpha_optimization import (
 from ..backward_lbp import create_default_backward_lbp_registry
 from ..backward_lbp.base import BackwardLBPStrategy, CrownBoundsProvider
 from ..backward_lbp.tape import BackwardTape
-from ..constants import CONSTANT_PRODUCING_TARGETS, evaluate_constant_producer
 from ..registry import TargetRegistry
 from .base import BoundPropagator
 
@@ -149,20 +147,3 @@ class BackwardLBPPropagator(BoundPropagator):
         if not isinstance(output_arg, fx.Node):
             raise TypeError(f"Expected output to be an fx.Node, got {type(output_arg)}")
         return tape.backward_from(output_arg, batch_ndim=batch_ndim)
-
-    @staticmethod
-    def _evaluate_concrete(node: fx.Node, tape: BackwardTape) -> torch.Tensor:
-        """Concretely evaluate a non-abstract node."""
-        target = node.target
-        if node.op == "call_function" and target in CONSTANT_PRODUCING_TARGETS:
-            return evaluate_constant_producer(node)
-
-        args, kwargs = tape.resolve_args(node)
-        if node.op == "call_function":
-            return target(*args, **kwargs)
-        if node.op == "call_method":
-            return getattr(args[0], target)(*args[1:], **kwargs)
-        if node.op == "call_module":
-            module = tape.get_module(target)
-            return module(*args, **kwargs)
-        raise ValueError(f"Cannot evaluate node op={node.op!r}")

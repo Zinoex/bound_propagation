@@ -8,7 +8,6 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-import torch
 import torch.fx as fx
 
 from ...bounds import LinearBounds
@@ -19,7 +18,6 @@ from ..alpha_optimization import (
     NullAlphaProvider,
     run_alpha_optimization,
 )
-from ..constants import CONSTANT_PRODUCING_TARGETS, evaluate_constant_producer
 from ..context import PropagationContext
 from ..forward_lbp import ForwardLBPStrategy, create_default_forward_lbp_registry
 from ..forward_lbp.utils import create_identity_bounds
@@ -144,20 +142,3 @@ class ForwardLBPPropagator(BoundPropagator):
         strategy = self.registry.get_strategy(node, self._graph_module)
         result = strategy.propagate_forward(node, ctx)
         ctx.store(node, result)
-
-    @staticmethod
-    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[LinearBounds]) -> torch.Tensor:
-        """Concretely evaluate a non-abstract node."""
-        target = node.target
-        if node.op == "call_function" and target in CONSTANT_PRODUCING_TARGETS:
-            return evaluate_constant_producer(node)
-
-        args, kwargs = ctx.resolve_args(node)
-        if node.op == "call_function":
-            return target(*args, **kwargs)  # ty:ignore[call-non-callable]
-        if node.op == "call_method":
-            return getattr(args[0], target)(*args[1:], **kwargs)  # ty:ignore[invalid-argument-type]
-        if node.op == "call_module":
-            module = ctx.get_module(target)  # ty:ignore[invalid-argument-type]
-            return module(*args, **kwargs)
-        raise ValueError(f"Cannot evaluate node op={node.op!r}")

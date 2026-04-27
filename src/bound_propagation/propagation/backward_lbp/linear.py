@@ -105,9 +105,23 @@ def _build_matmul_mccormick_params(
 ) -> PairedParams:
     """Build McCormick ``PairedParams`` for ``z = a @ b``.
 
-    Returns params with element-wise shape ``(*batch, M, K, N)``. See
+    Reduces the bilinear matmul to a per-element product ``z_{m,n} = Σ_k a_{m,k} b_{k,n}``
+    and applies the McCormick (1976) bilinear envelope to each ``(a_{m,k}, b_{k,n})``
+    pair. With ``a ∈ [l_a, u_a]`` and ``b ∈ [l_b, u_b]`` the four supporting hyperplanes
+    are::
+
+        a·b >= l_a·b + a·l_b - l_a·l_b   (envelope corner η = 0)
+        a·b >= u_a·b + a·u_b - u_a·u_b   (envelope corner η = 1)
+        a·b <= l_a·b + a·u_b - l_a·u_b
+        a·b <= u_a·b + a·l_b - u_a·l_b
+
+    Each side is a convex combination of two corners parameterized by an
+    α-knob ``η ∈ [0, 1]`` (resolved via :func:`resolve_matmul_etas`). The
+    resulting ``PairedParams`` carry slopes/biases at the full
+    ``(*batch, M, K, N)`` grid so the backward reshape lands on a consistent
+    3-D per-node feature space. See
     :func:`bound_propagation.propagation.forward_lbp.matmul.ForwardLBPMatmul._matmul_bounds_bounds`
-    for the derivation of the shape conventions.
+    for the matching forward-pass derivation.
     """
     try:
         batch_shape = torch.broadcast_shapes(

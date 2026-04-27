@@ -166,16 +166,3 @@ class CROWNIBPPropagator(BoundPropagator):
         if not isinstance(output_arg, fx.Node):
             raise TypeError(f"Expected output to be an fx.Node, got {type(output_arg)}")
         return tape.backward_from(output_arg, batch_ndim=batch_ndim)
-
-    @staticmethod
-    def _evaluate_concrete(node: fx.Node, ctx: PropagationContext[IntervalBounds]) -> torch.Tensor:
-        args, kwargs = ctx.resolve_args(node)
-        target = node.target
-        if node.op == "call_function":
-            return target(*args, **kwargs)  # ty:ignore[call-non-callable]
-        if node.op == "call_method":
-            return getattr(args[0], target)(*args[1:], **kwargs)  # ty:ignore[invalid-argument-type]
-        if node.op == "call_module":
-            module = ctx.get_module(target)  # ty:ignore[invalid-argument-type]
-            return module(*args, **kwargs)
-        raise ValueError(f"Cannot evaluate node op={node.op!r}")

@@ -6,9 +6,6 @@ small, ergonomic API. See :class:`BoundModel` for details.
 
 from __future__ import annotations
 
-import os
-import sys
-from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
@@ -16,6 +13,7 @@ from typing import Any, Literal
 import torch
 import torch.fx as fx
 
+from ._repr import format_bound_model
 from .bounds import AbstractBounds
 from .passes import MetadataPass, SimplificationPass
 from .propagation import (
@@ -41,57 +39,6 @@ Method = Literal["ibp", "forward_lbp", "backward_lbp", "forward_backward_lbp", "
 
 _REGISTRY_KEYS = ("ibp", "forward_lbp", "backward_lbp")
 
-_ANSI = {
-    "reset": "\x1b[0m",
-    "bold": "\x1b[1m",
-    "dim": "\x1b[2m",
-    "cyan": "\x1b[36m",
-    "green": "\x1b[32m",
-    "yellow": "\x1b[33m",
-    "magenta": "\x1b[35m",
-}
-
-
-@dataclass(frozen=True)
-class _Palette:
-    """ANSI color helpers for :meth:`BoundModel.__repr__`.
-
-    Colors are only applied when the output stream looks like a terminal
-    that wants color: ``FORCE_COLOR`` wins, ``NO_COLOR`` disables, otherwise
-    we defer to ``sys.stdout.isatty()``.
-    """
-
-    enabled: bool
-
-    @classmethod
-    def resolve(cls) -> _Palette:
-        if os.environ.get("NO_COLOR"):
-            return cls(enabled=False)
-        if os.environ.get("FORCE_COLOR"):
-            return cls(enabled=True)
-        return cls(enabled=bool(getattr(sys.stdout, "isatty", lambda: False)()))
-
-    def _wrap(self, text: str, *codes: str) -> str:
-        if not self.enabled:
-            return text
-        prefix = "".join(_ANSI[c] for c in codes)
-        return f"{prefix}{text}{_ANSI['reset']}"
-
-    def name(self, value: Any) -> str:
-        return self._wrap(str(value), "bold", "cyan")
-
-    def shape(self, value: Any) -> str:
-        return self._wrap(str(tuple(value)), "green")
-
-    def dtype(self, value: Any) -> str:
-        return self._wrap(str(value), "magenta")
-
-    def count(self, value: Any) -> str:
-        return self._wrap(str(value), "yellow")
-
-    def dim(self, value: Any) -> str:
-        return self._wrap(str(value), "dim")
-
 
 _METHOD_REGISTRY_KEYS: dict[Method, tuple[str, ...]] = {
     "ibp": ("ibp",),
@@ -102,18 +49,20 @@ _METHOD_REGISTRY_KEYS: dict[Method, tuple[str, ...]] = {
 }
 
 
-class _IntersectionRegistry(TargetRegistry):
+class _HybridIntersectionRegistry(TargetRegistry):
     """Registry whose support is the intersection of several registries.
 
-    Used during tracing for hybrid methods (e.g. ``crown_ibp``) so that any
-    op missing from *any* required registry is rejected up front, rather
-    than only at propagation time.
+    Used during tracing for hybrid methods (``crown_ibp``,
+    ``forward_backward_lbp``) where each operation must be supported by
+    *every* required registry. Rejects unsupported nodes at trace time
+    rather than at propagation time so the failure mode is consistent with
+    single-registry methods.
     """
 
     def __init__(self, registries: Sequence[TargetRegistry]) -> None:
         super().__init__()
         if not registries:
-            raise ValueError("_IntersectionRegistry requires at least one registry")
+            raise ValueError("_HybridIntersectionRegistry requires at least one registry")
         self._registries = tuple(registries)
 
     def supports_target(self, target: Callable[..., Any] | type) -> bool:
@@ -229,7 +178,7 @@ class BoundModel:
         tracer_registry: TargetRegistry = (
             registries[required_keys[0]]
             if len(required_keys) == 1
-            else _IntersectionRegistry([registries[k] for k in required_keys])
+            else _HybridIntersectionRegistry([registries[k] for k in required_keys])
         )
         tracer = BoundPropagationTracer(tracer_registry)
         graph_module = tracer.trace(model)
@@ -344,32 +293,7 @@ class BoundModel:
         return batch_ndims[0] if batch_ndims else 0
 
     def __repr__(self) -> str:
-        c = _Palette.resolve()
-        indent = "  "
-        lines = [f"{type(self).__name__}("]
-        lines.append(f"{indent}method:     {c.name(self._method)}")
-        registries = ", ".join(c.name(k) for k in self.required_registry_keys)
-        lines.append(f"{indent}registries: ({registries})")
-
-        lines.append(f"{indent}inputs:")
-        for idx, (shape, dtype) in enumerate(
-            zip(self._placeholder_feature_shapes, self._placeholder_dtypes, strict=True)
-        ):
-            lines.append(f"{indent * 2}[{idx}] shape={c.shape(shape)} dtype={c.dtype(dtype)}")
-
-        out_shape = c.shape(self._output_feature_shape) if self._output_feature_shape is not None else c.dim("?")
-        out_dtype = c.dtype(self._output_dtype) if self._output_dtype is not None else c.dim("?")
-        lines.append(f"{indent}output:     shape={out_shape} dtype={out_dtype}")
-
-        op_counts = Counter(node.op for node in self._graph_module.graph.nodes)
-        total = sum(op_counts.values())
-        lines.append(f"{indent}graph:      {c.count(total)} nodes")
-        width = max(len(op) for op in op_counts)
-        for op, count in sorted(op_counts.items(), key=lambda kv: (-kv[1], kv[0])):
-            lines.append(f"{indent * 2}{op.ljust(width)}  {c.count(count)}")
-
-        lines.append(")")
-        return "\n".join(lines)
+        return format_bound_model(self)
 
     @property
     def method(self) -> Method:

@@ -9,12 +9,19 @@ LBP, and between standalone LBP and alpha-CROWN-optimized LBP.
 
 Methods rendered (one figure):
 
-- ``ibp``                     — pure interval bound propagation (looses fast)
-- ``forward_lbp``             — forward-mode CROWN-style relaxation
-- ``backward_lbp``            — standard CROWN
-- ``forward_backward_lbp``    — forward intermediate bounds + backward final
-- ``crown_ibp``               — IBP intermediate bounds + backward final
-- ``backward_lbp`` + alpha    — alpha-CROWN with optimized slope knobs
+- ``ibp``                                 — pure interval bound propagation
+- ``forward_lbp``                         — forward-mode CROWN-style relaxation
+- ``backward_lbp``                        — standard CROWN
+- ``forward_backward_lbp``                — forward intermediate bounds + backward final
+- ``crown_ibp``                           — IBP intermediate bounds + backward final
+- ``forward_lbp`` + α                     — α-CROWN on the forward LBP pass
+- ``backward_lbp`` + α                    — α-CROWN on the standard backward pass
+- ``forward_backward_lbp`` + α            — α-CROWN on the backward final pass
+- ``crown_ibp`` + α                       — α-CROWN on the backward final pass
+
+Every LBP variant supports α-optimization on its backward path (only IBP
+doesn't). The four LBP+α variants tend to converge to nearly the same width
+on smooth functions; the un-optimized variants can differ by more.
 
 Usage
 -----
@@ -33,13 +40,13 @@ from torch import nn
 
 from bound_propagation import HyperRectangle
 from bound_propagation.propagation import AlphaOptimizationConfig
-from bound_propagation.visualization import plot_bounds
+from bound_propagation.visualization import BoundsGridEntry, plot_bounds_grid
 
 
 class ComplexComposition(nn.Module):
-    """The function under test, packaged as one ``nn.Module`` so the inner
-    MLP is fx-traceable as a submodule (closure-captured modules can't be
-    traced — ``fx`` resolves submodule paths by attribute lookup).
+    """Function under test, packaged as one ``nn.Module`` so the inner MLP is
+    fx-traceable as a submodule (closure-captured modules can't be traced —
+    ``fx`` resolves submodule paths by attribute lookup).
 
     Computation:
 
@@ -70,10 +77,26 @@ class ComplexComposition(nn.Module):
         return (a + b + c).reshape(1)
 
 
-def make_target_fn(seed: int = 0) -> ComplexComposition:
-    model = ComplexComposition(seed=seed)
-    model.eval()
-    return model
+def _build_methods(alpha_cfg: AlphaOptimizationConfig) -> tuple:
+    """Every supported propagation mode + α-CROWN variants for each LBP-based one.
+
+    α-optimization is available on the backward path of every LBP variant —
+    including the dual-registry methods (``forward_backward_lbp``, ``crown_ibp``),
+    which use backward LBP for the final pass. IBP has no α knobs.
+    """
+    base_lbp_methods = ("forward_lbp", "backward_lbp", "forward_backward_lbp", "crown_ibp")
+    return ("ibp", *base_lbp_methods, *((m, alpha_cfg) for m in base_lbp_methods))
+
+
+def _build_grid_entries(fn: nn.Module, region_lo: float, region_hi: float, n_regions: int) -> list[BoundsGridEntry]:
+    """Split ``[region_lo, region_hi]`` into ``n_regions`` equal sub-regions, one panel each."""
+    edges = torch.linspace(region_lo, region_hi, n_regions + 1)
+    entries: list[BoundsGridEntry] = []
+    for i in range(n_regions):
+        lo, hi = edges[i].reshape(1), edges[i + 1].reshape(1)
+        title = f"complex(x), x ∈ [{float(lo):.2f}, {float(hi):.2f}]"
+        entries.append(BoundsGridEntry(fn=fn, region=HyperRectangle(lower=lo, upper=hi), title=title))
+    return entries
 
 
 def main() -> None:
@@ -104,17 +127,7 @@ def main() -> None:
     parser.add_argument("--region-hi", type=float, default=math.pi / 2)
     args = parser.parse_args()
 
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError as exc:
-        raise SystemExit(
-            "This showcase requires matplotlib. Install with `pip install matplotlib` or `uv sync --group dev`."
-        ) from exc
-
-    fn = make_target_fn(seed=args.seed)
-
-    # Methods: every supported single- and dual-registry method, plus an alpha
-    # variant of the most informative one (backward_lbp).
+    fn = ComplexComposition(seed=args.seed).eval()
     alpha_cfg = AlphaOptimizationConfig(
         enabled=True,
         iterations=args.alpha_iters,
@@ -122,40 +135,22 @@ def main() -> None:
         loss="width",
         optimize_intermediate=False,
     )
-    methods = (
-        "ibp",
-        "forward_lbp",
-        "backward_lbp",
-        "forward_backward_lbp",
-        "crown_ibp",
-        ("backward_lbp", alpha_cfg),
+    methods = _build_methods(alpha_cfg)
+    entries = _build_grid_entries(fn, args.region_lo, args.region_hi, max(1, args.grid))
+
+    fig = plot_bounds_grid(
+        entries,
+        cols=2,
+        methods=methods,
+        num_samples=args.num_samples,
+        panel_size=(7.5, 5.0),
+        suptitle=(
+            f"Deeply-nonlinear composition — {len(methods)} methods compared "
+            f"(α: {args.alpha_iters} iters, lr={args.alpha_lr})"
+        ),
     )
-
-    # Build the (sub-)regions to render.
-    n_regions = max(1, args.grid)
-    edges = torch.linspace(args.region_lo, args.region_hi, n_regions + 1)
-    regions = [HyperRectangle(lower=edges[i].reshape(1), upper=edges[i + 1].reshape(1)) for i in range(n_regions)]
-
-    cols = min(n_regions, 2)
-    rows = (n_regions + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(7.5 * cols, 5.0 * rows), squeeze=False)
-    axes_flat = axes.flatten()
-
-    for region, ax in zip(regions, axes_flat, strict=False):
-        title = f"complex(x), x ∈ [{float(region.lower[0]):.2f}, {float(region.upper[0]):.2f}]"
-        plot_bounds(fn, region, methods=methods, num_samples=args.num_samples, title=title, ax=ax)
-
-    for ax in axes_flat[n_regions:]:
-        ax.axis("off")
-
-    fig.suptitle(
-        f"Deeply-nonlinear composition — {len(methods)} methods compared "
-        f"(α: {args.alpha_iters} iters, lr={args.alpha_lr})",
-        fontsize=12,
-    )
-    fig.tight_layout()
     fig.savefig(args.output, dpi=120)
-    print(f"Wrote {args.output} ({n_regions} panel(s), {len(methods)} methods each)")
+    print(f"Wrote {args.output} ({len(entries)} panel(s), {len(methods)} methods each)")
 
 
 if __name__ == "__main__":

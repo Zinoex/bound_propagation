@@ -3,9 +3,9 @@
 unsqueeze, squeeze) operations.
 
 Each entry takes a scalar (shape ``(1,)``) input, internally constructs the
-multi-dim tensor needed by the showcased op, and returns a scalar so the same
-``plot_bounds`` helper can render it. This keeps the visualization 1D while
-still exercising every reduction and shape strategy end-to-end.
+multi-dim tensor needed by the showcased op, and returns a scalar so the
+shared ``plot_bounds_grid`` helper can render it. This keeps the visualization
+1D while still exercising every reduction and shape strategy end-to-end.
 
 Usage
 -----
@@ -17,21 +17,19 @@ from __future__ import annotations
 
 import argparse
 import math
-from collections.abc import Callable
-from dataclasses import dataclass
 
 import torch
 
 from bound_propagation import HyperRectangle
-from bound_propagation.visualization import plot_bounds
+from bound_propagation.visualization import BoundsGridEntry, plot_bounds_grid
 
 
-@dataclass(frozen=True)
-class ShowcaseEntry:
-    title: str
-    fn: Callable[[torch.Tensor], torch.Tensor]
-    region_lower: float
-    region_upper: float
+def _hyperrect_1d(lo: float, hi: float) -> HyperRectangle:
+    return HyperRectangle(lower=torch.tensor([lo]), upper=torch.tensor([hi]))
+
+
+def _entry(title: str, fn, lo: float, hi: float) -> BoundsGridEntry:
+    return BoundsGridEntry(fn=fn, region=_hyperrect_1d(lo, hi), title=title)
 
 
 # ---------------------------------------------------------------------------
@@ -163,31 +161,31 @@ def _flatten_then_relu_then_sum(x: torch.Tensor) -> torch.Tensor:
 # Curated entries (region picked to keep ops well-defined)
 # ---------------------------------------------------------------------------
 
-ENTRIES: list[ShowcaseEntry] = [
+ENTRIES: list[BoundsGridEntry] = [
     # Reductions.
-    ShowcaseEntry("sum([x, x+1, x-1]) = 3x", _sum_three_offsets, -2.0, 2.0),
-    ShowcaseEntry("mean([x, 2x, 3x]) = 2x", _mean_three_scaled, -2.0, 2.0),
-    ShowcaseEntry("amax([x, -x, x²-1])", _amax_paths, -2.0, 2.0),
-    ShowcaseEntry("amin([sin x, cos x, x/2])", _amin_paths, -math.pi, math.pi),
-    ShowcaseEntry("sum([x², (x+1)²])", _sum_of_squares, -2.0, 2.0),
-    ShowcaseEntry("mean(relu([x-1, x, x+1]))", _mean_of_relus, -2.0, 2.0),
-    ShowcaseEntry("sum(sigmoid([x, x+2, x-2]))", _sum_of_sigmoids, -3.0, 3.0),
+    _entry("sum([x, x+1, x-1]) = 3x", _sum_three_offsets, -2.0, 2.0),
+    _entry("mean([x, 2x, 3x]) = 2x", _mean_three_scaled, -2.0, 2.0),
+    _entry("amax([x, -x, x²-1])", _amax_paths, -2.0, 2.0),
+    _entry("amin([sin x, cos x, x/2])", _amin_paths, -math.pi, math.pi),
+    _entry("sum([x², (x+1)²])", _sum_of_squares, -2.0, 2.0),
+    _entry("mean(relu([x-1, x, x+1]))", _mean_of_relus, -2.0, 2.0),
+    _entry("sum(sigmoid([x, x+2, x-2]))", _sum_of_sigmoids, -3.0, 3.0),
     # Shape ops.
-    ShowcaseEntry("flatten → sum = 6x", _flatten_then_sum, -1.5, 1.5),
-    ShowcaseEntry("reshape → sum = 4x", _reshape_then_sum, -1.5, 1.5),
-    ShowcaseEntry("view → sum = 6x", _view_then_sum, -1.5, 1.5),
-    ShowcaseEntry("cat → sum = 6x", _cat_then_sum, -1.5, 1.5),
-    ShowcaseEntry("amax(stack([x, sin x, cos x, -x/2]))", _stack_then_amax, -math.pi, math.pi),
-    ShowcaseEntry("transpose → sum = 6x", _transpose_then_sum, -1.5, 1.5),
-    ShowcaseEntry("permute → sum = 24x", _permute_then_sum, -0.5, 0.5),
-    ShowcaseEntry("select(stack, 0, 1) = 2x", _select_middle, -1.5, 1.5),
-    ShowcaseEntry("getitem(stack, 1) = sin x", _getitem_index, -math.pi, math.pi),
-    ShowcaseEntry("unsqueeze → sum = 3x", _unsqueeze_then_sum, -1.5, 1.5),
-    ShowcaseEntry("squeeze + relu = |x|", _squeeze_then_relu, -2.0, 2.0),
+    _entry("flatten → sum = 6x", _flatten_then_sum, -1.5, 1.5),
+    _entry("reshape → sum = 4x", _reshape_then_sum, -1.5, 1.5),
+    _entry("view → sum = 6x", _view_then_sum, -1.5, 1.5),
+    _entry("cat → sum = 6x", _cat_then_sum, -1.5, 1.5),
+    _entry("amax(stack([x, sin x, cos x, -x/2]))", _stack_then_amax, -math.pi, math.pi),
+    _entry("transpose → sum = 6x", _transpose_then_sum, -1.5, 1.5),
+    _entry("permute → sum = 24x", _permute_then_sum, -0.5, 0.5),
+    _entry("select(stack, 0, 1) = 2x", _select_middle, -1.5, 1.5),
+    _entry("getitem(stack, 1) = sin x", _getitem_index, -math.pi, math.pi),
+    _entry("unsqueeze → sum = 3x", _unsqueeze_then_sum, -1.5, 1.5),
+    _entry("squeeze + relu = |x|", _squeeze_then_relu, -2.0, 2.0),
     # Mixed.
-    ShowcaseEntry("mean([x, sin x, cos x])", _mean_of_path, -math.pi, math.pi),
-    ShowcaseEntry("amax(s) - amin(s)", _amax_minus_amin, -math.pi, math.pi),
-    ShowcaseEntry("relu([x-1, x, x+1]).sum()", _flatten_then_relu_then_sum, -2.0, 2.0),
+    _entry("mean([x, sin x, cos x])", _mean_of_path, -math.pi, math.pi),
+    _entry("amax(s) - amin(s)", _amax_minus_amin, -math.pi, math.pi),
+    _entry("relu([x-1, x, x+1]).sum()", _flatten_then_relu_then_sum, -2.0, 2.0),
 ]
 
 
@@ -203,32 +201,9 @@ def main() -> None:
     parser.add_argument("--num-samples", type=int, default=200, help="Samples per panel")
     args = parser.parse_args()
 
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError as exc:
-        raise SystemExit(
-            "This showcase requires matplotlib. Install with `pip install matplotlib` or `uv sync --group dev`."
-        ) from exc
-
-    n_entries = len(ENTRIES)
-    cols = args.cols
-    rows = (n_entries + cols - 1) // cols
-    fig, axes = plt.subplots(rows, cols, figsize=(5.5 * cols, 3.5 * rows))
-    axes_flat = axes.flatten() if hasattr(axes, "flatten") else [axes]
-
-    for entry, ax in zip(ENTRIES, axes_flat, strict=False):
-        region = HyperRectangle(
-            lower=torch.tensor([entry.region_lower]),
-            upper=torch.tensor([entry.region_upper]),
-        )
-        plot_bounds(entry.fn, region, num_samples=args.num_samples, title=entry.title, ax=ax)
-
-    for ax in axes_flat[n_entries:]:
-        ax.axis("off")
-
-    fig.tight_layout()
+    fig = plot_bounds_grid(ENTRIES, cols=args.cols, num_samples=args.num_samples)
     fig.savefig(args.output, dpi=120)
-    print(f"Wrote {args.output} ({n_entries} panels)")
+    print(f"Wrote {args.output} ({len(ENTRIES)} panels)")
 
 
 if __name__ == "__main__":

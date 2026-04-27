@@ -1,7 +1,33 @@
-"""
-Abstract base class for bound representations.
+"""Bound representations used during propagation.
 
-Defines the interface that all bound types must implement.
+This module defines the two concrete bound types — :class:`IntervalBounds`
+(``[lower, upper]`` boxes) and :class:`LinearBounds` (per-input affine
+relaxations ``W_l x + b_l <= y <= W_u x + b_u``) — and their shared
+:class:`AbstractBounds` interface.
+
+Invariants
+----------
+**Identity-by-``is`` for exactness.** :attr:`LinearCoefficient.is_exact` and
+:attr:`LinearBounds.is_exact` use Python ``is`` (not value equality) on the
+``lower`` / ``upper`` operators and biases. Construction sites that produce
+purely-affine bounds must reuse the **same Python object** for both sides:
+
+- Affine forward strategies in ``propagation/forward_lbp/linear.py``
+  (``ForwardLBPLinear``, ``ForwardLBPAdd``, ``ForwardLBPSub``, ``ForwardLBPNeg``).
+- Identity helpers in ``propagation/forward_lbp/utils.py``
+  (``create_identity_bounds`` ties ``lower`` and ``upper`` to the same operator).
+- Backward shape Identity branches in ``propagation/backward_lbp/shape.py``
+  (the ``(IdentityOperator, IdentityOperator)`` overloads share one operator).
+
+Strategies use ``is_exact`` as a fast path to skip the upper-side computation
+when both the accumulated bound and the local relaxation are exact (sigmoid,
+tanh, etc. fall back to the full two-sided path).
+
+**Region-shape vs. feature-shape.** A region's tensor shape may include leading
+batch dimensions absorbed via :meth:`LinearBounds._split_region_shape`; the
+trailing axes are the actual input feature shape that the coefficient operator
+maps from. See :mod:`linear_operators` for the matching shape conventions on
+:class:`LinearOperator`.
 """
 
 from __future__ import annotations
@@ -445,14 +471,7 @@ class LinearBounds(AbstractBounds):
                 )
             }
 
-        if batch_ndim < 0 or batch_ndim > bias_lower.ndim:
-            raise ValueError(
-                f"batch_ndim must be in [0, {bias_lower.ndim}] for bias shape {tuple(bias_lower.shape)}, "
-                f"got {batch_ndim}"
-            )
-
-        self._check_shapes_dict(normalized_coefficients, bias_lower, bias_upper)
-        self._check_gap_dict(normalized_coefficients, bias_lower, bias_upper)
+        self._validate(normalized_coefficients, bias_lower, bias_upper, batch_ndim)
 
         self._bias_lower = bias_lower
         self._bias_upper = bias_upper
@@ -576,12 +595,34 @@ class LinearBounds(AbstractBounds):
         if len(input_ids) != len(regions):
             raise ValueError(f"input_ids must have the same length as regions: {len(input_ids)} vs {len(regions)}")
 
-    def _check_shapes_dict(
+    def _validate(
         self,
         coefficients: dict[int, LinearCoefficient],
         bias_lower: torch.Tensor,
         bias_upper: torch.Tensor,
+        batch_ndim: int,
     ) -> None:
+        """Run all post-normalization validation in one place.
+
+        Three checks, in order:
+
+        1. ``batch_ndim`` is in ``[0, bias_lower.ndim]``.
+        2. Bias shapes match; each coefficient's output shape broadcasts with
+           the bias and its input axes match the region's trailing axes.
+        3. **Soundness**: ``upper(x) >= lower(x)`` everywhere on the regions,
+           computed as ``min_x (b_u - b_l + Σ_i (A_i^U - A_i^L) x_i)``.
+
+        Exact coefficients (``lower is upper``) contribute zero to the gap and
+        are skipped. The ``1e-6`` slack on the gap absorbs accumulated float
+        error from per-input ``concretize_min`` calls; it is not a tolerance
+        for user-supplied data.
+        """
+        if batch_ndim < 0 or batch_ndim > bias_lower.ndim:
+            raise ValueError(
+                f"batch_ndim must be in [0, {bias_lower.ndim}] for bias shape {tuple(bias_lower.shape)}, "
+                f"got {batch_ndim}"
+            )
+
         if bias_lower.shape != bias_upper.shape:
             raise ValueError(
                 f"bias_lower and bias_upper must have the same shape: {bias_lower.shape} vs {bias_upper.shape}"
@@ -610,14 +651,8 @@ class LinearBounds(AbstractBounds):
                         f"{tuple(bias_lower.shape)}), got {tuple(op.input_shape)}"
                     )
 
-    def _check_gap_dict(
-        self,
-        coefficients: dict[int, LinearCoefficient],
-        bias_lower: torch.Tensor,
-        bias_upper: torch.Tensor,
-    ) -> None:
+        # Soundness check: min over the region of (upper(x) - lower(x)) must be >= -tol.
         min_gap = bias_upper - bias_lower
-
         for coeff in coefficients.values():
             if coeff.is_exact:
                 continue
@@ -632,12 +667,32 @@ class LinearBounds(AbstractBounds):
     def combine_linear_terms(
         components: list[tuple[LinearBounds, Literal["lower", "upper"], float]],
     ) -> tuple[list[SimpleRegion], list[LinearOperator], list[int]]:
-        """
-        Merge affine contributions from multiple ``LinearBounds`` keyed by ``input_id``.
+        """Merge affine contributions from multiple ``LinearBounds`` keyed by ``input_id``.
 
-        Returns a triple of ``(regions, operators, input_ids)`` in
-        first-encounter order. The operators carry the accumulated coefficient
-        structure (dense by default).
+        Implements per-input linearity:
+
+        .. math::
+
+            \\sum_k s_k \\cdot (W^{(k)}_i x_i + b^{(k)}_i)
+                = \\Big(\\sum_k s_k W^{(k)}_i\\Big) x_i + \\sum_k s_k b^{(k)}_i
+
+        Each component is ``(bounds, side, scale)`` where ``side`` selects
+        ``A_i^L`` or ``A_i^U`` of every coefficient and ``scale ∈ {-1, +1, ...}``
+        applies a sign / scalar before accumulation. Bias terms are merged
+        separately by callers (this method handles only the linear part).
+
+        Regions are merged by **first-encounter order** (the order in which
+        each ``input_id`` first appears across ``components``). Two
+        contributions for the same ``input_id`` must agree on region shape;
+        the regions themselves are taken from the first encounter.
+
+        Returns
+        -------
+        tuple
+            ``(regions, operators, input_ids)`` parallel lists, ordered by
+            first encounter. Operators preserve structured types where
+            ``add``/``neg``/``scale`` overrides allow it, otherwise fall back
+            to dense.
         """
         merged: dict[int, tuple[SimpleRegion, LinearOperator]] = {}
 
@@ -737,7 +792,7 @@ class LinearBounds(AbstractBounds):
 
     @property
     def linear_lower(self) -> torch.Tensor | None:
-        """Get linear coefficients for the lower bound (dense) in the single-input case."""
+        """Single-input convenience: ``linear_lowers[0]`` or ``None`` if empty."""
         if not self._coefficients:
             return None
         if len(self._coefficients) != 1:
@@ -753,7 +808,7 @@ class LinearBounds(AbstractBounds):
 
     @property
     def linear_lower_op(self) -> LinearOperator | None:
-        """Get lower-bound coefficient ``LinearOperator`` in the single-input case."""
+        """Single-input convenience: ``linear_lowers_op[0]`` or ``None`` if empty."""
         if not self._coefficients:
             return None
         if len(self._coefficients) != 1:
@@ -779,7 +834,7 @@ class LinearBounds(AbstractBounds):
 
     @property
     def linear_upper(self) -> torch.Tensor | None:
-        """Get linear coefficients for the upper bound (dense) in the single-input case."""
+        """Single-input convenience: ``linear_uppers[0]`` or ``None`` if empty."""
         if not self._coefficients:
             return None
         if len(self._coefficients) != 1:
@@ -795,7 +850,7 @@ class LinearBounds(AbstractBounds):
 
     @property
     def linear_upper_op(self) -> LinearOperator | None:
-        """Get upper-bound coefficient ``LinearOperator`` in the single-input case."""
+        """Single-input convenience: ``linear_uppers_op[0]`` or ``None`` if empty."""
         if not self._coefficients:
             return None
         if len(self._coefficients) != 1:

@@ -5,7 +5,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from ..registry import TargetRegistry
-from .base import BackwardLBPStrategy
+from .base import (
+    BackwardLBPStrategy,
+    CrownBoundsProvider,
+    ForwardLBPBoundsProvider,
+    IntermediateBoundsProvider,
+    PrecomputedBoundsProvider,
+)
 from .elementwise import (
     BackwardLBPAbs,
     BackwardLBPClamp,
@@ -51,6 +57,10 @@ from .shape import (
 
 __all__ = [
     "BackwardLBPStrategy",
+    "CrownBoundsProvider",
+    "ForwardLBPBoundsProvider",
+    "IntermediateBoundsProvider",
+    "PrecomputedBoundsProvider",
     "create_default_backward_lbp_registry",
 ]
 
