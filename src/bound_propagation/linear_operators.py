@@ -48,6 +48,7 @@ from collections.abc import Sequence
 import torch
 from plum import dispatch
 
+from .errors import DimensionMismatchError
 from .regions import HyperRectangle, SimpleRegion
 
 
@@ -259,14 +260,14 @@ def _add_with_zero(non_zero: LinearOperator, zero: LinearOperator) -> LinearOper
     back to dense so the wider shape is realized.
     """
     if non_zero.input_shape != zero.input_shape:
-        raise ValueError(
+        raise DimensionMismatchError(
             f"Cannot add operators with different input shapes: {tuple(non_zero.input_shape)} vs "
             f"{tuple(zero.input_shape)}"
         )
     try:
         merged = torch.broadcast_shapes(non_zero.output_shape, zero.output_shape)
     except RuntimeError as exc:
-        raise ValueError(
+        raise DimensionMismatchError(
             f"Cannot add operators with incompatible output shapes: {tuple(non_zero.output_shape)} vs "
             f"{tuple(zero.output_shape)}"
         ) from exc
@@ -391,14 +392,14 @@ class DenseOperator(LinearOperator):
         if isinstance(other, ZeroOperator):
             return _add_with_zero(self, other)
         if self.input_shape != other.input_shape:
-            raise ValueError(
+            raise DimensionMismatchError(
                 f"Cannot add operators with different input shapes: {tuple(self.input_shape)} vs "
                 f"{tuple(other.input_shape)}"
             )
         try:
             merged_output_shape = torch.broadcast_shapes(self.output_shape, other.output_shape)
         except RuntimeError as exc:
-            raise ValueError(
+            raise DimensionMismatchError(
                 f"Cannot add operators with incompatible output shapes: {tuple(self.output_shape)} vs "
                 f"{tuple(other.output_shape)}"
             ) from exc
@@ -942,14 +943,14 @@ class ZeroOperator(LinearOperator):
         if isinstance(other, ZeroOperator):
             # Zero + Zero = Zero, taking the broadcast output shape.
             if self._input_shape != other.input_shape:
-                raise ValueError(
+                raise DimensionMismatchError(
                     f"Cannot add operators with different input shapes: {tuple(self._input_shape)} vs "
                     f"{tuple(other.input_shape)}"
                 )
             try:
                 merged = torch.broadcast_shapes(self._output_shape, other.output_shape)
             except RuntimeError as exc:
-                raise ValueError(
+                raise DimensionMismatchError(
                     f"Cannot add operators with incompatible output shapes: {tuple(self._output_shape)} vs "
                     f"{tuple(other.output_shape)}"
                 ) from exc
@@ -1147,7 +1148,7 @@ class ReshapeOperator(LinearOperator):
 
     def apply(self, x: torch.Tensor) -> torch.Tensor:
         inner_result = self._inner.apply(x)
-        return self._reshape_to_output(inner_result)
+        return self._view_to_output(inner_result)
 
     def apply_transpose(self, y: torch.Tensor) -> torch.Tensor:
         out_ndim = len(self._output_shape)
@@ -1162,27 +1163,28 @@ class ReshapeOperator(LinearOperator):
         return self._inner.apply_transpose(reshaped)
 
     def concretize_min(self, region: SimpleRegion) -> torch.Tensor:
-        try:
-            return self._reshape_to_output(self._inner.concretize_min(region))
-        except RuntimeError:
-            return self.to_dense().concretize_min(region)
+        return self._view_to_output(self._inner.concretize_min(region))
 
     def concretize_max(self, region: SimpleRegion) -> torch.Tensor:
-        try:
-            return self._reshape_to_output(self._inner.concretize_max(region))
-        except RuntimeError:
-            return self.to_dense().concretize_max(region)
+        return self._view_to_output(self._inner.concretize_max(region))
 
-    def _reshape_to_output(self, tensor: torch.Tensor) -> torch.Tensor:
-        """Reshape the inner result (which may have batch-broadcast leading dims
-        or placeholder-replacement in the middle) to this operator's output_shape.
-        Preserves *extra* leading dims that don't fit into ``inner.output_shape``.
+    def _view_to_output(self, tensor: torch.Tensor) -> torch.Tensor:
+        """Reshape (via view) the inner result (which may have batch-broadcast
+        leading dims or placeholder-replacement in the middle) to this operator's
+        output_shape. Preserves *extra* leading dims that don't fit into
+        ``inner.output_shape``.
         """
-        inner_ndim = len(self._inner.output_shape)
-        if tensor.ndim > inner_ndim:
-            leading = tuple(tensor.shape[: tensor.ndim - inner_ndim])
-            return tensor.reshape((*leading, *self._output_shape))
-        return tensor.reshape(self._output_shape)
+        try:
+            inner_ndim = len(self._inner.output_shape)
+            if tensor.ndim > inner_ndim:
+                leading = tuple(tensor.shape[: tensor.ndim - inner_ndim])
+                return tensor.view((*leading, *self._output_shape))
+            return tensor.view(self._output_shape)
+        except RuntimeError as exc:
+            raise DimensionMismatchError(
+                f"ReshapeOperator: cannot view inner output shape {tuple(self._inner.output_shape)} "
+                f"as {tuple(self._output_shape)}; tensor shape was {tuple(tensor.shape)}"
+            ) from exc
 
     # ------------------------------------------------------------------
     # Algebra

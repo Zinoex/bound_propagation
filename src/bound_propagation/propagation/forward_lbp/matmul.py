@@ -6,6 +6,7 @@ import torch
 import torch.fx as fx
 
 from ...bounds import IntervalBounds, LinearBounds
+from ...errors import DimensionMismatchError
 from ...regions import SimpleRegion
 from ..linear_relaxations.alpha_resolvers import resolve_matmul_etas
 from ..linear_relaxations.pairwise import compute_mul_relaxation
@@ -104,10 +105,10 @@ class ForwardLBPMatmul(ForwardLBPStrategy):
     def _matmul_right_constant(self, bounds: LinearBounds, weight: torch.Tensor) -> LinearBounds:
         """z = x @ W where x has linear bounds."""
         if weight.ndim != 2:
-            raise ValueError(f"matmul right operand must be 2D, got shape {tuple(weight.shape)}")
+            raise DimensionMismatchError(f"matmul right operand must be 2D, got shape {tuple(weight.shape)}")
 
         if bounds.bias_lower.shape[-1] != weight.shape[0]:
-            raise ValueError(
+            raise DimensionMismatchError(
                 "matmul dimension mismatch: "
                 f"bounds last dim {bounds.bias_lower.shape[-1]} vs "
                 f"weight first dim {weight.shape[0]}"
@@ -186,7 +187,7 @@ class ForwardLBPMatmul(ForwardLBPStrategy):
                 bounds_b.lower.shape[:-2],
             )
         except RuntimeError as error:
-            raise ValueError(
+            raise DimensionMismatchError(
                 "matmul requires broadcastable batch dimensions, "
                 f"got a.shape={tuple(bounds_a.lower.shape)} and b.shape={tuple(bounds_b.lower.shape)}"
             ) from error
@@ -197,7 +198,7 @@ class ForwardLBPMatmul(ForwardLBPStrategy):
         n_dim = bounds_b.lower.shape[-1]
 
         if k_a != k_b:
-            raise ValueError(f"matmul reduction dims mismatch: a.shape[-1]={k_a} vs b.shape[-2]={k_b}")
+            raise DimensionMismatchError(f"matmul reduction dims mismatch: a.shape[-1]={k_a} vs b.shape[-2]={k_b}")
 
         # Broadcast the concrete bounds to the common batch shape, then shape
         # them as (*batch, M, K, 1) and (*batch, 1, K, N) so element-wise
@@ -332,10 +333,10 @@ class ForwardLBPMatmul(ForwardLBPStrategy):
     def _matmul_left_constant(self, weight: torch.Tensor, bounds: LinearBounds) -> LinearBounds:
         """z = W @ x where x has linear bounds."""
         if weight.ndim != 2:
-            raise ValueError(f"matmul left operand must be 2D, got shape {tuple(weight.shape)}")
+            raise DimensionMismatchError(f"matmul left operand must be 2D, got shape {tuple(weight.shape)}")
 
         if bounds.bias_lower.shape[-1] != weight.shape[1]:
-            raise ValueError(
+            raise DimensionMismatchError(
                 "matmul dimension mismatch: "
                 f"weight second dim {weight.shape[1]} vs "
                 f"bounds last dim {bounds.bias_lower.shape[-1]}"

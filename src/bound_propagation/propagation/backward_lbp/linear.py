@@ -11,6 +11,7 @@ from beartype.typing import final
 from plum import dispatch
 
 from ...bounds import IntervalBounds
+from ...errors import DimensionMismatchError
 from ...linear_operators import DenseOperator, IdentityOperator, LinearOperator
 from ..linear_relaxations.alpha_resolvers import resolve_matmul_etas
 from ..linear_relaxations.pairwise import PairedParams, compute_mul_relaxation
@@ -129,7 +130,7 @@ def _build_matmul_mccormick_params(
             bounds_b.lower.shape[:-2],
         )
     except RuntimeError as error:
-        raise ValueError(
+        raise DimensionMismatchError(
             "matmul requires broadcastable batch dimensions, "
             f"got a.shape={tuple(bounds_a.lower.shape)} and b.shape={tuple(bounds_b.lower.shape)}"
         ) from error
@@ -140,7 +141,7 @@ def _build_matmul_mccormick_params(
     n_dim = bounds_b.lower.shape[-1]
 
     if k_a != k_b:
-        raise ValueError(f"matmul reduction dims mismatch: a.shape[-1]={k_a} vs b.shape[-2]={k_b}")
+        raise DimensionMismatchError(f"matmul reduction dims mismatch: a.shape[-1]={k_a} vs b.shape[-2]={k_b}")
 
     la = bounds_a.lower.expand(*batch_shape, m_dim, k_a).unsqueeze(-1)
     ua = bounds_a.upper.expand(*batch_shape, m_dim, k_a).unsqueeze(-1)

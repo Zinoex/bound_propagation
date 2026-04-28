@@ -17,6 +17,11 @@ import torch.fx as fx
 from .constants import CONSTANT_PRODUCING_TARGETS
 from .strategy import BoundingStrategy
 
+
+class UnsupportedTargetError(ValueError):
+    """Raised when an fx node's target cannot be normalized to a dispatch key."""
+
+
 # ---------------------------------------------------------------------------
 # Method-name → canonical callable mapping (for call_method nodes)
 # ---------------------------------------------------------------------------
@@ -68,7 +73,7 @@ def normalize_target(node: fx.Node, graph_module: fx.GraphModule) -> Callable[..
         For ``call_module``: the *type* of the sub-module (e.g. ``nn.Linear``).
 
     Raises:
-        ValueError: If the target cannot be normalized.
+        UnsupportedTargetError: If the target cannot be normalized.
     """
     if node.op == "call_function":
         return node.target  # ty:ignore[invalid-return-type]
@@ -81,7 +86,7 @@ def normalize_target(node: fx.Node, graph_module: fx.GraphModule) -> Callable[..
         name: str = node.target  # ty:ignore[invalid-assignment]
         canonical = _METHOD_MAP.get(name)
         if canonical is None:
-            raise ValueError(f"Unsupported call_method target: {name!r}")
+            raise UnsupportedTargetError(f"Unsupported call_method target: {name!r}")
         return canonical
 
     if node.op == "call_module":
@@ -89,7 +94,7 @@ def normalize_target(node: fx.Node, graph_module: fx.GraphModule) -> Callable[..
         module = graph_module.get_submodule(target_str)
         return type(module)
 
-    raise ValueError(f"Cannot normalize target for node op={node.op!r}")
+    raise UnsupportedTargetError(f"Cannot normalize target for node op={node.op!r}")
 
 
 T = TypeVar("T", bound=BoundingStrategy)
@@ -165,7 +170,7 @@ class TargetRegistry(Generic[T]):
         """
         try:
             target = normalize_target(node, graph_module)
-        except ValueError:
+        except UnsupportedTargetError:
             return False
         if target in self._strategies:
             return True

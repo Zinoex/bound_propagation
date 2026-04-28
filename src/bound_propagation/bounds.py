@@ -40,6 +40,7 @@ from typing import Literal
 import torch
 from plum import dispatch
 
+from .errors import DimensionMismatchError
 from .linear_operators import DenseOperator, LinearOperator
 from .regions import AbstractRegion, SimpleRegion
 
@@ -73,7 +74,7 @@ class LinearCoefficient:
 
     def __post_init__(self) -> None:
         if self.lower.input_shape != self.upper.input_shape:
-            raise ValueError(
+            raise DimensionMismatchError(
                 f"LinearCoefficient: lower and upper input shapes must match: "
                 f"{tuple(self.lower.input_shape)} vs {tuple(self.upper.input_shape)}"
             )
@@ -81,7 +82,7 @@ class LinearCoefficient:
             try:
                 torch.broadcast_shapes(self.lower.output_shape, self.upper.output_shape)
             except RuntimeError as exc:
-                raise ValueError(
+                raise DimensionMismatchError(
                     f"LinearCoefficient: lower and upper output shapes must broadcast: "
                     f"{tuple(self.lower.output_shape)} vs {tuple(self.upper.output_shape)}"
                 ) from exc
@@ -624,7 +625,7 @@ class LinearBounds(AbstractBounds):
             )
 
         if bias_lower.shape != bias_upper.shape:
-            raise ValueError(
+            raise DimensionMismatchError(
                 f"bias_lower and bias_upper must have the same shape: {bias_lower.shape} vs {bias_upper.shape}"
             )
 
@@ -637,7 +638,7 @@ class LinearBounds(AbstractBounds):
                 try:
                     torch.broadcast_shapes(op.output_shape, bias_lower.shape)
                 except RuntimeError as exc:
-                    raise ValueError(
+                    raise DimensionMismatchError(
                         f"coefficient[{input_id}].{name} output shape must broadcast with bias shape: "
                         f"{tuple(op.output_shape)} vs {tuple(bias_lower.shape)}"
                     ) from exc
@@ -645,7 +646,7 @@ class LinearBounds(AbstractBounds):
                 region_shape = torch.Size(coeff.region.shape)
                 _, input_shape = self._split_region_shape(region_shape, bias_lower.shape, op.input_shape)
                 if op.input_shape != input_shape:
-                    raise ValueError(
+                    raise DimensionMismatchError(
                         f"coefficient[{input_id}].{name} input axes must match input shape "
                         f"{tuple(input_shape)} (derived from region shape {tuple(region_shape)} and bias shape "
                         f"{tuple(bias_lower.shape)}), got {tuple(op.input_shape)}"

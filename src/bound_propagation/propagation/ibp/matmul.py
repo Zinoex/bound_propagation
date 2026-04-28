@@ -6,6 +6,7 @@ import torch
 import torch.fx as fx
 
 from ...bounds import IntervalBounds
+from ...errors import DimensionMismatchError
 from .base import ForwardIBPStrategy
 
 if TYPE_CHECKING:
@@ -18,7 +19,7 @@ def _normalize_matmul_operands(
 ) -> tuple[torch.Tensor, torch.Tensor, bool, bool]:
     """Normalize operands to matrix form while preserving torch.matmul semantics."""
     if left.ndim == 0 or right.ndim == 0:
-        raise ValueError(
+        raise DimensionMismatchError(
             "matmul requires tensor inputs with at least 1 dimension, "
             f"got left.ndim={left.ndim} and right.ndim={right.ndim}"
         )
@@ -32,7 +33,7 @@ def _normalize_matmul_operands(
         right = right.unsqueeze(-1)
 
     if left.shape[-1] != right.shape[-2]:
-        raise ValueError(
+        raise DimensionMismatchError(
             "matmul requires compatible reduction dimensions, "
             f"got left.shape={tuple(left.shape)} and right.shape={tuple(right.shape)}"
         )
@@ -40,7 +41,7 @@ def _normalize_matmul_operands(
     try:
         batch_shape = torch.broadcast_shapes(left.shape[:-2], right.shape[:-2])
     except RuntimeError as error:
-        raise ValueError(
+        raise DimensionMismatchError(
             "matmul requires broadcastable batch dimensions, "
             f"got left.shape={tuple(left.shape)} and right.shape={tuple(right.shape)}"
         ) from error

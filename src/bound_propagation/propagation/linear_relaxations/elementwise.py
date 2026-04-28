@@ -45,6 +45,7 @@ from typing import final, overload
 import torch
 
 from ...bounds import IntervalBounds
+from ...errors import DimensionMismatchError
 
 
 @final
@@ -859,7 +860,7 @@ def compute_constant_div_relaxation(
         constant_tensor = torch.broadcast_to(constant_tensor, bounds.lower.shape)
     except RuntimeError as error:
         constant_shape = tuple(constant_tensor.shape)
-        raise ValueError(
+        raise DimensionMismatchError(
             f"constant must be broadcastable to denominator bounds shape {bounds.lower.shape}, "
             f"got constant shape {constant_shape}"
         ) from error

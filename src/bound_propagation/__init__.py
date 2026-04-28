@@ -1,6 +1,7 @@
 """bound_propagation: neural network bound propagation via torch.fx."""
 
 from .bounds import AbstractBounds, LinearCoefficient
+from .errors import DimensionMismatchError
 from .facade import BoundModel, Method, RegistryExtension
 from .linear_operators import (
     DenseOperator,
@@ -30,6 +31,7 @@ __all__ = [
     "BoundPropagator",
     "CROWNIBPPropagator",
     "DenseOperator",
+    "DimensionMismatchError",
     "ForwardBackwardLBPPropagator",
     "ForwardLBPPropagator",
     "HyperRectangle",
