@@ -1169,21 +1169,33 @@ class ReshapeOperator(LinearOperator):
         return self._view_to_output(self._inner.concretize_max(region))
 
     def _view_to_output(self, tensor: torch.Tensor) -> torch.Tensor:
-        """Reshape (via view) the inner result (which may have batch-broadcast
-        leading dims or placeholder-replacement in the middle) to this operator's
-        output_shape. Preserves *extra* leading dims that don't fit into
-        ``inner.output_shape``.
+        """Reshape (via view) the inner result to this operator's output_shape.
+
+        Leading axes where both ``inner.output_shape`` and ``self._output_shape``
+        are size 1 are treated as batch placeholders: the corresponding leading
+        axes of ``tensor`` (which may have replaced those placeholders with real
+        batch sizes) pass through, and only the trailing feature axes are
+        reshaped to ``output_shape``'s feature tail.
         """
+        inner_shape = self._inner.output_shape
+        out_shape = self._output_shape
+
+        n_placeholder = 0
+        for inner_dim, out_dim in zip(inner_shape, out_shape, strict=False):
+            if inner_dim == 1 and out_dim == 1:
+                n_placeholder += 1
+            else:
+                break
+
+        inner_feature_ndim = len(inner_shape) - n_placeholder
+        batch_dims = tuple(tensor.shape[: tensor.ndim - inner_feature_ndim])
+
         try:
-            inner_ndim = len(self._inner.output_shape)
-            if tensor.ndim > inner_ndim:
-                leading = tuple(tensor.shape[: tensor.ndim - inner_ndim])
-                return tensor.view((*leading, *self._output_shape))
-            return tensor.view(self._output_shape)
+            return tensor.view((*batch_dims, *out_shape[n_placeholder:]))
         except RuntimeError as exc:
             raise DimensionMismatchError(
-                f"ReshapeOperator: cannot view inner output shape {tuple(self._inner.output_shape)} "
-                f"as {tuple(self._output_shape)}; tensor shape was {tuple(tensor.shape)}"
+                f"ReshapeOperator: cannot view inner output shape {tuple(inner_shape)} "
+                f"as {tuple(out_shape)}; tensor shape was {tuple(tensor.shape)}"
             ) from exc
 
     # ------------------------------------------------------------------
