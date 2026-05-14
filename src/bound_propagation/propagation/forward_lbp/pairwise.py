@@ -62,16 +62,28 @@ class PairedForwardRelaxation:
         """
         Compose z = sum_i(alpha_i * x_i) + beta with linear bounds on each x_i.
 
-        Linear terms have shape (*batch_dims, *output_dims, *input_dims).
-        Contributions from all inputs are merged by input_id so that shared regions
-        are accumulated correctly.
-        """
+        Linear terms have shape ``(*output_bias_shape, *input_axes)``. When the
+        pairwise op broadcasts (the input bias prefixes don't match the output
+        bias prefix), the per-input linear contributions are aligned by:
 
-        def broadcast(alpha: torch.Tensor, linear: torch.Tensor) -> torch.Tensor:
-            # alpha: (*batch_dims, *output_dims)
-            # linear: (*batch_dims, *output_dims, *input_dims)
-            extra = linear.ndim - alpha.ndim
-            return alpha.reshape(alpha.shape + (1,) * extra)
+        * appending ``len(input_axes)`` trailing size-1 dims to alpha so it
+          slots in before the input axes, and
+        * prepending leading size-1 dims to ``wl`` / ``wu`` so its bias prefix
+          broadcasts against the (larger) output bias prefix.
+
+        Contributions are merged by input_id so shared regions accumulate.
+        """
+        output_ndim = self.params.bias_lower.ndim
+
+        def contribute(
+            alpha: torch.Tensor,
+            linear: torch.Tensor,
+            input_bias_ndim: int,
+        ) -> tuple[torch.Tensor, torch.Tensor]:
+            n_input_axes = linear.ndim - input_bias_ndim
+            alpha_padded = alpha.reshape(tuple(alpha.shape) + (1,) * n_input_axes)
+            linear_padded = linear.reshape((1,) * (output_ndim - input_bias_ndim) + tuple(linear.shape))
+            return alpha_padded, linear_padded
 
         # Merge linear contributions by input_id (handles shared regions)
         merged_lower: dict[int, tuple[SimpleRegion, torch.Tensor]] = {}
@@ -92,6 +104,7 @@ class PairedForwardRelaxation:
         bias_upper = bias_upper + au_pos * input_bounds_a.bias_upper + au_neg * input_bounds_a.bias_lower
 
         # Linear contributions from input a
+        input_bias_ndim_a = input_bounds_a.bias_lower.ndim
         for iid, region, wl, wu in zip(
             input_bounds_a.input_ids,
             input_bounds_a.regions,
@@ -99,8 +112,12 @@ class PairedForwardRelaxation:
             input_bounds_a.linear_uppers,
             strict=True,
         ):
-            contrib_lower = broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
-            contrib_upper = broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
+            al_pos_b, wl_b = contribute(al_pos, wl, input_bias_ndim_a)
+            al_neg_b, wu_b = contribute(al_neg, wu, input_bias_ndim_a)
+            au_pos_b, _ = contribute(au_pos, wu, input_bias_ndim_a)
+            au_neg_b, _ = contribute(au_neg, wl, input_bias_ndim_a)
+            contrib_lower = al_pos_b * wl_b + al_neg_b * wu_b
+            contrib_upper = au_pos_b * wu_b + au_neg_b * wl_b
 
             if iid in merged_lower:
                 merged_lower[iid] = (merged_lower[iid][0], merged_lower[iid][1] + contrib_lower)
@@ -121,6 +138,7 @@ class PairedForwardRelaxation:
         bias_upper = bias_upper + au_pos * input_bounds_b.bias_upper + au_neg * input_bounds_b.bias_lower
 
         # Linear contributions from input b
+        input_bias_ndim_b = input_bounds_b.bias_lower.ndim
         for iid, region, wl, wu in zip(
             input_bounds_b.input_ids,
             input_bounds_b.regions,
@@ -128,8 +146,12 @@ class PairedForwardRelaxation:
             input_bounds_b.linear_uppers,
             strict=True,
         ):
-            contrib_lower = broadcast(al_pos, wl) * wl + broadcast(al_neg, wu) * wu
-            contrib_upper = broadcast(au_pos, wu) * wu + broadcast(au_neg, wl) * wl
+            al_pos_b, wl_b = contribute(al_pos, wl, input_bias_ndim_b)
+            al_neg_b, wu_b = contribute(al_neg, wu, input_bias_ndim_b)
+            au_pos_b, _ = contribute(au_pos, wu, input_bias_ndim_b)
+            au_neg_b, _ = contribute(au_neg, wl, input_bias_ndim_b)
+            contrib_lower = al_pos_b * wl_b + al_neg_b * wu_b
+            contrib_upper = au_pos_b * wu_b + au_neg_b * wl_b
 
             if iid in merged_lower:
                 merged_lower[iid] = (merged_lower[iid][0], merged_lower[iid][1] + contrib_lower)
@@ -322,37 +344,26 @@ class ForwardLBPMul(ForwardLBPStrategy):
         ).expand_as(bounds.bias_lower)
         positive_mask = constant_tensor >= 0
 
+        # Building the broadcast shape as a single tuple keeps the call
+        # well-formed when both shapes are empty (0-D input).
+        def _broadcast(t: torch.Tensor, target_ndim: int) -> torch.Tensor:
+            return t.reshape(tuple(t.shape) + (1,) * (target_ndim - t.ndim))
+
         linear_lower = [
-            torch.where(mask, scale * lower_linear, scale * upper_linear)
+            torch.where(
+                _broadcast(positive_mask, lower_linear.ndim),
+                _broadcast(constant_tensor, lower_linear.ndim) * lower_linear,
+                _broadcast(constant_tensor, lower_linear.ndim) * upper_linear,
+            )
             for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-            for scale, mask in [
-                (
-                    constant_tensor.reshape(
-                        *constant_tensor.shape,
-                        *([1] * (lower_linear.ndim - constant_tensor.ndim)),
-                    ),
-                    positive_mask.reshape(
-                        *positive_mask.shape,
-                        *([1] * (lower_linear.ndim - positive_mask.ndim)),
-                    ),
-                )
-            ]
         ]
         linear_upper = [
-            torch.where(mask, scale * upper_linear, scale * lower_linear)
+            torch.where(
+                _broadcast(positive_mask, lower_linear.ndim),
+                _broadcast(constant_tensor, lower_linear.ndim) * upper_linear,
+                _broadcast(constant_tensor, lower_linear.ndim) * lower_linear,
+            )
             for lower_linear, upper_linear in zip(bounds.linear_lowers, bounds.linear_uppers, strict=True)
-            for scale, mask in [
-                (
-                    constant_tensor.reshape(
-                        *constant_tensor.shape,
-                        *([1] * (lower_linear.ndim - constant_tensor.ndim)),
-                    ),
-                    positive_mask.reshape(
-                        *positive_mask.shape,
-                        *([1] * (lower_linear.ndim - positive_mask.ndim)),
-                    ),
-                )
-            ]
         ]
 
         bias_lower_pos = constant_tensor * bounds.bias_lower

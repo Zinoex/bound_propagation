@@ -184,8 +184,12 @@ class IBPSqueeze(ForwardIBPStrategy):
 
         dim = args[1] if len(args) > 1 else kwargs.get("dim", None)
 
-        lower = x_bounds.lower.squeeze(dim=dim)
-        upper = x_bounds.upper.squeeze(dim=dim)
+        if dim is None:
+            lower = x_bounds.lower.squeeze()
+            upper = x_bounds.upper.squeeze()
+        else:
+            lower = x_bounds.lower.squeeze(dim=dim)
+            upper = x_bounds.upper.squeeze(dim=dim)
 
         return IntervalBounds(lower, upper)
 

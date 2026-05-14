@@ -52,6 +52,13 @@ class ForwardLBPConcat(ForwardLBPStrategy):
                 raise TypeError(f"ForwardLBPConcat requires all inputs to be LinearBounds, but input {i} is {type(t)}")
             bounds_list.append(t)
 
+        # Linear coefficients carry trailing input axes after the bias-shape prefix.
+        # Resolve negative dims against the bias rank so the same positive dim
+        # applies to both bias and linear concatenation.
+        bias_ndim = bounds_list[0].bias_lower.ndim
+        if dim < 0:
+            dim += bias_ndim
+
         # Collect ordered unique input_ids and their associated regions.
         all_regions: dict[int, SimpleRegion] = {}
         for b in bounds_list:
@@ -320,6 +327,13 @@ class ForwardLBPStack(ForwardLBPStrategy):
             if not isinstance(t, LinearBounds):
                 raise TypeError(f"ForwardLBPStack requires all inputs to be LinearBounds, but input {i} is {type(t)}")
             bounds_list.append(t)
+
+        # Linear coefficients carry trailing input axes after the bias-shape prefix.
+        # Resolve negative dims against (bias rank + 1) -- stack inserts a new dim --
+        # so the same positive dim applies to both bias and linear stacking.
+        bias_ndim = bounds_list[0].bias_lower.ndim
+        if dim < 0:
+            dim += bias_ndim + 1
 
         # Collect ordered unique input_ids and their associated regions.
         all_regions: dict[int, SimpleRegion] = {}

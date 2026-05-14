@@ -235,17 +235,23 @@ def test_matmul_abstract_abstract_batched_sound() -> None:
     assert lower.shape == (2, 2, 2)
 
 
-def test_matmul_abstract_abstract_rejects_vector() -> None:
-    """1D inputs are currently unsupported in the abstract@abstract case."""
-    import pytest
+def test_matmul_abstract_abstract_vector_dot_product() -> None:
+    """1-D inputs reduce to a scalar dot product per PyTorch matmul semantics."""
 
-    region = HyperRectangle(lower=torch.tensor([0.0, 0.0]), upper=torch.tensor([1.0, 1.0]))
-    bounds_a = _disjoint_linear_bounds(region, slice(0, 1), (1,))  # vector
-    bounds_b = _disjoint_linear_bounds(region, slice(1, 2), (1,))  # vector
+    def fn(x: torch.Tensor) -> torch.Tensor:
+        return x[:2] @ x[2:]
+
+    region = HyperRectangle(
+        lower=torch.tensor([0.0, 0.0, 0.0, 0.0]),
+        upper=torch.tensor([1.0, 1.0, 1.0, 1.0]),
+    )
+    bounds_a = _disjoint_linear_bounds(region, slice(0, 2), (2,))
+    bounds_b = _disjoint_linear_bounds(region, slice(2, 4), (2,))
 
     strategy = ForwardLBPMatmul()
-    with pytest.raises(NotImplementedError):
-        propagate(strategy, bounds_a, bounds_b)
+    result = propagate(strategy, bounds_a, bounds_b)
+    lower, upper = _assert_sound_matmul(result, fn, region)
+    assert lower.shape == ()
 
 
 def test_matmul_abstract_abstract_alpha_crown_sound() -> None:

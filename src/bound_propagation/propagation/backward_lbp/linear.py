@@ -79,18 +79,36 @@ class BackwardLBPMatmul(BackwardLBPStrategy):
             bounds_a = bounds(left_node)
             bounds_b = bounds(right_node)
 
-            if bounds_a.lower.ndim < 2 or bounds_b.lower.ndim < 2:
+            # PyTorch's matmul promotes vectors to matrices: 1-D × 2-D treats
+            # the 1-D as a row, 2-D × 1-D treats it as a column, 1-D × 1-D is
+            # both. We mirror that promotion here so the McCormick params land
+            # on a consistent (*batch, M, K, N) grid; ``backward_through``
+            # squeezes the promoted axes back out of the per-operand A-terms.
+            a_is_vector = bounds_a.lower.ndim == 1
+            b_is_vector = bounds_b.lower.ndim == 1
+            if bounds_a.lower.ndim == 0 or bounds_b.lower.ndim == 0:
                 raise NotImplementedError(
                     "Backward LBP matmul with two abstract operands requires each operand "
-                    f"to be at least 2D (matrix), got shapes {tuple(bounds_a.lower.shape)} "
+                    f"to be at least 1-D, got shapes {tuple(bounds_a.lower.shape)} "
                     f"and {tuple(bounds_b.lower.shape)}."
                 )
 
-            params = _build_matmul_mccormick_params(bounds_a, bounds_b, node, tape)
+            bounds_a_promoted = (
+                IntervalBounds(bounds_a.lower.unsqueeze(-2), bounds_a.upper.unsqueeze(-2)) if a_is_vector else bounds_a
+            )
+            bounds_b_promoted = (
+                IntervalBounds(bounds_b.lower.unsqueeze(-1), bounds_b.upper.unsqueeze(-1)) if b_is_vector else bounds_b
+            )
+
+            params = _build_matmul_mccormick_params(bounds_a_promoted, bounds_b_promoted, node, tape)
             return MatmulBothAbstractRelaxation(
                 params=params,
                 left_node=left_node,
                 right_node=right_node,
+                a_is_vector=a_is_vector,
+                b_is_vector=b_is_vector,
+                left_shape=tuple(bounds_a.lower.shape),
+                right_shape=tuple(bounds_b.lower.shape),
             )
 
         raise TypeError(
@@ -317,6 +335,31 @@ def _reduce_input_to_shape(op: LinearOperator, target_shape: tuple[int, ...] | t
     return DenseOperator(tensor, output_shape=op.output_shape)
 
 
+def _reduce_broadcast_operand_axes(a: torch.Tensor, operand_shape: tuple[int, ...], out_ndim: int) -> torch.Tensor:
+    """Sum a tensor's trailing operand axes from the broadcast shape back to ``operand_shape``.
+
+    ``a`` has shape ``(*out_dims, *broadcast_operand_shape)``. The returned
+    tensor has shape ``(*out_dims, *operand_shape)``, matching what a
+    non-broadcast operand of that shape would have produced. Extra leading
+    dims (where the operand has no axis) collapse via ``sum``; size-1 dims
+    of the operand are summed with ``keepdim=True``.
+    """
+    broadcast_shape = tuple(a.shape[out_ndim:])
+    if broadcast_shape == operand_shape:
+        return a
+    rank_extra = len(broadcast_shape) - len(operand_shape)
+    if rank_extra > 0:
+        a = a.sum(dim=tuple(range(out_ndim, out_ndim + rank_extra)), keepdim=False)
+    keep_sum_dims: list[int] = []
+    for i, op_size in enumerate(operand_shape):
+        bc_size = broadcast_shape[rank_extra + i]
+        if op_size == 1 and bc_size > 1:
+            keep_sum_dims.append(out_ndim + i)
+    if keep_sum_dims:
+        a = a.sum(dim=tuple(keep_sum_dims), keepdim=True)
+    return a
+
+
 def _broadcast_constant(constant: torch.Tensor, *, batch_ndim: int, bounded_ndim: int, node_ndim: int) -> torch.Tensor:
     """Reshape ``constant`` to broadcast against ``A`` of shape ``(*batch, *bounded, *node)``.
 
@@ -373,34 +416,43 @@ class LinearBackwardRelaxation(BackwardRelaxation):
         self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
     ) -> BackwardContributions:
         output_shape = A_lower.output_shape
+        input_shape = A_lower.input_shape  # The Linear's pre-backward output shape.
         A_lower_t = A_lower.to_dense().tensor
         A_upper_t = A_upper.to_dense().tensor
 
         if self.weight.ndim == 2:
-            # A: (*batch, *bounded_out, out_features)
-            # weight: (out_features, in_features) -> A @ weight gives (..., in_features)
+            # A: (*output_shape, *input_shape) where input_shape ends with out_features.
+            # weight: (out_features, in_features) -> A @ weight contracts the last
+            # axis, giving the predecessor A of shape (*output_shape, *leading, in_features).
             new_A_lower = A_lower_t @ self.weight
             new_A_upper = A_upper_t @ self.weight
-            node_ndim = 1
-            if self.bias is not None:
-                bias_lower = A_lower_t @ self.bias
-                bias_upper = A_upper_t @ self.bias
         else:
-            # 1D weight: y = (x * w).sum(-1). Output has no feature dim, so
-            # A_lower has shape (*batch, *bounded_out); multiplying in a new
-            # trailing dim against ``weight`` gives the predecessor A of shape
-            # (*batch, *bounded_out, in_features).
+            # 1D weight: y = (x * w).sum(-1). Linear consumes the input's last dim,
+            # so input_shape on A has one fewer dim than the predecessor's. Inject a
+            # new trailing dim for the in_features axis and broadcast against weight.
             new_A_lower = A_lower_t.unsqueeze(-1) * self.weight
             new_A_upper = A_upper_t.unsqueeze(-1) * self.weight
-            node_ndim = 0
-            if self.bias is not None:
-                bias_lower = A_lower_t * self.bias
-                bias_upper = A_upper_t * self.bias
 
-        if self.bias is None:
-            zero = _zero_bias(A_lower_t, node_ndim=node_ndim)
-            bias_lower = zero
-            bias_upper = zero
+        if self.bias is not None:
+            # Bias contribution at the current backward step is A applied to the
+            # bias broadcast to ``input_shape`` (the Linear's output shape). For
+            # ndim=2 weight, bias has shape (out_features,) and broadcasts across
+            # any leading dims preserved by the Linear; for ndim=1 weight the bias
+            # is 0-D and broadcasts to ``input_shape`` entirely.
+            out_ndim = A_lower.output_ndim
+            leading_ones = (1,) * (len(input_shape) - self.bias.ndim)
+            bias_reshaped = self.bias.reshape(*leading_ones, *self.bias.shape)
+            bias_expanded = bias_reshaped.expand(input_shape)
+            sum_dims = tuple(range(out_ndim, A_lower_t.ndim))
+            if sum_dims:
+                bias_lower = (A_lower_t * bias_expanded).sum(dim=sum_dims)
+                bias_upper = (A_upper_t * bias_expanded).sum(dim=sum_dims)
+            else:
+                bias_lower = A_lower_t * bias_expanded
+                bias_upper = A_upper_t * bias_expanded
+        else:
+            bias_lower = torch.zeros(output_shape, dtype=A_lower_t.dtype, device=A_lower_t.device)
+            bias_upper = bias_lower
 
         return BackwardContributions(
             a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
@@ -414,11 +466,21 @@ class LinearBackwardRelaxation(BackwardRelaxation):
     ) -> BackwardContributions:
         """Identity @ Linear = the weight itself, reshaped into A's output axes.
 
-        Avoids materializing any ``eye(numel)``: the resulting A is simply
-        ``weight`` (or ``weight^T`` for a 1D reduction) broadcast to the
-        caller's batch axes; the bias contribution is ``bias`` broadcast the
-        same way.
+        Fast path: avoids materializing any ``eye(numel)`` when the Linear's
+        feature_shape on the Identity matches the Linear's intrinsic rank
+        (1 trailing feature dim for 2-D weight, 0 for 1-D weight). In that
+        case the resulting A is simply ``weight`` (or ``weight^T`` for a 1-D
+        reduction) broadcast to the caller's batch axes.
+
+        Multi-feature case (e.g. Linear operating on the last dim of a
+        higher-rank input): the operator is ``I_leading ⊗ W``, which we
+        defer to the generic dispatch via ``to_dense()``.
         """
+        feature_ndim = len(A_lower.feature_shape)
+        fast_path = (self.weight.ndim == 2 and feature_ndim == 1) or (self.weight.ndim == 1 and feature_ndim == 0)
+        if not fast_path:
+            return self.backward_through(A_lower.to_dense(), A_upper.to_dense(), batch_ndim)
+
         output_shape = A_lower.output_shape
         batch_shape = A_lower.batch_shape
         leading_ones = (1,) * len(batch_shape)
@@ -485,7 +547,7 @@ class MatmulRightConstantRelaxation(BackwardRelaxation):
         new_A_lower = A_lower_t @ self.weight.T
         new_A_upper = A_upper_t @ self.weight.T
 
-        zero = _zero_bias(A_lower_t, node_ndim=1)
+        zero = torch.zeros(output_shape, dtype=A_lower_t.dtype, device=A_lower_t.device)
         return BackwardContributions(
             a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
             bias_lower=zero,
@@ -502,19 +564,28 @@ class MatmulBothAbstractRelaxation(BackwardRelaxation):
     reduces over the shared ``K`` axis. Supports the same-node case ``x @ x``
     via :func:`accumulate_a_terms`.
 
+    Vector-form matmul (operand rank 1) is handled by promoting the vector
+    operand(s) to matrix(es) at build time and squeezing the corresponding
+    axes back out of the per-operand A-terms here.
+
     Parameters
     ----------
     params : PairedParams
         McCormick parameters, each tensor of shape ``(*batch, M, K, N)``.
-    left_node : fx.Node
-        The fx graph node for the left (``a``) operand.
-    right_node : fx.Node
-        The fx graph node for the right (``b``) operand.
+    left_node, right_node : fx.Node
+        The fx graph nodes for the operands.
+    a_is_vector, b_is_vector : bool
+        Whether the left/right operand was a 1-D vector (promoted to
+        ``(1, K)`` / ``(K, 1)`` for the McCormick params build).
     """
 
     params: PairedParams
     left_node: fx.Node
     right_node: fx.Node
+    a_is_vector: bool = False
+    b_is_vector: bool = False
+    left_shape: tuple[int, ...] = ()
+    right_shape: tuple[int, ...] = ()
 
     def predecessor_nodes(self) -> list[fx.Node]:
         return list(dict.fromkeys([self.left_node, self.right_node]))
@@ -531,19 +602,45 @@ class MatmulBothAbstractRelaxation(BackwardRelaxation):
         p = self.params
         params_feature_ndim = p.alpha_lower_a.ndim - batch_ndim
         a_feature_ndim = params_feature_ndim - 1  # (*op_batch, M, N)
-        bounded_ndim = A_lower.output_ndim + A_lower.input_ndim - batch_ndim - a_feature_ndim
+
+        # When an operand was vector-promoted, upstream A's input axes describe
+        # the un-promoted matmul output. Insert the singleton axes corresponding
+        # to the promotion so A lines up with the McCormick params' (*op_batch, M, N) grid.
+        A_l = A_lower.to_dense().tensor
+        A_u = A_upper.to_dense().tensor
+        A_l_pos_t = A_lower.clamp_min(0).to_dense().tensor
+        A_l_neg_t = A_lower.clamp_max(0).to_dense().tensor
+        A_u_pos_t = A_upper.clamp_min(0).to_dense().tensor
+        A_u_neg_t = A_upper.clamp_max(0).to_dense().tensor
+        del A_l, A_u
+
+        if self.b_is_vector:
+            # b promoted (K,) -> (K, 1); N axis is a trailing singleton.
+            A_l_pos_t = A_l_pos_t.unsqueeze(-1)
+            A_l_neg_t = A_l_neg_t.unsqueeze(-1)
+            A_u_pos_t = A_u_pos_t.unsqueeze(-1)
+            A_u_neg_t = A_u_neg_t.unsqueeze(-1)
+        if self.a_is_vector:
+            # a promoted (K,) -> (1, K); M axis is the first input axis on A.
+            insert_pos = A_lower.output_ndim
+            A_l_pos_t = A_l_pos_t.unsqueeze(insert_pos)
+            A_l_neg_t = A_l_neg_t.unsqueeze(insert_pos)
+            A_u_pos_t = A_u_pos_t.unsqueeze(insert_pos)
+            A_u_neg_t = A_u_neg_t.unsqueeze(insert_pos)
+
+        # Number of "bounded" dims sitting between batch and the (M, N)
+        # operator-feature dims is now well-defined.
+        bounded_ndim = A_l_pos_t.ndim - batch_ndim - a_feature_ndim
 
         def bc_params(t: torch.Tensor) -> torch.Tensor:
             """Insert ``bounded_out`` singletons between batch and params feature dims."""
             return t.reshape(t.shape[:batch_ndim] + (1,) * bounded_ndim + t.shape[batch_ndim:])
 
         # Insert K axis as singleton into A: (*batch, *bounded_out, M, 1, N).
-        # Clamp commutes with unsqueeze, so route the sign decomposition through the
-        # operator API (lets structured A's specialize) and then unsqueeze the result.
-        A_l_pos = A_lower.clamp_min(0).to_dense().tensor.unsqueeze(-2)
-        A_l_neg = A_lower.clamp_max(0).to_dense().tensor.unsqueeze(-2)
-        A_u_pos = A_upper.clamp_min(0).to_dense().tensor.unsqueeze(-2)
-        A_u_neg = A_upper.clamp_max(0).to_dense().tensor.unsqueeze(-2)
+        A_l_pos = A_l_pos_t.unsqueeze(-2)
+        A_l_neg = A_l_neg_t.unsqueeze(-2)
+        A_u_pos = A_u_pos_t.unsqueeze(-2)
+        A_u_neg = A_u_neg_t.unsqueeze(-2)
 
         alpha_la = bc_params(p.alpha_lower_a)
         alpha_ua = bc_params(p.alpha_upper_a)
@@ -563,6 +660,28 @@ class MatmulBothAbstractRelaxation(BackwardRelaxation):
         delta_bias_upper = (A_u_pos * gamma_u + A_u_neg * gamma_l).sum(dim=sum_dims)
 
         out_ndim = len(output_shape)
+
+        # Squeeze the promoted axes back out of each operand's per-input A so
+        # the resulting DenseOperators have ``input_shape == predecessor.shape``.
+        if self.a_is_vector:
+            new_A_low_a = new_A_low_a.squeeze(out_ndim)
+            new_A_up_a = new_A_up_a.squeeze(out_ndim)
+        if self.b_is_vector:
+            new_A_low_b = new_A_low_b.squeeze(-1)
+            new_A_up_b = new_A_up_b.squeeze(-1)
+
+        # Batched matmul broadcasts leading batch dims; the McCormick params
+        # carry the broadcast shape, so the per-operand A's land on that
+        # broadcast shape rather than the operand's actual shape. Sum-reduce
+        # the broadcast dims (and drop rank-extras) so each predecessor's
+        # ``input_shape == predecessor.shape``.
+        if self.left_shape:
+            new_A_low_a = _reduce_broadcast_operand_axes(new_A_low_a, self.left_shape, out_ndim)
+            new_A_up_a = _reduce_broadcast_operand_axes(new_A_up_a, self.left_shape, out_ndim)
+        if self.right_shape:
+            new_A_low_b = _reduce_broadcast_operand_axes(new_A_low_b, self.right_shape, out_ndim)
+            new_A_up_b = _reduce_broadcast_operand_axes(new_A_up_b, self.right_shape, out_ndim)
+
         a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
         accumulate_a_terms(
             a_terms,
@@ -606,14 +725,27 @@ class MatmulLeftConstantRelaxation(BackwardRelaxation):
     def backward_through(
         self, A_lower: LinearOperator, A_upper: LinearOperator, batch_ndim: int
     ) -> BackwardContributions:
+        # y = W @ x with W: (M, K) constant. x can be 1-D vector (K,) -> y: (M,)
+        # or higher-rank (K, *trailing) -> y: (M, *trailing). The operator
+        # contracts W's K axis with x's leading K axis; in the backward pass we
+        # contract A's M axis (the first input axis on A) against W's M axis.
         output_shape = A_lower.output_shape
+        out_ndim = A_lower.output_ndim
+        input_ndim = A_lower.input_ndim
         A_lower_t = A_lower.to_dense().tensor
         A_upper_t = A_upper.to_dense().tensor
 
-        new_A_lower = A_lower_t @ self.weight
-        new_A_upper = A_upper_t @ self.weight
+        if input_ndim == 0:
+            raise ValueError("MatmulLeftConstantRelaxation: input must be at least 1-D")
+        m_axis = out_ndim  # absolute position of the M (= W's first dim) axis in A_t
+        if input_ndim > 1:
+            new_A_lower = (A_lower_t.movedim(m_axis, -1) @ self.weight).movedim(-1, m_axis)
+            new_A_upper = (A_upper_t.movedim(m_axis, -1) @ self.weight).movedim(-1, m_axis)
+        else:
+            new_A_lower = A_lower_t @ self.weight
+            new_A_upper = A_upper_t @ self.weight
 
-        zero = _zero_bias(A_lower_t, node_ndim=1)
+        zero = torch.zeros(output_shape, dtype=A_lower_t.dtype, device=A_lower_t.device)
         return BackwardContributions(
             a_terms=_wrap_a_term_tensors({self.input_node: (new_A_lower, new_A_upper)}, len(output_shape)),
             bias_lower=zero,

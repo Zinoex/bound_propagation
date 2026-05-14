@@ -27,156 +27,80 @@ _ALL_LBP = (("forward_lbp", "Forward LBP"), *_LBP_HYBRIDS)
 def _broadcast_pairwise_xfails() -> list[tuple[str, str]]:
     """Pairwise broadcasting (mul / div / maximum / minimum) divergences.
 
-    Forward LBP pairwise only handles equal-rank operands; pair 4 mixes ranks
-    ((3,) vs (2,3)). Pair 8 ((1,) vs (2,3)) happens to work because the
-    trailing-singleton broadcast is degenerate. Backward LBP and the hybrid
-    methods drop all broadcasting pairs (4-8).
+    All fixed in this branch:
+
+    * Forward LBP: ``PairedForwardRelaxation.forward`` aligns alpha and
+      per-input linear coefficients when the output bias prefix is larger
+      than an input's bias prefix.
+    * Backward LBP (and hybrids that route through it): the pairwise
+      strategies now broadcast both operand interval bounds to the common
+      output shape before computing the McCormick / min-max relaxation,
+      store each operand's pre-broadcast shape on the relaxation, and the
+      ``backward_through`` method sum-reduces the per-operand ``A``
+      contributions back to the operand's natural shape.
     """
-    out: list[tuple[str, str]] = []
-    for op in ("mul", "div", "maximum", "minimum"):
-        out.append(
-            (
-                f"test_{op}[forward_lbp-pair4]",
-                f"Forward LBP {op}: cross-rank broadcasting between two abstract operands not implemented",
-            )
-        )
-        for method, label in _LBP_HYBRIDS:
-            for i in (4, 5, 6, 7, 8):
-                out.append(
-                    (
-                        f"test_{op}[{method}-pair{i}]",
-                        f"{label} {op}: broadcasting between two abstract operands not implemented",
-                    )
-                )
-    return out
+    return []
 
 
 def _linear_rank_xfails() -> list[tuple[str, str]]:
     """nn.Linear / F.linear with >1-D feature input.
 
-    PyTorch's nn.Linear documents input (*, H_in); the >1-D feature cases
-    require backward LBP's tape to fold higher-rank batched weight
-    contractions, which is not yet supported.
+    Fixed in this branch: the backward LBP ``LinearBackwardRelaxation``
+    routes the Identity fast path to the generic dense dispatch when the
+    operator's feature_shape carries extra leading dims (the Kronecker
+    ``I_leading ⊗ W`` structure), and the bias contribution is now
+    computed via ``A.apply(broadcast(bias))`` semantics so the resulting
+    bias shape matches the operator's output shape regardless of rank.
     """
-    out: list[tuple[str, str]] = []
-    for test in ("test_nn_linear", "test_nn_linear_no_bias"):
-        for method, label in _LBP_HYBRIDS:
-            for i in (1, 2, 3):
-                out.append(
-                    (
-                        f"{test}[{method}-shape{i}]",
-                        f"{label} Linear: input rank > 1 not supported (batched Linear needs explicit batch_ndim)",
-                    )
-                )
-    return out
+    return []
 
 
 def _matmul_xfails() -> list[tuple[str, str]]:
-    """matmul: two-abstract and batched-constant divergences."""
-    out: list[tuple[str, str]] = []
-    # Two-abstract: vectors / batched broadcast.
-    for method, label in _ALL_LBP:
-        for name in ("dot_1d_1d", "matvec_2d_1d", "vecmat_1d_2d"):
-            out.append(
-                (
-                    f"test_matmul_two_abstract[{method}-{name}-",
-                    f"{label} matmul: two-abstract {name} not supported (vectors / batched broadcast)",
-                )
-            )
-    for method, label in _LBP_HYBRIDS:
-        out.append(
-            (
-                f"test_matmul_two_abstract[{method}-batched_broadcast_3d_3d-",
-                f"{label} matmul: two-abstract batched broadcast not supported",
-            )
-        )
-        out.append(
-            (
-                f"test_matmul_two_abstract[{method}-batched_broadcast_3d_2d-",
-                f"{label} matmul: two-abstract ND-vs-2D broadcast not supported",
-            )
-        )
-    # Constant-right: backward LBP + hybrids reject input rank > 1.
-    for method, label in _LBP_HYBRIDS:
-        for i in (1, 2, 3):
-            out.append(
-                (
-                    f"test_matmul_constant_right[{method}-shape{i}]",
-                    f"{label} matmul-by-constant: input rank > 1 not yet supported",
-                )
-            )
-    # Constant-left: weight @ x where x is rank > 1. All LBP methods reject.
-    for method, label in _ALL_LBP:
-        out.append(
-            (
-                f"test_matmul_constant_left[{method}-shape1]",
-                f"{label} matmul (const @ abstract): non-vector abstract operand not supported",
-            )
-        )
-    return out
+    """matmul: two-abstract and batched-constant divergences.
+
+    Fixed in this branch:
+
+    * ``MatmulBothAbstractRelaxation`` now promotes 1-D vector operands to
+      matrices at build time (mirroring PyTorch's matmul semantics), then
+      unsqueezes the upstream ``A`` to match the promoted matmul output
+      shape and squeezes the promoted axes back out of each per-operand
+      ``A``-term.
+    * The same relaxation carries the un-promoted operand shapes and
+      sum-reduces per-operand ``A``-terms across any batched-broadcast
+      dims, so ND-vs-ND and ND-vs-2-D matmul work end-to-end.
+    * ``MatmulRightConstantRelaxation`` no longer leaks a node-axis into
+      the bias contribution; the zero-bias is built from
+      ``A.output_shape`` directly so any input rank is supported.
+    * ``MatmulLeftConstantRelaxation`` now contracts ``A``'s "M" axis (the
+      first input axis, not the trailing axis) against ``W``'s first dim,
+      so non-vector abstract operands work end-to-end.
+    """
+    return []
 
 
 def _shape_op_xfails() -> list[tuple[str, str]]:
-    """cat / stack / squeeze / transpose / permute divergences."""
-    out: list[tuple[str, str]] = []
-    # cat / stack: negative dim against higher-rank input is not rewritten
-    # against the bias-axis frame of the LinearBounds.
-    for method in ("forward_lbp", "forward_backward_lbp"):
-        label = "Forward LBP" if method == "forward_lbp" else "Forward-Backward LBP"
-        out.append(
-            (
-                f"test_cat[{method}-a_shape4-b_shape4--1]",
-                f"{label} cat: negative dim is not rewritten against the bias-axis frame",
-            )
-        )
-        out.append(
-            (
-                f"test_stack[{method}-shape6--1]",
-                f"{label} stack: negative dim is not rewritten against the bias-axis frame",
-            )
-        )
-    # IBP / CROWN-IBP squeeze: dim=None is forwarded to torch.Tensor.squeeze,
-    # which interprets None as a name lookup rather than "all dims".
-    for method, label in (("ibp", "IBP"), ("crown_ibp", "CROWN-IBP")):
-        for i in (4, 5):
-            out.append(
-                (
-                    f"test_squeeze[{method}-shape{i}-None]",
-                    f"{label} squeeze: dim=None forwarded to torch.squeeze as a name",
-                )
-            )
-    # Backward LBP only registers the .transpose / .permute methods, not
-    # the top-level torch.transpose / torch.permute callables.
-    for method, label in _LBP_HYBRIDS:
-        for i in range(6):
-            out.append(
-                (
-                    f"test_transpose_function[{method}-shape{i}-",
-                    f"{label}: torch.transpose top-level function not registered (only Tensor.transpose)",
-                )
-            )
-        for i in range(5):
-            out.append(
-                (
-                    f"test_permute_function[{method}-shape{i}-",
-                    f"{label}: torch.permute top-level function not registered (only Tensor.permute)",
-                )
-            )
-    return out
+    """cat / stack / squeeze / transpose / permute divergences.
+
+    Fixed in this branch:
+
+    * Forward LBP cat / stack with negative ``dim`` are now rewritten against
+      the bias-axis frame so they accept the same shapes PyTorch documents.
+    * IBP / CROWN-IBP ``squeeze`` now handles ``dim=None`` (squeeze all
+      size-1 dims) without forwarding it as a name.
+    * Backward LBP registry now binds top-level ``torch.transpose`` and
+      ``torch.permute`` in addition to the ``Tensor`` methods.
+    """
+    return []
 
 
 def _scalar_mul_constant_xfails() -> list[tuple[str, str]]:
-    """0-D mul-by-constant: reshape(*shape) with empty shape."""
-    return [
-        (
-            "test_mul_constant[forward_lbp-shape0]",
-            "Forward LBP mul-by-constant: 0-D abstract input triggers reshape() with empty shape",
-        ),
-        (
-            "test_mul_constant[forward_backward_lbp-shape0]",
-            "Forward-Backward LBP mul-by-constant: 0-D abstract input triggers reshape() with empty shape",
-        ),
-    ]
+    """0-D mul-by-constant.
+
+    Fixed: ForwardLBPMul._multiply_by_constant now builds the broadcast
+    shape as a single tuple so the reshape call is well-formed when both
+    the constant and the linear coefficient are 0-D.
+    """
+    return []
 
 
 # Materialize the full catalog. Each entry is (nodeid-substring, reason); a

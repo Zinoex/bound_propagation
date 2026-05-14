@@ -48,13 +48,20 @@ class PairedBackwardRelaxation(BackwardRelaxation):
         z_lower >= alpha_lower_a * a + alpha_lower_b * b + bias_lower
         z_upper <= alpha_upper_a * a + alpha_upper_b * b + bias_upper
 
-    Handles the case where left_node == right_node (e.g., x * x) by
-    using ``accumulate_a_terms`` to sum contributions.
+    ``params`` carries alpha / bias tensors broadcast to the output node
+    shape; ``left_shape`` / ``right_shape`` record each operand's actual
+    pre-broadcast shape so :meth:`backward_through` can sum-reduce the
+    per-operand ``A`` contributions back to the operand's natural shape.
+
+    Handles the case where ``left_node == right_node`` (e.g., ``x * x``) by
+    using :func:`accumulate_a_terms` to sum contributions.
     """
 
     params: PairedParams
     left_node: fx.Node
     right_node: fx.Node
+    left_shape: tuple[int, ...]
+    right_shape: tuple[int, ...]
 
     def predecessor_nodes(self) -> list[fx.Node]:
         """Return predecessor nodes, deduplicated for the x*x case."""
@@ -94,8 +101,26 @@ class PairedBackwardRelaxation(BackwardRelaxation):
             delta_bias_lower = delta_bias_lower.sum(dim=sum_dims)
             delta_bias_upper = delta_bias_upper.sum(dim=sum_dims)
 
-        # Build a_terms with accumulation for same-node case (x*x)
+        # Reduce per-operand contributions from the broadcast node shape
+        # back to each operand's actual shape. When ``left_node == right_node``
+        # (the ``x * x`` case), no reduction is needed because both shapes
+        # match the (un-broadcast) node shape.
         out_ndim = len(output_shape)
+        broadcast_node_shape = tuple(p.alpha_lower_a.shape[batch_ndim:])
+        new_A_lower_left = _reduce_to_operand_shape(
+            new_A_lower_left, broadcast_node_shape, self.left_shape, batch_ndim, out_ndim
+        )
+        new_A_upper_left = _reduce_to_operand_shape(
+            new_A_upper_left, broadcast_node_shape, self.left_shape, batch_ndim, out_ndim
+        )
+        new_A_lower_right = _reduce_to_operand_shape(
+            new_A_lower_right, broadcast_node_shape, self.right_shape, batch_ndim, out_ndim
+        )
+        new_A_upper_right = _reduce_to_operand_shape(
+            new_A_upper_right, broadcast_node_shape, self.right_shape, batch_ndim, out_ndim
+        )
+
+        # Build a_terms with accumulation for same-node case (x*x)
         a_terms: dict[fx.Node, tuple[LinearOperator, LinearOperator]] = {}
         accumulate_a_terms(
             a_terms,
@@ -111,6 +136,78 @@ class PairedBackwardRelaxation(BackwardRelaxation):
         )
 
         return BackwardContributions(a_terms=a_terms, bias_lower=delta_bias_lower, bias_upper=delta_bias_upper)
+
+
+def _broadcast_paired_bounds(
+    bounds_a: IntervalBounds,
+    bounds_b: IntervalBounds,
+    left_shape: tuple[int, ...],
+    right_shape: tuple[int, ...],
+) -> tuple[IntervalBounds, IntervalBounds]:
+    """Broadcast two interval bounds to their common output shape.
+
+    PyTorch's binary ops broadcast their operands to a shared output shape;
+    ``compute_*_relaxation`` then produces alpha and bias tensors at that
+    shape so :class:`PairedBackwardRelaxation` can apply the standard
+    ``A * alpha`` step uniformly. Operand-specific contributions are later
+    sum-reduced back to each operand's actual shape via
+    :func:`_reduce_to_operand_shape`.
+    """
+    output_shape = torch.broadcast_shapes(left_shape, right_shape)
+    if tuple(bounds_a.lower.shape) == tuple(output_shape) and tuple(bounds_b.lower.shape) == tuple(output_shape):
+        return bounds_a, bounds_b
+
+    def expand(b: IntervalBounds) -> IntervalBounds:
+        if tuple(b.lower.shape) == tuple(output_shape):
+            return b
+        return IntervalBounds(
+            lower=b.lower.broadcast_to(output_shape).contiguous(),
+            upper=b.upper.broadcast_to(output_shape).contiguous(),
+        )
+
+    return expand(bounds_a), expand(bounds_b)
+
+
+def _reduce_to_operand_shape(
+    a: torch.Tensor,
+    broadcast_node_shape: tuple[int, ...],
+    operand_shape: tuple[int, ...],
+    batch_ndim: int,
+    out_ndim: int,
+) -> torch.Tensor:
+    """Sum a tensor's trailing node axes from broadcast shape back to operand shape.
+
+    ``a`` has shape ``(*batch_dims, *output_dims, *broadcast_node_shape)``.
+    The returned tensor has shape ``(*batch_dims, *output_dims, *operand_shape)``,
+    matching what a non-broadcast operand of that shape would have produced.
+
+    Broadcast-vs-operand alignment follows PyTorch's right-aligned convention:
+    extra leading dims in the broadcast shape are summed out entirely, and
+    dims where the operand has size 1 but the broadcast has size > 1 are
+    summed with ``keepdim=True``.
+    """
+    if broadcast_node_shape == operand_shape:
+        return a
+
+    rank_extra = len(broadcast_node_shape) - len(operand_shape)
+    node_axis_start = batch_ndim + out_ndim
+
+    # Sum the rank-mismatch (extra leading node dims): these dims have no
+    # corresponding operand axis, so they collapse entirely.
+    if rank_extra > 0:
+        sum_dims = tuple(range(node_axis_start, node_axis_start + rank_extra))
+        a = a.sum(dim=sum_dims, keepdim=False)
+
+    # Sum the size-1 broadcast dims of the operand (keep them as size-1).
+    keep_sum_dims: list[int] = []
+    for i, op_size in enumerate(operand_shape):
+        bc_size = broadcast_node_shape[rank_extra + i]
+        if op_size == 1 and bc_size > 1:
+            keep_sum_dims.append(node_axis_start + i)
+    if keep_sum_dims:
+        a = a.sum(dim=tuple(keep_sum_dims), keepdim=True)
+
+    return a
 
 
 class BackwardLBPMul(BackwardLBPStrategy):
@@ -148,8 +245,11 @@ class BackwardLBPMul(BackwardLBPStrategy):
         right_node: fx.Node = node.args[1]  # ty:ignore[invalid-assignment]
 
         if left_is_abstract and right_is_abstract:
-            bounds_a = bounds(left_node)
-            bounds_b = bounds(right_node)
+            left_shape = tuple(tape.shape_of(left_node))
+            right_shape = tuple(tape.shape_of(right_node))
+            bounds_a, bounds_b = _broadcast_paired_bounds(
+                bounds(left_node), bounds(right_node), left_shape, right_shape
+            )
             eta_lo, eta_up = resolve_mul_etas(tape.alpha_provider, node, bounds_a)
             params = compute_mul_relaxation(
                 bounds_a,
@@ -157,7 +257,13 @@ class BackwardLBPMul(BackwardLBPStrategy):
                 eta_lower=eta_lo if eta_lo is not None else 0.5,
                 eta_upper=eta_up if eta_up is not None else 0.5,
             )
-            return PairedBackwardRelaxation(params=params, left_node=left_node, right_node=right_node)
+            return PairedBackwardRelaxation(
+                params=params,
+                left_node=left_node,
+                right_node=right_node,
+                left_shape=left_shape,
+                right_shape=right_shape,
+            )
 
         if left_is_abstract:
             constant = torch.as_tensor(right, dtype=tape.dtype_of(left_node))
@@ -207,8 +313,11 @@ class BackwardLBPDiv(BackwardLBPStrategy):
         right_node: fx.Node = node.args[1]  # ty:ignore[invalid-assignment]
 
         if left_is_abstract and right_is_abstract:
-            bounds_a = bounds(left_node)
-            bounds_b = bounds(right_node)
+            left_shape = tuple(tape.shape_of(left_node))
+            right_shape = tuple(tape.shape_of(right_node))
+            bounds_a, bounds_b = _broadcast_paired_bounds(
+                bounds(left_node), bounds(right_node), left_shape, right_shape
+            )
             eta_lo, eta_up = resolve_div_etas(tape.alpha_provider, node, bounds_a)
             params = compute_div_relaxation(
                 bounds_a,
@@ -216,7 +325,13 @@ class BackwardLBPDiv(BackwardLBPStrategy):
                 eta_lower=eta_lo if eta_lo is not None else 0.5,
                 eta_upper=eta_up if eta_up is not None else 0.5,
             )
-            return PairedBackwardRelaxation(params=params, left_node=left_node, right_node=right_node)
+            return PairedBackwardRelaxation(
+                params=params,
+                left_node=left_node,
+                right_node=right_node,
+                left_shape=left_shape,
+                right_shape=right_shape,
+            )
 
         if left_is_abstract:
             # abstract / constant = abstract * (1/constant)
@@ -288,8 +403,11 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
         right_node: fx.Node = node.args[1]  # ty:ignore[invalid-assignment]
 
         if left_is_abstract and right_is_abstract:
-            bounds_a = bounds(left_node)
-            bounds_b = bounds(right_node)
+            left_shape = tuple(tape.shape_of(left_node))
+            right_shape = tuple(tape.shape_of(right_node))
+            bounds_a, bounds_b = _broadcast_paired_bounds(
+                bounds(left_node), bounds(right_node), left_shape, right_shape
+            )
             eta_lo, eta_up = self._resolve_etas(tape.alpha_provider, node, bounds_a)
             paired = self._compute_relaxation(
                 bounds_a,
@@ -297,7 +415,13 @@ class _PairwiseComparisonBackwardLBP(BackwardLBPStrategy):
                 eta_lower=eta_lo if eta_lo is not None else 0.5,
                 eta_upper=eta_up if eta_up is not None else 0.5,
             )
-            return PairedBackwardRelaxation(params=paired, left_node=left_node, right_node=right_node)
+            return PairedBackwardRelaxation(
+                params=paired,
+                left_node=left_node,
+                right_node=right_node,
+                left_shape=left_shape,
+                right_shape=right_shape,
+            )
 
         if left_is_abstract:
             bounds_a = bounds(left_node)

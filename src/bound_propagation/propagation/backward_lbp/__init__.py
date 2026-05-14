@@ -114,8 +114,8 @@ def create_default_backward_lbp_registry() -> TargetRegistry[BackwardLBPStrategy
 
     registry.register_many([torch.unsqueeze, torch.Tensor.unsqueeze], BackwardLBPUnsqueeze())
     registry.register_many([torch.squeeze, torch.Tensor.squeeze], BackwardLBPSqueeze())
-    registry.register_many([torch.Tensor.transpose], BackwardLBPTranspose())
-    registry.register_many([torch.Tensor.permute], BackwardLBPPermute())
+    registry.register_many([torch.Tensor.transpose, torch.transpose], BackwardLBPTranspose())
+    registry.register_many([torch.Tensor.permute, torch.permute], BackwardLBPPermute())
 
     registry.register(operator.getitem, BackwardLBPGetItem())
     registry.register(torch.Tensor.select, BackwardLBPSelect())
