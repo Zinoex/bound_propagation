@@ -96,8 +96,7 @@ class ForwardLBPPropagator(BoundPropagator):
 
         # Seed placeholder bounds
         for id, (ph, region) in enumerate(zip(placeholders, input_regions, strict=True)):
-            shape = region.lower.shape
-            ctx.store(ph, create_identity_bounds(id, region, shape))
+            ctx.store(ph, create_identity_bounds(id, region, region.shape))
 
         # Forward walk (graph.nodes is already in topological order)
         for node in self._graph_module.graph.nodes:

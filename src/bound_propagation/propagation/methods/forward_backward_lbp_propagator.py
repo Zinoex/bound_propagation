@@ -121,7 +121,7 @@ class ForwardBackwardLBPPropagator(BoundPropagator):
 
         # Seed placeholder forward LBP bounds as identities over each region.
         for idx, (ph, region) in enumerate(zip(placeholders, input_regions, strict=True)):
-            ctx.store(ph, create_identity_bounds(idx, region, region.lower.shape))
+            ctx.store(ph, create_identity_bounds(idx, region, region.shape))
 
         for node in self._graph_module.graph.nodes:
             if node.op == "placeholder":
