@@ -204,8 +204,6 @@ def test_trace_composed_pipeline_equivalence():
 
 def test_mapped_symbol_coverage_accounting():
     """Track that expected mapped symbols appear in traced node targets."""
-    x = torch.randn(4, 5)
-    y = torch.randn(5, 3)
 
     class Wrapper(nn.Module):
         def __init__(self, m):

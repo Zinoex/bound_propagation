@@ -35,11 +35,6 @@ CONSTANT_PRODUCING_TARGETS: frozenset[Callable[..., Any]] = frozenset(
 )
 
 
-def is_constant_producing(target: Any) -> bool:
-    """Return ``True`` if *target* is a tensor-constructor treated as constant."""
-    return target in CONSTANT_PRODUCING_TARGETS
-
-
 def evaluate_constant_producer(node: fx.Node) -> torch.Tensor:
     """Evaluate a :data:`CONSTANT_PRODUCING_TARGETS` node concretely.
 
