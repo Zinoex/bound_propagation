@@ -10,8 +10,6 @@ from bound_propagation.linear_operators import (
     IdentityOperator,
     ReshapeOperator,
     ZeroOperator,
-    cat_output,
-    stack_output,
 )
 from bound_propagation.regions import HyperRectangle
 
@@ -246,26 +244,6 @@ class TestDenseOperatorOutputShapeOps:
         sliced = op.getitem_output((slice(1, 3), Ellipsis))
         assert sliced.output_shape == torch.Size((2, 3))
         assert sliced.input_shape == torch.Size((5,))
-
-
-class TestCatStack:
-    def test_cat(self) -> None:
-        a = torch.randn(2, 3, 5)
-        b = torch.randn(2, 4, 5)
-        op_a = DenseOperator(a, output_shape=(2, 3))
-        op_b = DenseOperator(b, output_shape=(2, 4))
-        result = cat_output([op_a, op_b], dim=1)
-        assert result.output_shape == torch.Size((2, 7))
-        assert torch.equal(result.to_dense().tensor, torch.cat([a, b], dim=1))
-
-    def test_stack(self) -> None:
-        a = torch.randn(3, 5)
-        b = torch.randn(3, 5)
-        op_a = DenseOperator(a, output_shape=(3,))
-        op_b = DenseOperator(b, output_shape=(3,))
-        result = stack_output([op_a, op_b], dim=0)
-        assert result.output_shape == torch.Size((2, 3))
-        assert torch.equal(result.to_dense().tensor, torch.stack([a, b], dim=0))
 
 
 class TestIdentityOperator:

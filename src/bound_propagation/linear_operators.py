@@ -43,7 +43,6 @@ Subclasses
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
 
 import torch
 from plum import dispatch
@@ -647,50 +646,6 @@ def _apply_reduction_to_shape(output_shape: torch.Size, dim: int | tuple[int, ..
     if keepdim:
         return torch.Size(1 if i in dims else s for i, s in enumerate(output_shape))
     return torch.Size(s for i, s in enumerate(output_shape) if i not in dims)
-
-
-# ----------------------------------------------------------------------
-# Multi-operator combinators
-# ----------------------------------------------------------------------
-
-# TODO: update these to avoid materializing to dense when possible;
-# e.g. cat_output can often be implemented by concatenating the underlying
-# tensors of structured operators without materialization.
-# Potentially use @dispatch to implement structured vs dense paths separately.
-
-
-def cat_output(operators: Sequence[LinearOperator], dim: int) -> LinearOperator:
-    """Concatenate operators along an output axis, preserving input axes."""
-    if not operators:
-        raise ValueError("cat_output requires at least one operator")
-    first = operators[0]
-    if any(op.input_shape != first.input_shape for op in operators):
-        raise ValueError("cat_output requires all operators to share the same input shape")
-    if any(op.output_ndim != first.output_ndim for op in operators):
-        raise ValueError("cat_output requires all operators to share the same output rank")
-    dim = _normalize_output_dim(dim, first.output_ndim, inclusive_end=False)
-    # For phase 1 we always materialize to dense; structured subclasses may override.
-    tensors = [op.to_dense().tensor for op in operators]
-    new_tensor = torch.cat(tensors, dim=dim)
-    output_sizes = [op.to_dense().output_shape[dim] for op in operators]
-    new_output_shape = torch.Size((*first.output_shape[:dim], sum(output_sizes), *first.output_shape[dim + 1 :]))
-    return DenseOperator(new_tensor, new_output_shape)
-
-
-def stack_output(operators: Sequence[LinearOperator], dim: int) -> LinearOperator:
-    """Stack operators along a new output axis."""
-    if not operators:
-        raise ValueError("stack_output requires at least one operator")
-    first = operators[0]
-    if any(op.input_shape != first.input_shape for op in operators):
-        raise ValueError("stack_output requires all operators to share the same input shape")
-    if any(op.output_shape != first.output_shape for op in operators):
-        raise ValueError("stack_output requires all operators to share the same output shape")
-    dim = _normalize_output_dim(dim, first.output_ndim + 1, inclusive_end=True)
-    tensors = [op.to_dense().tensor for op in operators]
-    new_tensor = torch.stack(tensors, dim=dim)
-    new_output_shape = torch.Size((*first.output_shape[:dim], len(operators), *first.output_shape[dim:]))
-    return DenseOperator(new_tensor, new_output_shape)
 
 
 # ----------------------------------------------------------------------
