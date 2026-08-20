@@ -927,12 +927,12 @@ class SinTangentBisectionStrategy:
         return d_lower
 
     def decreasing_upper_tangent(self, bound_module, lower, upper):
-        implicit_lower_act = bound_module(lower)
+        upper_act = bound_module(upper)
 
         def f_upper(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (implicit_lower_act - bound_module(d)) / (lower - d)
+            a_slope = (upper_act - bound_module(d)) / (upper - d)
             a_derivative = bound_module.derivative(d)
-            return a_derivative - a_slope
+            return a_slope - a_derivative
 
         # Bisection will return left and right bounds for d s.t. f_upper(d) is zero
         # Derivative of right bound will over-approximate the slope - hence a true bound
@@ -941,12 +941,12 @@ class SinTangentBisectionStrategy:
         return d_upper
 
     def decreasing_lower_tangent(self, bound_module, lower, upper):
-        upper_act = bound_module(upper)
+        lower_act = bound_module(lower)
 
         def f_lower(d: torch.Tensor) -> torch.Tensor:
-            a_slope = (bound_module(d) - upper_act) / (d - upper)
+            a_slope = (bound_module(d) - lower_act) / (d - lower)
             a_derivative = bound_module.derivative(d)
-            return a_slope - a_derivative
+            return a_derivative - a_slope
 
         # Bisection will return left and right bounds for d s.t. f_lower(d) is zero
         # Derivative of left bound will over-approximate the slope - hence a true bound
@@ -1111,7 +1111,7 @@ class BoundSin(BoundActivation):
         if torch.any(implicit):
             d = self.tangent_strategy.decreasing_upper_tangent(self, lower[implicit], upper[implicit])
 
-            # Slope has to attach to (lower, sigma(lower))
+            # Slope has to attach to (upper, sigma(upper))
             add_linear(self.alpha_upper, self.beta_upper, mask=implicit, a=self.derivative(d), x=upper, y=upper_act, a_mask=False)
 
         # Lower bound #
@@ -1125,7 +1125,7 @@ class BoundSin(BoundActivation):
         if torch.any(implicit):
             d = self.tangent_strategy.decreasing_lower_tangent(self, lower[implicit], upper[implicit])
 
-            # Slope has to attach to (upper, sigma(upper))
+            # Slope has to attach to (lower, sigma(lower))
             add_linear(self.alpha_lower, self.beta_lower, mask=implicit, a=self.derivative(d), x=lower, y=lower_act, a_mask=False)
 
     def ibp_forward(self, bounds, save_relaxation=False, save_input_bounds=False):
